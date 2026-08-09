@@ -208,6 +208,7 @@ All AWS application infrastructure is deployed from version-controlled **AWS CDK
 - [Product-data ingestion & crawling](docs/05-product-data-ingestion.md)
 - [Mock payment provider](docs/06-mock-payment-provider.md)
 - [Delivery roadmap](docs/07-delivery-roadmap.md)
+- [Implementation task backlog](tasks/BACKLOG.md)
 
 ## Important scope boundaries
 
