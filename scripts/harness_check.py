@@ -40,6 +40,7 @@ REQUIRED_FILES = [
     "docs/development/11-ci-cd-pipeline.md",
     "docs/development/12-infrastructure-as-code.md",
     "docs/development/13-free-tier-and-credit-guardrails.md",
+    "docs/development/14-codex-multi-agent-and-worktrees.md",
     "docs/adr/ADR-000-template.md",
     "docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md",
     "tasks/TASK-TEMPLATE.md",
@@ -181,6 +182,17 @@ def check_development_strategy(errors: list[str]) -> None:
         if "Free Tier" not in text or "USD 100" not in text:
             fail("Free Tier guardrail doc must preserve the project credit constraint", errors)
 
+    codex_path = ROOT / "docs" / "development" / "14-codex-multi-agent-and-worktrees.md"
+    if codex_path.exists():
+        text = codex_path.read_text(encoding="utf-8")
+        lower = text.lower()
+        if "luna" not in lower:
+            fail("Codex operating model must preserve the Luna-first policy", errors)
+        if "one writable task = one branch = one worktree" not in lower:
+            fail("Codex operating model must preserve one-task/one-branch/one-worktree isolation", errors)
+        if "maximum **2 active builder-style coding tasks in parallel**" not in lower:
+            fail("Codex operating model must preserve the default two-Builder concurrency limit", errors)
+
 
 def main() -> int:
     errors: list[str] = []
@@ -205,7 +217,7 @@ def main() -> int:
     print("Task/ADR structure checks: PASS")
     print("README/AGENTS local-link checks: PASS")
     print("Phase H0 definition check: PASS")
-    print("Environment/IaC/Free-Tier strategy checks: PASS")
+    print("Environment/IaC/Free-Tier/Codex strategy checks: PASS")
     return 0
 
 
