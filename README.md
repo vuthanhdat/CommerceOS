@@ -34,7 +34,52 @@ The system is designed around AWS serverless services and event-driven integrati
 
 We start as a **modular serverless architecture**, not as microservices. Business domains have explicit boundaries, contracts, events, ownership, and data access rules. Deployment boundaries may be split later only when scale, team ownership, isolation, or reliability requirements justify it.
 
-## Documentation
+## Development model — Harness Engineering
+
+Before Phase 0 business/AWS implementation, CommerceOS establishes **Phase H0 — Engineering Harness**.
+
+The goal is to make the repository itself provide enough context, constraints, verification, and feedback that AI agents can work reliably without depending on conversational memory.
+
+```text
+Human intent
+    ↓
+Task specification
+    ↓
+Agent implementation
+    ↓
+Mechanical verification
+    ↓
+Review
+    ↓
+Human product validation
+    ↓
+Failure → harness improvement
+```
+
+Start here when developing:
+
+- [Agent constitution](AGENTS.md)
+- [H0 engineering harness](docs/development/00-engineering-harness.md)
+- [Task specification process](docs/development/01-task-specification.md)
+- [Definition of Done](docs/development/02-definition-of-done.md)
+- [Architecture rules](docs/development/03-architecture-rules.md)
+- [Testing strategy](docs/development/04-testing-strategy.md)
+- [ADR process](docs/development/05-adr-process.md)
+- [Agent workflow](docs/development/06-agent-workflow.md)
+- [Harness improvement loop](docs/development/07-harness-improvement.md)
+- [H0 exit checklist](docs/development/08-h0-exit-checklist.md)
+- [Task template](tasks/TASK-TEMPLATE.md)
+- [ADR template](docs/adr/ADR-000-template.md)
+
+Run the repository-level verification with:
+
+```bash
+python3 scripts/harness_check.py
+```
+
+This command is intentionally lightweight during H0 and will become the single entry point for build, lint, unit, integration, architecture, IaC, and security checks as the implementation grows.
+
+## Product & architecture documentation
 
 - [Product definition & functional scope](docs/00-product-definition.md)
 - [Non-functional requirements](docs/01-non-functional-requirements.md)
