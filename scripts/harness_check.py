@@ -43,6 +43,13 @@ REQUIRED_FILES = [
     "docs/development/12-infrastructure-as-code.md",
     "docs/development/13-free-tier-and-credit-guardrails.md",
     "docs/development/14-codex-multi-agent-and-worktrees.md",
+    "docs/development/15-planning-factory-and-task-maturity.md",
+    "docs/agents/domain-architect.md",
+    "docs/agents/technical-architect.md",
+    "docs/agents/backlog-planner.md",
+    "docs/agents/builder.md",
+    "docs/agents/reviewer.md",
+    "docs/agents/verification.md",
     "docs/adr/ADR-000-template.md",
     "docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md",
     "tasks/TASK-TEMPLATE.md",
@@ -207,6 +214,29 @@ def check_development_strategy(errors: list[str]) -> None:
             fail("Codex operating model must preserve the default two-Builder concurrency limit", errors)
 
 
+def check_planning_factory(errors: list[str]) -> None:
+    planning_path = ROOT / "docs" / "development" / "15-planning-factory-and-task-maturity.md"
+    if planning_path.exists():
+        text = planning_path.read_text(encoding="utf-8")
+        for required in ["Outline", "Refined", "Ready", "BLOCKED — PLANNING DECISION REQUIRED"]:
+            if required not in text:
+                fail(f"Planning factory must preserve task maturity/stop rule: {required}", errors)
+
+    task_template = ROOT / "tasks" / "TASK-TEMPLATE.md"
+    if task_template.exists():
+        text = task_template.read_text(encoding="utf-8")
+        if "Specification maturity: Outline" not in text:
+            fail("Task template must default new tasks to Specification maturity: Outline", errors)
+        if "## Planning readiness" not in text:
+            fail("Task template must include a Planning readiness section", errors)
+
+    agents_path = ROOT / "AGENTS.md"
+    if agents_path.exists():
+        text = agents_path.read_text(encoding="utf-8")
+        if "Only a `Ready` task may be assigned to a Builder" not in text:
+            fail("AGENTS.md must forbid Builder execution of non-Ready tasks", errors)
+
+
 def run_application_checks(errors: list[str]) -> None:
     commands = [
         ("Restore .NET dependencies", ["dotnet", "restore", "CommerceOS.slnx"]),
@@ -249,6 +279,7 @@ def main() -> int:
     check_adrs(errors)
     check_h0_definition(errors)
     check_development_strategy(errors)
+    check_planning_factory(errors)
 
     for relative in ["README.md", "AGENTS.md"]:
         check_local_markdown_links(ROOT / relative, errors)
@@ -268,6 +299,7 @@ def main() -> int:
     print("README/AGENTS local-link checks: PASS")
     print("Phase H0 definition check: PASS")
     print("Environment/IaC/Free-Tier/Codex strategy checks: PASS")
+    print("Planning factory/task-maturity/agent-role checks: PASS")
     print("Application build/test/architecture/CDK checks: PASS")
     return 0
 
