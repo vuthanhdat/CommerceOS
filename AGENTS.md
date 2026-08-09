@@ -10,8 +10,9 @@ Read, in this order:
 2. the active task under `tasks/active/` (or the task explicitly named by the user)
 3. relevant product/domain documents under `docs/`
 4. `docs/development/03-architecture-rules.md`
-5. relevant ADRs under `docs/adr/`
-6. domain-local `AGENTS.md` files if present
+5. `docs/development/14-codex-multi-agent-and-worktrees.md` when using Codex or parallel agents
+6. relevant ADRs under `docs/adr/`
+7. domain-local `AGENTS.md` files if present
 
 Do not implement from the task title alone.
 
@@ -71,7 +72,26 @@ These rules are mandatory unless an accepted ADR explicitly changes them.
 - Avoid always-on infrastructure when a serverless/pay-per-use alternative satisfies the requirement.
 - No NAT Gateway, ALB, EC2, or always-on relational database may be introduced casually.
 
-## 3. Task discipline
+## 3. Codex model and worktree policy
+
+CommerceOS uses a **Luna-first** Codex policy.
+
+- Use Luna by default for implementation, tests, routine refactoring, documentation, straightforward CDK work, and normal review.
+- Escalate to a stronger reasoning model for business/domain design, architecture/ADR decisions, security/tenant model design, accounting semantics, payment ambiguity/idempotency, difficult concurrency/distributed-system reasoning, or high-risk review.
+- Do not escalate simply because a task is large; escalate when reasoning difficulty or consequence of a wrong decision is high.
+- Prefer using expensive reasoning to define the decision/task/invariants once, then let Luna execute the encoded decision repeatedly.
+
+Parallel writable work follows:
+
+> **one writable task = one branch = one worktree**
+
+The primary `main` checkout is the integration/control checkout. Normal agents do not implement feature code directly on `main`.
+
+Default concurrency is at most two active Builder-style coding tasks, and only when task boundaries/contracts are sufficiently independent.
+
+See `docs/development/14-codex-multi-agent-and-worktrees.md` for worktree creation, review isolation, local port/resource isolation, AWS preview isolation, prompts, and cleanup.
+
+## 4. Task discipline
 
 Every non-trivial change should be tied to a task specification using `tasks/TASK-TEMPLATE.md`.
 
@@ -86,7 +106,7 @@ Respect:
 
 Do not expand scope because an adjacent improvement looks useful. Record follow-up work separately.
 
-## 4. Definition of Done
+## 5. Definition of Done
 
 A task is not complete merely because code compiles.
 
@@ -102,7 +122,7 @@ At minimum:
 - documentation/ADR is updated when required;
 - repository verification passes.
 
-## 5. Verification
+## 6. Verification
 
 Run the repository verification command before declaring completion:
 
@@ -114,7 +134,7 @@ As implementation is added, this command will become the single entry point that
 
 Never bypass or delete a failing guardrail simply to make the task pass. Fix the product or explicitly change the rule through the documented architecture/harness process.
 
-## 6. Architecture decisions
+## 7. Architecture decisions
 
 Use `docs/adr/ADR-000-template.md` when a task changes a significant architectural decision, including:
 
@@ -126,7 +146,7 @@ Use `docs/adr/ADR-000-template.md` when a task changes a significant architectur
 - changed accounting integrity model;
 - material cost/reliability/security trade-off.
 
-## 7. Harness improvement rule
+## 8. Harness improvement rule
 
 When a defect or repeated agent mistake is found, do both:
 
@@ -135,7 +155,7 @@ When a defect or repeated agent mistake is found, do both:
 
 The goal is that recurring classes of mistakes become progressively harder to reintroduce.
 
-## 8. Completion summary
+## 9. Completion summary
 
 When finishing work, report briefly:
 
