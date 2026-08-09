@@ -35,7 +35,13 @@ REQUIRED_FILES = [
     "docs/development/06-agent-workflow.md",
     "docs/development/07-harness-improvement.md",
     "docs/development/08-h0-exit-checklist.md",
+    "docs/development/09-development-environment.md",
+    "docs/development/10-testing-and-cloud-verification.md",
+    "docs/development/11-ci-cd-pipeline.md",
+    "docs/development/12-infrastructure-as-code.md",
+    "docs/development/13-free-tier-and-credit-guardrails.md",
     "docs/adr/ADR-000-template.md",
+    "docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md",
     "tasks/TASK-TEMPLATE.md",
 ]
 
@@ -155,6 +161,27 @@ def check_h0_definition(errors: list[str]) -> None:
         fail("H0 checklist must explicitly define H0 as preceding Phase 0", errors)
 
 
+def check_development_strategy(errors: list[str]) -> None:
+    environment_path = ROOT / "docs" / "development" / "09-development-environment.md"
+    if environment_path.exists():
+        text = environment_path.read_text(encoding="utf-8")
+        for required in ["local", "dev", "staging", "preview"]:
+            if required not in text.lower():
+                fail(f"Development environment strategy must mention '{required}'", errors)
+
+    iac_path = ROOT / "docs" / "development" / "12-infrastructure-as-code.md"
+    if iac_path.exists():
+        text = iac_path.read_text(encoding="utf-8")
+        if "AWS CDK" not in text or "source of truth" not in text.lower():
+            fail("Infrastructure as Code doc must define AWS CDK as source of truth", errors)
+
+    cost_path = ROOT / "docs" / "development" / "13-free-tier-and-credit-guardrails.md"
+    if cost_path.exists():
+        text = cost_path.read_text(encoding="utf-8")
+        if "Free Tier" not in text or "USD 100" not in text:
+            fail("Free Tier guardrail doc must preserve the project credit constraint", errors)
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -162,6 +189,7 @@ def main() -> int:
     check_task_specs(errors)
     check_adrs(errors)
     check_h0_definition(errors)
+    check_development_strategy(errors)
 
     for relative in ["README.md", "AGENTS.md"]:
         check_local_markdown_links(ROOT / relative, errors)
@@ -177,6 +205,7 @@ def main() -> int:
     print("Task/ADR structure checks: PASS")
     print("README/AGENTS local-link checks: PASS")
     print("Phase H0 definition check: PASS")
+    print("Environment/IaC/Free-Tier strategy checks: PASS")
     return 0
 
 
