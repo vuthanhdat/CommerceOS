@@ -1,6 +1,6 @@
 # CommerceOS — Phase H0 Exit Checklist
 
-Phase H0 precedes **Phase 0 — Repository & AWS foundation** in `docs/07-delivery-roadmap.md`.
+Phase H0 precedes the **Phase 0 — Repository & AWS foundation** defined in `docs/07-delivery-roadmap.md`.
 
 Its purpose is to ensure that AI-assisted development begins with repository-level context, constraints, verification, and feedback loops rather than adding them after the codebase has already drifted.
 
