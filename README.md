@@ -34,6 +34,21 @@ The system is designed around AWS serverless services and event-driven integrati
 
 We start as a **modular serverless architecture**, not as microservices. Business domains have explicit boundaries, contracts, events, ownership, and data access rules. Deployment boundaries may be split later only when scale, team ownership, isolation, or reliability requirements justify it.
 
+## Cost constraint
+
+CommerceOS begins under an **AWS Free Tier / approximately USD 100 available-credit constraint**.
+
+This is treated as an architecture constraint:
+
+- prefer Always Free/monthly-free/pay-per-use serverless services;
+- keep persistent non-production infrastructure tiny;
+- use local development for normal fast feedback;
+- use real AWS dev/preview only when cloud semantics need verification;
+- keep staging on-demand/ephemeral during the learning phase;
+- do not introduce recurring/base-cost services without explicit cost analysis and, when architectural, an ADR.
+
+See [AWS Free Tier & credit guardrails](docs/development/13-free-tier-and-credit-guardrails.md).
+
 ## Development model — Harness Engineering
 
 Before Phase 0 business/AWS implementation, CommerceOS establishes **Phase H0 — Engineering Harness**.
@@ -68,8 +83,14 @@ Start here when developing:
 - [Agent workflow](docs/development/06-agent-workflow.md)
 - [Harness improvement loop](docs/development/07-harness-improvement.md)
 - [H0 exit checklist](docs/development/08-h0-exit-checklist.md)
+- [Development environment strategy](docs/development/09-development-environment.md)
+- [Testing & cloud verification](docs/development/10-testing-and-cloud-verification.md)
+- [CI/CD pipeline](docs/development/11-ci-cd-pipeline.md)
+- [Infrastructure as Code](docs/development/12-infrastructure-as-code.md)
+- [AWS Free Tier & credit guardrails](docs/development/13-free-tier-and-credit-guardrails.md)
 - [Task template](tasks/TASK-TEMPLATE.md)
 - [ADR template](docs/adr/ADR-000-template.md)
+- [ADR-001: AWS CDK as IaC](docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md)
 
 Run the repository-level verification with:
 
@@ -78,6 +99,25 @@ python3 scripts/harness_check.py
 ```
 
 This command is intentionally lightweight during H0 and will become the single entry point for build, lint, unit, integration, architecture, IaC, and security checks as the implementation grows.
+
+## Development/deployment path
+
+CommerceOS uses a hybrid workflow rather than trying to emulate all AWS services locally:
+
+```text
+LOCAL
+fast logic/tests
+   ↓
+AWS DEV / conditional PR PREVIEW
+real IAM/Lambda/API/SQS/EventBridge/Step Functions semantics
+   ↓
+ON-DEMAND STAGING
+production-like E2E/failure verification
+   ↓
+PROD later
+```
+
+All AWS application infrastructure is deployed from version-controlled **AWS CDK**. Manual AWS Console changes are not the infrastructure source of truth.
 
 ## Product & architecture documentation
 
