@@ -74,7 +74,9 @@ Use `N/A` with a short reason when not applicable.
 - Storage impact:
 - Network impact:
 - New AWS resources/services:
+- Free Tier allowance relevant to this task:
 - Expected monthly cost change or `negligible` with rationale:
+- Estimated one-off cloud-test/load-test cost, if any:
 
 ## Test plan
 
@@ -84,6 +86,13 @@ Use `N/A` with a short reason when not applicable.
 - Contract:
 - IaC:
 - E2E/manual:
+- **Cloud verification required?** Yes/No — why:
+- AWS environment/stack(s) required:
+- Preview/staging teardown plan:
+
+A task that changes IAM, API Gateway integration, Lambda packaging/runtime configuration, Cognito, DynamoDB infrastructure/access behavior, SQS/EventBridge/Step Functions semantics, S3 policies/events/lifecycle, or material CDK resources should normally require selected real-AWS verification before it is considered release-ready.
+
+Do not deploy a full AWS preview merely because a task exists. Cloud verification must be proportional to the changed behavior and respect `docs/development/13-free-tier-and-credit-guardrails.md`.
 
 ## Implementation notes
 
@@ -100,7 +109,9 @@ Fill before moving to `tasks/completed/`.
 ### Verification
 
 - `python3 scripts/harness_check.py`: PASS/FAIL
-- implementation checks:
+- local implementation checks:
+- cloud verification: PASS/FAIL/N/A — environment and evidence:
+- ephemeral resource teardown: PASS/N/A
 
 ### Acceptance criteria status
 
