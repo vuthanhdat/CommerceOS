@@ -34,6 +34,7 @@ REQUIRED_FILES = [
     "docs/development/05-adr-process.md",
     "docs/development/06-agent-workflow.md",
     "docs/development/07-harness-improvement.md",
+    "docs/development/08-h0-exit-checklist.md",
     "docs/adr/ADR-000-template.md",
     "tasks/TASK-TEMPLATE.md",
 ]
@@ -144,13 +145,14 @@ def check_adrs(errors: list[str]) -> None:
                 fail(f"ADR missing heading '{heading}': {path.relative_to(ROOT)}", errors)
 
 
-def check_roadmap_h0(errors: list[str]) -> None:
-    path = ROOT / "docs" / "07-delivery-roadmap.md"
+def check_h0_definition(errors: list[str]) -> None:
+    path = ROOT / "docs" / "development" / "08-h0-exit-checklist.md"
     if not path.exists():
         return
+
     text = path.read_text(encoding="utf-8")
-    if "Phase H0" not in text and "PHASE H0" not in text:
-        fail("Delivery roadmap must define Phase H0 — Engineering Harness", errors)
+    if "Phase H0" not in text or "Phase 0" not in text:
+        fail("H0 checklist must explicitly define H0 as preceding Phase 0", errors)
 
 
 def main() -> int:
@@ -159,7 +161,7 @@ def main() -> int:
     check_required_files(errors)
     check_task_specs(errors)
     check_adrs(errors)
-    check_roadmap_h0(errors)
+    check_h0_definition(errors)
 
     for relative in ["README.md", "AGENTS.md"]:
         check_local_markdown_links(ROOT / relative, errors)
@@ -174,7 +176,7 @@ def main() -> int:
     print(f"Required harness files: {len(REQUIRED_FILES)}")
     print("Task/ADR structure checks: PASS")
     print("README/AGENTS local-link checks: PASS")
-    print("Phase H0 roadmap check: PASS")
+    print("Phase H0 definition check: PASS")
     return 0
 
 
