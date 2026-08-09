@@ -7,14 +7,44 @@ This repository is developed with a **Harness Engineering** workflow. Agents are
 Read, in this order:
 
 1. `README.md`
-2. the active task under `tasks/active/` (or the task explicitly named by the user)
-3. relevant product/domain documents under `docs/`
-4. `docs/development/03-architecture-rules.md`
-5. `docs/development/14-codex-multi-agent-and-worktrees.md` when using Codex or parallel agents
-6. relevant ADRs under `docs/adr/`
-7. domain-local `AGENTS.md` files if present
+2. `docs/development/15-planning-factory-and-task-maturity.md`
+3. the active task under `tasks/active/` (or the task explicitly named by the user)
+4. the role contract under `docs/agents/` when operating as a specialized agent
+5. relevant product/domain documents under `docs/`
+6. `docs/development/03-architecture-rules.md`
+7. `docs/development/14-codex-multi-agent-and-worktrees.md` when using Codex or parallel agents
+8. relevant ADRs under `docs/adr/`
+9. domain-local `AGENTS.md` files if present
 
 Do not implement from the task title alone.
+
+### Planning gate
+
+A file existing under `tasks/backlog/` is **not** evidence that it is implementation-ready.
+
+The generated backlog is candidate planning material until each task is individually refined. Tasks use the maturity model:
+
+```text
+Outline → Refined → Ready → Active → Completed
+```
+
+Only a `Ready` task may be assigned to a Builder. A Builder that encounters an Outline/Refined task or an unresolved business/architecture decision must stop with `BLOCKED — PLANNING DECISION REQUIRED` instead of guessing.
+
+Use these planning roles before routine implementation where applicable:
+
+```text
+Domain Architect
+      ↓
+Technical Architect
+      ↓
+Backlog Planner
+      ↓
+Ready task
+      ↓
+Builder
+```
+
+Agents communicate through repository artifacts, task files, ADRs/contracts, PR findings, and CI evidence rather than relying on private cross-thread conversation as the source of truth.
 
 ## 2. Core product invariants
 
@@ -91,12 +121,27 @@ Default concurrency is at most two active Builder-style coding tasks, and only w
 
 See `docs/development/14-codex-multi-agent-and-worktrees.md` for worktree creation, review isolation, local port/resource isolation, AWS preview isolation, prompts, and cleanup.
 
-## 4. Task discipline
+## 4. Specialized agent roles
+
+Role contracts are stored under `docs/agents/`.
+
+- `domain-architect.md` — business/domain ownership and invariants; strong reasoning model.
+- `technical-architect.md` — module/contracts/persistence/integration/ADR decisions; strong reasoning model.
+- `backlog-planner.md` — task graph, maturity, dependency reconciliation; Luna unless deeper reasoning is needed.
+- `builder.md` — implement one Ready task; Luna by default.
+- `reviewer.md` — independent review; Luna, escalating for high-risk review.
+- `verification.md` — failure-oriented verification; Luna, escalating for complex distributed-system analysis.
+
+A role may write only the artifact types allowed by its role contract unless the human explicitly changes the assignment.
+
+## 5. Task discipline
 
 Every non-trivial change should be tied to a task specification using `tasks/TASK-TEMPLATE.md`.
 
 Respect:
 
+- Specification maturity
+- Dependencies
 - Goal
 - Business context
 - In scope
@@ -106,7 +151,9 @@ Respect:
 
 Do not expand scope because an adjacent improvement looks useful. Record follow-up work separately.
 
-## 5. Definition of Done
+Before a task becomes Ready, apply `docs/development/15-planning-factory-and-task-maturity.md`. If a Builder would need to make a material product/domain/architecture decision, the task is not Ready.
+
+## 6. Definition of Done
 
 A task is not complete merely because code compiles.
 
@@ -120,9 +167,10 @@ At minimum:
 - failure/idempotency behavior is considered for distributed operations;
 - architecture boundaries still hold;
 - documentation/ADR is updated when required;
-- repository verification passes.
+- repository verification passes;
+- required cloud verification and ephemeral teardown are complete where applicable.
 
-## 6. Verification
+## 7. Verification
 
 Run the repository verification command before declaring completion:
 
@@ -130,23 +178,24 @@ Run the repository verification command before declaring completion:
 python3 scripts/harness_check.py
 ```
 
-As implementation is added, this command will become the single entry point that orchestrates build, lint, unit, integration, architecture, IaC, and security checks.
+As implementation is added, this command is the stable entry point that orchestrates build, lint, unit, integration, architecture, IaC, frontend, and security checks.
 
 Never bypass or delete a failing guardrail simply to make the task pass. Fix the product or explicitly change the rule through the documented architecture/harness process.
 
-## 7. Architecture decisions
+## 8. Architecture decisions
 
 Use `docs/adr/ADR-000-template.md` when a task changes a significant architectural decision, including:
 
 - new AWS managed service;
-- new persistence technology;
+- new persistence technology or material access-model strategy;
 - new cross-domain integration mechanism;
 - new public/external contract;
 - changed tenant-isolation model;
 - changed accounting integrity model;
-- material cost/reliability/security trade-off.
+- material cost/reliability/security trade-off;
+- runtime/deployment model changes.
 
-## 8. Harness improvement rule
+## 9. Harness improvement rule
 
 When a defect or repeated agent mistake is found, do both:
 
@@ -155,7 +204,9 @@ When a defect or repeated agent mistake is found, do both:
 
 The goal is that recurring classes of mistakes become progressively harder to reintroduce.
 
-## 9. Completion summary
+Do not convert every one-off mistake into a permanent rule. Prefer harness changes for repeated, severe, architecture-drifting, security/financial, or mechanically detectable failure classes.
+
+## 10. Completion summary
 
 When finishing work, report briefly:
 
@@ -163,4 +214,5 @@ When finishing work, report briefly:
 - which acceptance criteria were satisfied;
 - verification run and result;
 - architecture/security/cost implications;
+- cloud verification/teardown result when applicable;
 - follow-up items that remain out of scope.
