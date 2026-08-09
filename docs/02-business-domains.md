@@ -1,685 +1,211 @@
-# CommerceOS — Business Domains
+# CommerceOS — Business-Domain Baseline
 
-## 1. Domain map
+_Baseline reconciled by TASK-0087 on 2026-08-09._
 
-CommerceOS is organized around business capabilities first, AWS services second.
+## 1. Purpose and authority
 
-```text
-                           COMMERCEOS
-                               │
-        ┌──────────────────────┼──────────────────────┐
-        │                      │                      │
-        ▼                      ▼                      ▼
-   TENANT/IDENTITY         COMMERCE CORE          OPERATIONS
-        │                      │                      │
-        │                 Catalog / Sales        Inventory
-        │                 Customers              Procurement
-        │                 Pricing                Fulfillment
-        │
-        └──────────────────────┬──────────────────────┘
-                               │
-                               ▼
-                           PAYMENTS
-                               │
-                               ▼
-                           ACCOUNTING
-                               │
-                               ▼
-                           REPORTING
+CommerceOS is organized around business capabilities first. This document is the canonical map of bounded contexts, fact ownership, and cross-domain invariants. It refines the directional examples in the product, feature, roadmap, and candidate-task documents.
 
-Supporting platform domains:
-- Product Data Ingestion
-- Notification
-- Audit
-- Files/Media
-- Observability/Operations
-```
+When documents disagree about business ownership or meaning:
 
-The domains below are logical/business boundaries. They are **not automatically microservices**.
+1. an explicit human product decision takes precedence;
+2. this baseline and its linked domain documents take precedence over candidate-task assumptions;
+3. a Technical Architect may choose implementation mechanisms but may not change the business meaning;
+4. a Builder must stop rather than fill a documented product-decision gap.
 
----
+This baseline deliberately does not select services, persistence schemas or keys, deployment boundaries, message transports, or synchronous versus asynchronous integration.
 
-## 2. Classification
+Detailed baseline documents:
 
-### Core domains
+- [Tenant & Merchant Access](domains/tenant-identity.md)
+- [Catalog](domains/catalog.md)
+- [Commerce Operations and Cross-Domain Facts](domains/commerce-operations.md)
+- [Human Product Decisions](domains/product-decisions.md)
 
-Capabilities that define the educational/business value of CommerceOS:
+## 2. Modeling vocabulary
 
-1. Sales & Order Management
-2. Inventory
-3. Procurement
-4. Accounting
-5. Integration between operational events and accounting effects
+- A **bounded context** owns a business language, its rules, and the authoritative facts in that language.
+- An **aggregate root** is the consistency boundary through which a business change is accepted or rejected. It is not a table or deployment unit.
+- An **entity** has durable identity inside a bounded context.
+- A **value object** is defined by its value, such as Money, SKU, Quantity, or Address.
+- A **business fact** is a past-tense statement that the owning context has accepted. The names in this baseline are semantic candidates, not published event schemas.
+- A **request** asks another context to attempt work. It is not evidence that the work succeeded.
+- A **projection** is derived for reading. It is never allowed to become an accidental transactional source of truth.
+- An **audit record** describes actor and security/operational context. It is not a substitute for a business fact.
 
-### Supporting domains
-
-1. Catalog
-2. Customer/CRM
-3. Pricing & Promotion
-4. Mock Payment
-5. Product Data Ingestion
-6. Reporting/Analytics
-
-### Generic/platform domains
-
-1. Tenant & Identity
-2. Authorization
-3. Notification
-4. Audit
-5. Files/Media
-6. Operational monitoring
-
----
-
-# 3. Tenant & Identity
-
-## Responsibility
-
-Owns SaaS tenancy and merchant-user membership.
-
-## Main entities
-
-- Tenant
-- BusinessProfile
-- UserMembership
-- Role
-- Permission
-- Invitation
-
-## Invariants
-
-- a merchant user acts inside an authorized tenant context;
-- membership must be active;
-- platform administration is separate from merchant authorization;
-- tenant-scoped resources cannot be accessed using another tenant's identity.
-
-## Commands
-
-- RegisterTenant
-- InviteStaff
-- AcceptInvitation
-- AssignRole
-- DisableMembership
-- UpdateBusinessProfile
-
-## Events
-
-- TenantCreated
-- StaffInvited
-- StaffJoined
-- RoleAssigned
-- MembershipDisabled
-
-## Does not own
-
-- products;
-- orders;
-- accounting journals;
-- inventory.
-
----
-
-# 4. Catalog
-
-## Responsibility
-
-Defines what a merchant can sell.
-
-## Main entities
-
-- Product
-- ProductVariant (later)
-- Category
-- Brand
-- ProductImage
-- ProductSpecification
-- ExternalProductMapping
-
-## Invariants
-
-- SKU is unique within a tenant according to defined policy;
-- archived products cannot be newly published;
-- merchant canonical data remains merchant-owned even when mapped to crawler source data;
-- source-data changes never silently overwrite merchant overrides.
-
-## Commands
-
-- CreateProduct
-- UpdateProduct
-- PublishProduct
-- UnpublishProduct
-- ArchiveProduct
-- ImportExternalProduct
-- MapExternalProduct
-
-## Events
-
-- ProductCreated
-- ProductUpdated
-- ProductPublished
-- ProductUnpublished
-- ProductImported
-- ExternalProductMapped
-
-## Does not own
-
-- available stock quantity;
-- sales order;
-- accounting value.
-
-Catalog can display inventory projections but does not mutate stock.
-
----
-
-# 5. Storefront
-
-## Responsibility
-
-Public customer-facing projection of tenant catalog and checkout entry point.
-
-## Main concepts
-
-- storefront configuration;
-- public catalog projection;
-- product detail projection;
-- cart session;
-- checkout request.
-
-Storefront should remain thin. It orchestrates customer interaction but does not become owner of order, inventory, or payment state.
-
----
-
-# 6. Sales & Order Management
-
-## Responsibility
-
-Owns the commercial agreement that a customer intends to purchase specific items at captured prices and quantities.
-
-## Main entities
-
-- Cart/CheckoutRequest
-- SalesOrder
-- SalesOrderLine
-- OrderPriceSnapshot
-- OrderStatusHistory
-- RefundRequest
-
-## Initial order states
+## 3. Bounded-context map
 
 ```text
-Draft
-  ↓
-PendingPayment
-  ↓
-Confirmed
-  ↓
-Allocated
-  ↓
-Fulfilled
-  ↓
-Completed
-```
-
-Failure/exception states:
-
-- PaymentFailed
-- Cancelled
-- PartiallyRefunded
-- Refunded
-
-## Invariants
-
-- repeated checkout with same idempotency key cannot create multiple business orders;
-- order price is a snapshot, not a live pointer to current product price;
-- completed order lines are not retroactively rewritten because product metadata later changes;
-- invalid order-state transitions are rejected.
-
-## Commands
-
-- CheckoutCart
-- CreateOrder
-- ConfirmOrder
-- CancelOrder
-- FulfillOrder
-- CompleteOrder
-- RequestRefund
-
-## Events
-
-- OrderPlaced
-- OrderConfirmed
-- OrderCancelled
-- OrderAllocated
-- OrderFulfilled
-- OrderCompleted
-- RefundRequested
-- OrderRefunded
-
-## Dependencies
-
-Consumes catalog information and inventory availability through explicit contracts/read models.
-
-Publishes business facts used by payment, inventory, accounting, notification, and analytics.
-
----
-
-# 7. Inventory
-
-## Responsibility
-
-Owns physical stock state and stock movement.
-
-## Main entities
-
-- Warehouse
-- StockItem
-- StockReservation
-- StockMovement
-- InventoryAdjustment
-
-## Quantities
-
-```text
-OnHand
-Reserved
-Available = OnHand - Reserved
-```
-
-## Movement types
-
-- Receive
-- Reserve
-- Release
-- Issue
-- Return
-- AdjustmentIncrease
-- AdjustmentDecrease
-
-## Invariants
-
-- reservation cannot reduce available stock below permitted threshold;
-- every stock change has a movement record;
-- stock movement is traceable to business source where applicable;
-- duplicate events cannot create duplicate stock movements.
-
-## Commands
-
-- ReserveStock
-- ReleaseReservation
-- ReceiveStock
-- IssueStock
-- ReturnStock
-- AdjustStock
-
-## Events
-
-- StockReserved
-- StockReservationFailed
-- StockReleased
-- StockReceived
-- StockIssued
-- StockReturned
-- StockAdjusted
-- LowStockDetected
-
-## Does not own
-
-- selling price;
-- customer order lifecycle;
-- journal entries.
-
----
-
-# 8. Procurement
-
-## Responsibility
-
-Owns merchant purchasing from suppliers.
-
-## Main entities
-
-- Supplier
-- PurchaseOrder
-- PurchaseOrderLine
-- GoodsReceipt
-- SupplierInvoiceReference
-
-## Initial lifecycle
-
-```text
-Draft
-  ↓
-Submitted
-  ↓
-GoodsReceived
-  ↓
-Invoiced
-  ↓
-Paid
-  ↓
-Closed
-```
-
-## Invariants
-
-- goods receipt quantity cannot exceed allowed PO quantity unless explicitly approved;
-- received items become inventory through an explicit inventory command/event;
-- supplier payment does not directly edit accounting tables.
-
-## Commands
-
-- CreatePurchaseOrder
-- SubmitPurchaseOrder
-- ReceiveGoods
-- RecordSupplierInvoice
-- MarkSupplierPaid
-- ClosePurchaseOrder
-
-## Events
-
-- PurchaseOrderCreated
-- PurchaseOrderSubmitted
-- GoodsReceived
-- SupplierInvoiceRecorded
-- SupplierPaid
-- PurchaseOrderClosed
-
----
-
-# 9. Customer / CRM
-
-## Responsibility
-
-Owns customer profile and merchant-facing customer relationship data.
-
-## Main entities
-
-- Customer
-- CustomerContact
-- CustomerAddress
-- CustomerNote (later)
-
-Order history is a projection/reference to Sales, not duplicated ownership.
-
-## Events
-
-- CustomerCreated
-- CustomerUpdated
-
----
-
-# 10. Pricing & Promotion
-
-## Responsibility
-
-Owns rules that transform catalog base price into a sellable offer.
-
-Initial scope:
-
-- base price reference;
-- authorized manual discount;
-- scheduled promotion later.
-
-Future concepts:
-
-- Promotion
-- Coupon
-- PriceList
-- DiscountRule
-- Campaign
-
-## Events
-
-- PromotionScheduled
-- PromotionActivated
-- PromotionExpired
-- PriceRuleChanged
-
----
-
-# 11. Mock Payment
-
-## Responsibility
-
-Simulates an external payment provider boundary.
-
-The mock provider should behave like a third-party integration rather than a helper class inside Order.
-
-## Main entities
-
-- PaymentIntent
-- PaymentAttempt
-- Refund
-- WebhookDelivery
-
-## States
-
-- Created
-- Authorized
-- Captured
-- Declined
-- Pending
-- TimedOut
-- Refunded
-
-## Events
-
-Provider-facing webhook events:
-
-- payment.authorized
-- payment.captured
-- payment.failed
-- payment.pending
-- payment.refunded
-
-Internal CommerceOS events after verified webhook handling:
-
-- PaymentAuthorized
-- PaymentCaptured
-- PaymentFailed
-- PaymentRefunded
-
-See `06-mock-payment-provider.md`.
-
----
-
-# 12. Accounting
-
-## Responsibility
-
-Owns the financial ledger representation of business activity.
-
-Accounting does **not** own order fulfillment or inventory operations. It consumes explicit business facts and applies accounting rules.
-
-## Main entities
-
-- Account
-- JournalEntry
-- JournalLine
-- AccountingPeriod (later)
-- PostingRule
-- SourceDocumentReference
-
-## Initial chart-of-account concepts
-
-- Cash
-- Accounts Receivable
-- Inventory
-- Accounts Payable
-- Sales Revenue
-- Cost of Goods Sold
-- Refund/Contra Revenue where needed
-- Inventory Adjustment Expense/Gain where needed
-
-## Core invariants
-
-1. Posted journal is immutable.
-2. Sum(debit) equals sum(credit).
-3. Posting source/event is traceable.
-4. Same idempotency/source key cannot be posted twice.
-5. Correction uses reversal and replacement rather than direct mutation.
-
-## Example — sale
-
-For a product sold at 2,000,000 with cost 1,200,000:
-
-```text
-Dr Cash                    2,000,000
-    Cr Sales Revenue                   2,000,000
-
-Dr Cost of Goods Sold      1,200,000
-    Cr Inventory                       1,200,000
-```
-
-The exact timing of revenue/COGS recognition will be a documented project accounting policy and kept consistent.
-
-## Commands
-
-- CreateManualJournal
-- PostJournal
-- ReverseJournal
-- GeneratePostingFromBusinessEvent
-
-## Events
-
-- JournalCreated
-- JournalPosted
-- JournalRejected
-- JournalReversed
-
-## Reporting projections
-
-- General Ledger
-- Trial Balance
-- Accounts Receivable
-- Accounts Payable
-- Profit & Loss later
-- Balance Sheet later
-
----
-
-# 13. Reporting & Analytics
-
-## Responsibility
-
-Produces read-optimized projections and aggregates. It should not become a transactional source of truth.
-
-Examples:
-
-- daily revenue;
-- order count;
-- average order value;
-- gross-profit projection;
-- inventory value;
-- top products;
-- outstanding receivables/payables;
-- failed payment rate;
-- crawler changes;
-- tenant/platform usage.
-
-Input primarily comes from domain events and scheduled aggregation.
-
----
-
-# 14. Product Data Ingestion
-
-## Responsibility
-
-Collects, snapshots, normalizes, and proposes external product data without making external sources the canonical commerce database.
-
-## Main entities
-
-- DataSource
-- CrawlTarget
-- CrawlRun
-- RawSourceSnapshot
-- NormalizedSourceProduct
-- SourcePriceSnapshot
-- ImportCandidate
-
-## Events
-
-- CrawlScheduled
-- CrawlStarted
-- CrawlSucceeded
-- CrawlFailed
-- ProductSourceCrawled
-- ProductSourceChanged
-- ImportCandidateCreated
-
-See `05-product-data-ingestion.md`.
-
----
-
-# 15. Notification
-
-Consumes events and creates non-critical user notifications.
-
-Examples:
-
-- payment failure;
-- low stock;
-- failed workflow;
-- crawl failure;
-- DLQ alert;
-- order status change.
-
-Notification failure must not roll back already committed business transactions.
-
----
-
-# 16. Audit
-
-Owns append-oriented security/operation audit records.
-
-Audit is different from business event storage:
-
-- **business event** describes a domain fact;
-- **audit record** describes who performed an operation and the security/operational context.
-
----
-
-# 17. High-level domain interaction
-
-```text
-External Product Sources
-          │
-          ▼
- Product Data Ingestion
-          │
-          ▼
-        Catalog ───────────────┐
+PLATFORM GOVERNANCE
+  Tenant Management ── Merchant Access ── Audit
           │                    │
-          ▼                    │
-      Storefront               │
-          │                    │
-          ▼                    │
-        Sales                  │
-      /       \                │
-     ▼         ▼               │
-Payment     Inventory ◄────────┘
-               ▲
-               │
-          Procurement
+          └──────── trusted tenant authority ────────┐
+                                                     │
+MERCHANT COMMERCE                                    ▼
+  Product Data Ingestion ──review/import──► Catalog ──► Storefront
+                                                │            │
+                                      Pricing ──┘            │ checkout intent
+                                                             ▼
+  Customer/CRM ───────────────────────────────────────────► Sales
+                                                             │
+OPERATIONS                                                   ├────► Payments ───► Mock Payment Provider
+  Procurement ──goods receipt──► Inventory ◄──allocation────┘
+        │                            │
+        └──────── business facts ────┴──────────────┐
+                                                    ▼
+                                              Accounting
+                                                    │
+                                                    ▼
+                                                Reporting
 
-Sales / Payment / Inventory / Procurement
-                 │
-                 ▼
-            Domain Events
-                 │
-                 ▼
-             Accounting
-                 │
-                 ▼
-             Reporting
+Supporting contexts: Notification and Files/Media.
 ```
 
----
+The arrows show knowledge or business dependency, not a call style, service boundary, queue, transaction, or data-store relationship.
 
-# 18. Integration rule
+## 4. Context responsibilities
 
-A useful review question for every implementation change:
+| Bounded context | Owns | Does not own |
+|---|---|---|
+| Tenant Management | Tenant identity, lifecycle, and one tenant-owned Business Profile | login credentials, staff membership, merchant transactions |
+| Merchant Access | invitations, tenant memberships, role assignment(s) under the approved cardinality policy, active/disabled access status | authentication credentials, products, orders, domain-specific transaction approval |
+| Catalog | merchant canonical products, SKU policy, category/brand references, publication eligibility, base selling price, media/source associations | stock, negotiated/final order price, external source snapshots, accounting cost |
+| Pricing & Promotion | rules that turn a catalog base price into an eligible offer | canonical product, captured order price, journal value |
+| Storefront | public experience, tenant-bound transient cart, public projections and checkout intent | products, orders, inventory, payment state |
+| Sales & Order Management | accepted checkout, commercial order, immutable order-line snapshots, cancellation intent, refund request and order history | current product, physical stock, provider payment, journal entries |
+| Customer/CRM | merchant-owned customer profile and contact preferences | authentication, order history source, receivable ledger balance |
+| Inventory | stock by product/location, reservations, movements, adjustments, and receipt/issue/return quantity effects | product merchandising, Procurement's physical goods-receipt evidence, order lifecycle, monetary ledger |
+| Procurement | suppliers, purchase commitments, goods-receipt documents, supplier-invoice business references and operational settlement status | stock balances, journal entries, payment-provider behavior |
+| Payments | CommerceOS's payment obligation, attempts, known/unknown outcome, captured/refunded amounts, mapping to provider references | provider-internal state, order agreement, revenue recognition |
+| Mock Payment Provider | simulated provider payment intents, operations, refunds, and callback attempts | CommerceOS order, internal Payment, accounting policy |
+| Accounting | chart of accounts, posting policy, journal entries/lines, reversals, ledger truth | operational order, stock, payment, or purchase state |
+| Reporting | derived operational and financial projections | any transactional source of truth |
+| Product Data Ingestion | source policy evidence, acquisition runs, immutable external snapshots, normalization results, import candidates | canonical merchant product, sell price, publication state |
+| Notification | delivery intent and delivery outcome for non-critical notifications | the business outcome that caused a notification |
+| Audit | append-oriented evidence of actor, action, target, outcome, and correlation | domain state or business-event history |
+| Files/Media | merchant-owned binary asset identity and safe media metadata when such assets are introduced | a Product's decision to associate/order media, external-content rights policy |
 
-> **Which domain owns this fact, and why is another domain allowed to know it?**
+No context may claim authority by reading or writing another context's private representation.
 
-If the answer is "because both modules use the same DynamoDB table/item", the boundary is probably wrong.
+## 5. Source-of-truth rules
+
+| Business question | Authoritative context | Other contexts may hold only |
+|---|---|---|
+| Does this merchant tenant exist and what is its profile? | Tenant Management | identity/reference and approved projection |
+| May this authenticated subject act for this tenant now? | Merchant Access | trusted decision/result, never a client assertion |
+| What product does the merchant currently offer? | Catalog | public or task-specific snapshot |
+| What base price is currently configured? | Catalog | resolved offer or immutable order snapshot |
+| What price did the shopper agree to? | Sales | copied immutable line/total snapshot |
+| How much stock exists, is held, or was moved? | Inventory | availability projection or movement reference |
+| What did the customer order and what is its commercial state? | Sales | order reference and approved projection |
+| What payment outcome does CommerceOS currently know? | Payments | payment reference and business facts |
+| What did the simulated provider commit? | Mock Payment Provider | verified provider result/reference |
+| What did the merchant order from a supplier? | Procurement | purchase or receipt reference |
+| What has been posted to the books? | Accounting | financial projections or journal reference |
+| What did an external source show at a point in time? | Product Data Ingestion | source-snapshot reference and merchant-approved imported values |
+| What is a dashboard/KPI value? | Reporting | a derived value with provenance and freshness, never a command authority |
+
+### Price and cost vocabulary
+
+The following terms are intentionally different:
+
+- **Catalog base selling price** — the merchant's current starting price for a Product.
+- **Resolved offer price** — a price after applicable Pricing rules, when that context is active.
+- **Order price snapshot** — the immutable price accepted by Sales for a particular order line.
+- **Catalog cost reference** — optional merchant planning/reference data only.
+- **Inventory cost basis** — the value assigned to stock according to an approved accounting/valuation policy.
+- **Posted accounting amount** — the amount recorded in an immutable journal.
+
+Changing one does not silently rewrite another.
+
+## 6. Cross-cutting business invariants
+
+### Tenant authority
+
+- Every tenant-owned aggregate has one immutable owning TenantId.
+- Tenant authority comes from a resolved active Membership or an explicitly modeled platform-administration path, never from request data.
+- Knowing another tenant's identifier or entity identifier confers no visibility.
+- An authentication credential proves identity; it does not by itself prove an active tenant membership.
+
+### Identity and history
+
+- Internal aggregate identifiers are immutable and are not reused.
+- Mutable merchant labels such as names or SKUs do not replace aggregate identity.
+- Historical business documents retain snapshots or stable references required to preserve their original meaning.
+
+### Money and quantity
+
+- A monetary value always carries currency; amounts with different currencies are not added or compared as if equivalent.
+- An accepted order uses one currency unless a later approved product decision adds conversion behavior.
+- Quantities are explicit positive values for order, reservation, receipt, and issue operations. Adjustment direction is represented by its reason/type, not an ambiguous signed input.
+- Rounding, functional currency, tax, and inventory valuation policy remain explicit human decisions where listed in the decision register.
+
+### Business facts
+
+- Fact names are past tense and state what the owning context accepted.
+- `Requested`, `Scheduled`, `Queued`, `Delivered`, or `Failed` is a business fact only when that occurrence has business meaning; a worker/job state alone is technical telemetry.
+- A request such as `ReserveStock` or `CapturePayment` is not proof of `StockReserved` or `PaymentCaptured`.
+- Consumers may derive their own state from an owned fact but must not retroactively change the producer's fact.
+- The same source fact must not create the same logical inventory movement, payment effect, or accounting posting twice.
+
+### Projections and public views
+
+- Storefront and Reporting expose projections; neither can authorize a transaction from stale projected data.
+- Checkout revalidates current Catalog eligibility and authoritative commercial inputs.
+- Inventory availability shown publicly is informative until Inventory accepts a reservation.
+- Projection lag is represented honestly rather than treated as a change in transactional truth.
+
+## 7. First delivery frontier
+
+Tenant Management, Merchant Access, and Catalog are specified at implementation-refinement depth in the linked documents.
+
+Important consequences for the current candidate backlog:
+
+- registration must produce a usable tenant with an initial active Owner as one business outcome; TASK-0006 through TASK-0008 currently split that outcome circularly and must be reconciled before any becomes Ready;
+- verified authentication and active membership are separate checks;
+- a user-supplied TenantId never selects authority;
+- Product is the Catalog aggregate root; Category and Brand are independent tenant-owned reference aggregates;
+- Catalog owns publication eligibility and base selling price, but not stock, final order price, or accounting cost;
+- public availability requires `Published`, while stock availability remains an Inventory concern;
+- exact human decisions that still gate a candidate task are listed by decision ID rather than embedded by a Builder.
+
+## 8. Medium-depth runway
+
+Sales, Inventory, Payments, Procurement, Accounting, Reporting, Product Data Ingestion, Customer/CRM, Pricing, Notification, Audit, and Files/Media are refined in [Commerce Operations and Cross-Domain Facts](domains/commerce-operations.md).
+
+That runway is sufficient to establish:
+
+- who owns each source fact;
+- which state dimensions must not be conflated;
+- which business invariant a future integration must preserve;
+- which apparent event names are requests or technical states rather than accepted facts;
+- where a human product/accounting decision must precede task readiness.
+
+It is not intended to finalize detailed behavior for distant unscheduled features.
+
+## 9. Business error semantics
+
+Domain outcomes are stable business meanings, not HTTP status codes or exception classes.
+
+| Outcome family | Meaning |
+|---|---|
+| ValidationRejected | supplied business values are invalid; no change is accepted |
+| NotFoundOrNotVisible | the aggregate is absent or not visible in the trusted tenant context; cross-tenant existence is not disclosed |
+| NotAuthorized | the actor lacks the required business permission in the trusted context |
+| Conflict | a uniqueness or mutually exclusive business claim already exists |
+| StaleRevision | the attempted change was based on an older aggregate revision |
+| InvalidStateTransition | the requested action is not allowed from the aggregate's current state |
+| AlreadyApplied | the same logical intent was already accepted and its prior result is returned or referenced |
+| OutcomeUnknown | the caller cannot yet know whether an external/independent boundary committed; it is not converted into failure |
+| PolicyBlocked | a governing merchant/platform/source policy prohibits the action |
+
+Context-specific error codes are documented in the detailed baselines. Technical transport mappings belong to TASK-0088.
+
+## 10. Decision and handoff rule
+
+The [Human Product Decisions](domains/product-decisions.md) register is part of this baseline. A pending decision does not authorize a default.
+
+- If a pending decision is marked as a blocker for a candidate task, that task cannot pass the Ready gate.
+- Technical design must preserve the alternatives until the human decision is recorded.
+- Distant decisions may remain deferred when they cannot affect the first implementation frontier.
+- Decisions that change this baseline must update the affected domain document and the register; chat-only conclusions are insufficient.

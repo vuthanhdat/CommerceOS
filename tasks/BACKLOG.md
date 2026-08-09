@@ -67,7 +67,7 @@ Do **not** rewrite all 83 tasks to maximum detail up front. After TASK-0089, ref
 
 | Task | Outcome | Owner | Depends on | Gate |
 |---|---|---|---|---|
-| [TASK-0087](backlog/TASK-0087-domain-baseline-reconciliation.md) | Reconcile implementation-useful business-domain baseline | Domain Architect | product/domain docs | — |
+| [TASK-0087](completed/TASK-0087-domain-baseline-reconciliation.md) | Reconcile implementation-useful business-domain baseline | Domain Architect | product/domain docs | Completed |
 | [TASK-0088](backlog/TASK-0088-technical-architecture-baseline-reconciliation.md) | Reconcile technical architecture baseline | Technical Architect | TASK-0087 | — |
 | [TASK-0089](backlog/TASK-0089-backlog-readiness-and-skeleton-reconciliation.md) | Reconcile candidate backlog, readiness, and Phase 0 skeleton | Backlog Planner | TASK-0087, TASK-0088 | — |
 
