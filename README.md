@@ -88,6 +88,7 @@ Start here when developing:
 - [CI/CD pipeline](docs/development/11-ci-cd-pipeline.md)
 - [Infrastructure as Code](docs/development/12-infrastructure-as-code.md)
 - [AWS Free Tier & credit guardrails](docs/development/13-free-tier-and-credit-guardrails.md)
+- [Codex multi-agent & Git worktree operating model](docs/development/14-codex-multi-agent-and-worktrees.md)
 - [Task template](tasks/TASK-TEMPLATE.md)
 - [ADR template](docs/adr/ADR-000-template.md)
 - [ADR-001: AWS CDK as IaC](docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md)
@@ -99,6 +100,39 @@ python3 scripts/harness_check.py
 ```
 
 This command is intentionally lightweight during H0 and will become the single entry point for build, lint, unit, integration, architecture, IaC, and security checks as the implementation grows.
+
+## Codex operating model
+
+CommerceOS is **Luna-first** for Codex usage.
+
+```text
+Business/domain/architecture reasoning
+        ↓
+stronger reasoning model
+        ↓
+TASK / ADR / invariants
+        ↓
+Luna
+implementation + tests + docs + routine review
+        ↓
+Harness / CI
+```
+
+A stronger reasoning model is reserved for decisions where reasoning difficulty or the consequence of being wrong is high: domain design, architecture, security/tenant isolation, accounting semantics, payment/idempotency, concurrency, difficult distributed-system reasoning, and high-risk review.
+
+Parallel coding follows:
+
+```text
+one writable task
+      =
+one branch
+      =
+one isolated Git worktree
+```
+
+The primary `main` checkout remains the integration/control checkout. The default limit is two concurrent Builder-style coding tasks, and only when their boundaries/contracts are sufficiently independent.
+
+See [Codex multi-agent & Git worktree operating model](docs/development/14-codex-multi-agent-and-worktrees.md) for commands, naming, review isolation, local port isolation, AWS preview isolation, and cleanup.
 
 ## Development/deployment path
 
