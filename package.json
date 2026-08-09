@@ -1,0 +1,33 @@
+{
+  "name": "commerceos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "eslint apps --max-warnings=0",
+    "test": "npm run test --workspaces --if-present",
+    "verify": "npm run lint && npm run build && npm run test",
+    "cdk:synth": "cdk synth --quiet"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.10.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "aws-cdk": "2.1135.1",
+    "eslint": "10.8.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.66.0",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

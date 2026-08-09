@@ -1,0 +1,7 @@
+{
+  "app": "dotnet run --project infra/CommerceOS.Cdk/CommerceOS.Cdk.csproj",
+  "context": {
+    "environment": "dev"
+  }
+}
+

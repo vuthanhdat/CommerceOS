@@ -26,8 +26,8 @@ Its purpose is to ensure that AI-assisted development begins with repository-lev
 - [x] Repository-level harness check exists.
 - [x] CI runs the same harness check.
 - [x] Pull-request checklist references task, tests, architecture, tenant/security, cost, and harness impact.
-- [ ] Application build/lint/unit/integration checks are connected to the single verification entry point — deferred until Phase 0 establishes the concrete application toolchain.
-- [ ] Architecture tests are executable against code — deferred until the first domain assemblies/modules exist.
+- [x] Application build/lint/unit/architecture/IaC checks are connected to the single verification entry point.
+- [x] Architecture tests are executable against the initial Platform module and enforce Domain/Application dependency rules.
 
 ### Agent workflow
 
@@ -46,7 +46,7 @@ Its purpose is to ensure that AI-assisted development begins with repository-lev
 
 H0 is considered **operationally complete enough to begin Phase 0** when all checked items above are present and `python3 scripts/harness_check.py` passes in CI.
 
-The unchecked application-specific items do not block H0 because the code/toolchain does not exist yet. They become Phase 0 deliverables and must be wired into the same verification command before Phase 1 business implementation is considered mature.
+Phase 0 TASK-0003 connected the concrete .NET/React/CDK toolchain and executable architecture tests to the same verification command, closing the application-specific H0 follow-ups before Phase 1 business implementation.
 
 ## First validation task
 

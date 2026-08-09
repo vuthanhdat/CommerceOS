@@ -101,6 +101,51 @@ python3 scripts/harness_check.py
 
 This command is intentionally lightweight during H0 and will become the single entry point for build, lint, unit, integration, architecture, IaC, and security checks as the implementation grows.
 
+## Phase 0 codebase
+
+The concrete foundation uses:
+
+- .NET 10 LTS for the API, modules, tests, and AWS CDK application;
+- React 19 + TypeScript + Vite for Storefront and Back Office;
+- Node.js 24 and npm workspaces for frontend/CDK tooling;
+- Python 3.12+ for the repository harness and local launcher.
+
+Install those prerequisites, then run the one repository verification command:
+
+```bash
+python3 scripts/harness_check.py
+```
+
+It restores locked dependencies, verifies formatting and linting, builds both stacks, runs unit/architecture/IaC/frontend tests, and synthesizes the cost-safe CDK skeleton without deploying AWS resources.
+
+Repository shape:
+
+```text
+apps/
+  storefront/                  public customer application
+  backoffice/                  merchant employee application
+src/
+  CommerceOS.Api/              HTTP delivery and composition root
+  Modules/<Module>/
+    *.Domain/                  business rules; no framework/AWS dependencies
+    *.Application/             use cases and ports
+    *.Infrastructure/          persistence, messaging, and external adapters
+infra/CommerceOS.Cdk/          AWS infrastructure source of truth
+tests/                         unit, architecture, and CDK assertion tests
+tools/commerceos.py            task-instance-aware local launcher
+```
+
+To inspect isolated local ports or run the API for task/worktree `0003`:
+
+```bash
+python3 tools/commerceos.py ports --instance 0003
+python3 tools/commerceos.py api --instance 0003
+```
+
+The health endpoint is `GET /health` on the allocated API port. The skeleton deliberately contains no Tenant, Catalog, Inventory, Payment, or Accounting behavior; each is introduced by its own task and module boundary.
+
+See [ADR-002: Phase 0 toolchain and repository structure](docs/adr/ADR-002-phase-0-toolchain-and-repository-structure.md).
+
 ## Codex operating model
 
 CommerceOS is **Luna-first** for Codex usage.

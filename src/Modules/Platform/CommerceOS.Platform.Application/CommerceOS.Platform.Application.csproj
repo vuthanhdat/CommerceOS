@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../CommerceOS.Platform.Domain/CommerceOS.Platform.Domain.csproj" />
+  </ItemGroup>
+</Project>
+

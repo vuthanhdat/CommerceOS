@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <NoWarn>$(NoWarn);CA1711</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Amazon.CDK.Lib" />
+    <PackageReference Include="Constructs" />
+  </ItemGroup>
+</Project>

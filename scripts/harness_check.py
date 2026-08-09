@@ -10,6 +10,8 @@ invokes build, lint, test, architecture, IaC, and security checks.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +46,17 @@ REQUIRED_FILES = [
     "docs/adr/ADR-000-template.md",
     "docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md",
     "tasks/TASK-TEMPLATE.md",
+    "CommerceOS.slnx",
+    "Directory.Build.props",
+    "Directory.Packages.props",
+    "global.json",
+    "package.json",
+    "package-lock.json",
+    "cdk.json",
+    "src/CommerceOS.Api/CommerceOS.Api.csproj",
+    "infra/CommerceOS.Cdk/CommerceOS.Cdk.csproj",
+    "tests/CommerceOS.ArchitectureTests/CommerceOS.ArchitectureTests.csproj",
+    "tools/commerceos.py",
 ]
 
 TASK_REQUIRED_HEADINGS = [
@@ -194,6 +207,40 @@ def check_development_strategy(errors: list[str]) -> None:
             fail("Codex operating model must preserve the default two-Builder concurrency limit", errors)
 
 
+def run_application_checks(errors: list[str]) -> None:
+    commands = [
+        ("Restore .NET dependencies", ["dotnet", "restore", "CommerceOS.slnx"]),
+        ("Install locked Node.js dependencies", ["npm", "ci", "--ignore-scripts"]),
+        (
+            "Verify .NET formatting",
+            ["dotnet", "format", "CommerceOS.slnx", "--verify-no-changes", "--no-restore"],
+        ),
+        ("Build .NET solution", ["dotnet", "build", "CommerceOS.slnx", "--no-restore"]),
+        ("Run .NET tests", ["dotnet", "test", "CommerceOS.slnx", "--no-build"]),
+        ("Lint, build, and test web applications", ["npm", "run", "verify"]),
+        ("Synthesize AWS CDK skeleton", ["npm", "run", "cdk:synth"]),
+    ]
+
+    for description, command in commands:
+        executable = shutil.which(command[0])
+        if executable is None:
+            fail(
+                f"Required executable '{command[0]}' was not found while trying to: {description}",
+                errors,
+            )
+            return
+
+        resolved_command = [executable, *command[1:]]
+        print(f"\n==> {description}", flush=True)
+        result = subprocess.run(resolved_command, cwd=ROOT, check=False)
+        if result.returncode != 0:
+            fail(
+                f"Application check failed ({result.returncode}): {' '.join(command)}",
+                errors,
+            )
+            return
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -205,6 +252,9 @@ def main() -> int:
 
     for relative in ["README.md", "AGENTS.md"]:
         check_local_markdown_links(ROOT / relative, errors)
+
+    if not errors:
+        run_application_checks(errors)
 
     if errors:
         print("CommerceOS Harness Check: FAIL")
@@ -218,6 +268,7 @@ def main() -> int:
     print("README/AGENTS local-link checks: PASS")
     print("Phase H0 definition check: PASS")
     print("Environment/IaC/Free-Tier/Codex strategy checks: PASS")
+    print("Application build/test/architecture/CDK checks: PASS")
     return 0
 
 

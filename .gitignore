@@ -1,0 +1,29 @@
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+
+# Node / frontend
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# AWS CDK
+cdk.out/
+
+# Local configuration and tooling
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.vs/
+
+# OS
+.DS_Store
+Thumbs.db
