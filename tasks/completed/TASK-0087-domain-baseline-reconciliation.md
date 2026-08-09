@@ -1,7 +1,7 @@
 # TASK-0087 — Reconcile business-domain baseline
 
-Status: Backlog
-Specification maturity: Ready
+Status: Completed
+Specification maturity: Completed
 Owner: Domain Architect
 Created: 2026-08-09
 Depends on: Product definition, NFRs, current `docs/02-business-domains.md`
@@ -126,3 +126,43 @@ then AWS services, DynamoDB keys, Lambda boundaries, or implementation project s
 - **Cloud verification required?** No — design-only task
 - AWS environment/stack(s) required: none
 - Preview/staging teardown plan: N/A
+
+## Completion summary
+
+### What changed
+
+- Replaced the high-level business-domain map with a canonical bounded-context, source-of-truth, cross-cutting-invariant, and business-error baseline.
+- Added deep first-frontier baselines for Tenant Management, Merchant Access, and Catalog, including aggregate ownership, state semantics, invariants, business facts, and task handoffs.
+- Added a medium-depth operations baseline for Sales, Inventory, Payments, the Mock Payment Provider, Procurement, Accounting, Reporting, Product Data Ingestion, and supporting contexts.
+- Added an explicit human product-decision register with 42 decision gates. Pending decisions block the affected candidate tasks instead of becoming Builder defaults.
+- Recorded contradictions in the generated candidate backlog as inputs to TASK-0088 and TASK-0089 without rewriting those implementation tasks.
+
+### Acceptance criteria status
+
+- AC01: PASS — independent frontier review confirmed Tenant/Identity and Catalog ownership, aggregates, invariants, states, errors, and visible decision gates are sufficient for technical design without invented business semantics.
+- AC02: PASS — independent operations/finance reviews confirmed authoritative owners and shared fact meanings are explicit across Sales, Inventory, Payment, Procurement, Accounting, Reporting, and Product Data Ingestion.
+- AC03: PASS — every material uncertainty found in scope is recorded in `docs/domains/product-decisions.md` with affected tasks, decision gate, and safe no-guess constraint.
+- AC04: PASS — independent review found no AWS service, persistence/schema/key, deployment/project-boundary, transport, or sync/async selection in the domain baseline.
+
+### Verification
+
+- `python3 scripts/harness_check.py`: PASS after normalizing a Windows worktree line-ending mismatch; the normalization produced no application-source diff and was reverted after verification.
+- .NET build: PASS with 0 warnings and 0 errors.
+- .NET tests: PASS — 7 tests.
+- Frontend lint/build/tests: PASS — both applications built and 2 tests passed.
+- CDK synthesis and repository structure/link/planning checks: PASS.
+- Independent acceptance review: AC01/AC02/AC03/AC04 all PASS.
+- Cloud verification: N/A — documentation-only domain design; no AWS resource was created.
+- Ephemeral teardown: N/A.
+
+### Architecture, security, and cost notes
+
+- Architecture: business ownership/facts were refined only; technical module, interaction, deployment, and persistence choices remain TASK-0088.
+- Security/tenant: authentication identity is separated from active Membership authority; trusted tenant scope, non-disclosure, last-owner, and audit boundaries are explicit.
+- Cost: no runtime or infrastructure change; monthly and one-off cloud cost remain zero for this task.
+
+### Follow-up items
+
+- The human product owner must resolve each registered decision before its listed candidate tasks pass the Ready gate.
+- TASK-0088 consumes this baseline to reconcile technical architecture and record any architecture decisions.
+- TASK-0089 consumes both baselines to repair candidate-task maturity/dependencies and select the first safe Builder frontier.
