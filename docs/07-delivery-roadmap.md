@@ -1,5 +1,7 @@
 # CommerceOS — Delivery Roadmap
 
+> **Planning reconciliation note:** Phase/task/event examples in this roadmap are directional. The [domain baseline](02-business-domains.md), [product-decision register](domains/product-decisions.md), [technical architecture baseline](architecture/technical-baseline.md), and individually refined task maturity take precedence. Numeric order or a named event/workflow here does not make a candidate task Ready and does not resolve a pending `PD-*` decision.
+
 ## 1. Roadmap principle
 
 CommerceOS should be implemented as a sequence of **business-capability slices**, not as a checklist of AWS services.

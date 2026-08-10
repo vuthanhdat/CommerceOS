@@ -16,7 +16,7 @@ A user authenticated for Tenant A must never read, mutate, search, export, or in
 
 Requirements:
 
-- trusted tenant context is derived from authenticated membership/claims;
+- trusted tenant context is derived from verified authenticated subject plus current Merchant Access membership/authorization resolution; Tenant/role claims alone are not authority;
 - do not authorize a request solely from a `tenantId` supplied by the client;
 - all tenant-owned data access must require tenant scope;
 - asynchronous messages/events must carry tenant context and be validated by consumers;

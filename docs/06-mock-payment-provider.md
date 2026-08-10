@@ -1,5 +1,7 @@
 # CommerceOS — Mock Payment Provider
 
+> **Reconciliation note (TASK-0088):** The Mock Payment Provider remains an external-like technical boundary, but this document does not select CommerceOS Payment cardinality, capture policy, retry/terminal meaning, stock-hold behavior, or Order transitions. Those remain `PD-014`, `PD-016`–`PD-018`, and `PD-042` in the [product-decision register](domains/product-decisions.md). Timeout is never definitive failure. The [domain baseline](domains/commerce-operations.md), [integration matrix](architecture/integration-and-aws.md), and a later payment ADR govern implementation; diagrams below are provider-test direction only where not explicitly reconciled.
+
 ## 1. Purpose
 
 CommerceOS must learn payment-style distributed-system problems without connecting to a real payment processor or handling real cardholder data.
@@ -119,13 +121,13 @@ Captured
 PartiallyRefunded / Refunded
 ```
 
-Alternative states:
+Possible provider-owned conditions/operation outcomes (not CommerceOS Payment or Order states):
 
 ```text
 Declined
-Failed
+DefinitiveNoCommit
 Pending
-Cancelled
+TransientFailure observation
 ```
 
 `TimedOut` should generally be an observation from the caller, not necessarily the provider's durable business state. A client timeout can occur while the provider later becomes `Captured`.
@@ -260,40 +262,27 @@ Randomized failure mode can be added for manual resilience experiments.
 
 ---
 
-# 9. CommerceOS payment orchestration
+# 9. CommerceOS payment convergence
 
-A possible mature flow:
+The architecture fixes the ownership/evidence boundary, not the product sequence:
 
 ```text
-Checkout
-   │
-   ▼
-Create Order(PendingPayment)
-   │
-   ▼
-Reserve Stock
-   │
-   ▼
-Create/Capture Mock Payment
-   │
-   ├──── success ─────► Confirm Order
-   │
-   ├──── decline ─────► Release Stock + PaymentFailed
-   │
-   └──── timeout ─────► PaymentUnknown
-                           │
-                           ▼
-                    Query provider / wait webhook
-                           │
-                 ┌─────────┴─────────┐
-                 ▼                   ▼
-              Captured              Failed
-                 │                   │
-                 ▼                   ▼
-          Confirm Order         Release Stock
+Sales-owned accepted obligation
+          ↓ explicit Payments command
+CommerceOS Payments
+          ↓ idempotent HTTPS
+Mock Payment Provider
+          ↓ response / signed callback / later query
+verified provider evidence
+          ↓
+Payments-owned known or OutcomeUnknown state/fact
+          ↓ explicit approved integration
+Sales / Inventory / Accounting each decide their own effect
 ```
 
-A timeout is not automatically a failure.
+Only verified evidence may create a capture/refund/definitive-no-commit conclusion. Timeout, transport error, missing callback, retry exhaustion, queue age, or DLQ placement preserves `OutcomeUnknown` until inquiry/reconciliation resolves it.
+
+The order in which placement, reservation, authorization/capture, confirmation, release, cancellation, and completion occur is not approved here. `PD-014`, `PD-017`, `PD-018`, and `PD-042` must resolve it before a workflow or handler encodes branches.
 
 ---
 
@@ -302,6 +291,8 @@ A timeout is not automatically a failure.
 Do not begin by forcing the entire payment flow into Step Functions.
 
 Recommended progression:
+
+The following progression is an experiment sequence, not approval of a business workflow. A Step Functions definition requires a later ADR after the applicable product decisions are resolved.
 
 ### Version 1
 
@@ -336,31 +327,9 @@ This sequence makes the architectural value visible rather than treating Step Fu
 
 ---
 
-# 11. Refund flow
+# 11. Refund boundary
 
-```text
-RefundRequested
-      │
-      ▼
-Validate refundable amount
-      │
-      ▼
-Mock provider refund
-      │
-      ├── success
-      │      ↓
-      │  PaymentRefunded
-      │      ↓
-      │  Accounting reversal/contra posting
-      │      ↓
-      │  Inventory return if business conditions apply
-      │
-      └── transient failure
-             ↓
-          retry / operational review
-```
-
-Refund idempotency is mandatory.
+`RefundRequested` (Sales), the provider refund operation, `PaymentRefunded` (Payments), any Inventory return, and any Accounting correction are separate owned effects. Refund idempotency is mandatory, but one accepted effect never asserts that the others completed. Eligibility, ordering, restock, and accounting treatment remain `PD-023` plus the applicable Sales/Payment decisions.
 
 ---
 
@@ -469,9 +438,9 @@ Find PaymentUnknown orders
        ▼
 Query Mock Payment Provider
        │
-       ├── Captured → repair internal projection
-       ├── Failed   → release stock/fail order
-       └── Pending  → keep waiting / escalate
+       ├── Captured evidence        → Payments converges once
+       ├── Definitive no-commit     → apply the approved PD-017/018/042 policy
+       └── Pending/unknown evidence → keep waiting / escalate under approved policy
 ```
 
 This demonstrates why distributed systems need reconciliation even when webhooks and retries exist.

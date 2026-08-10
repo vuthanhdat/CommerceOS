@@ -21,6 +21,9 @@ Rules:
 - Application code orchestrates use cases and depends on domain abstractions.
 - Infrastructure implements persistence, messaging, external integrations, and AWS-specific adapters.
 - Delivery mechanisms (HTTP/Lambda/queue handlers) translate external input into application commands/queries.
+- A producer-owned `*.Contracts` project is added only for a real delivery/cross-module consumer and contains no Domain entity, repository, implementation, AWS, HTTP-framework, or persistence type.
+- One module's Application may reference an explicitly approved foreign Contracts project, never a foreign Domain, Application implementation, or Infrastructure project.
+- A business module, Lambda/function, DynamoDB table, and CDK stack are different boundaries. Do not create one deployed service per bounded context by default.
 
 ## 2. Business-domain boundaries
 
@@ -32,6 +35,8 @@ Rules:
 - A domain must not directly read/write another domain's persistence representation.
 - Cross-domain behavior requires an explicit contract: command/query/API/event/projection.
 - Shared code must be genuinely cross-cutting; do not create a generic shared domain model that couples bounded contexts.
+- The Platform foundation module must not become a generic shared business model or foreign-domain persistence gateway.
+- First-frontier module/deployment rules are authoritative in `docs/architecture/technical-baseline.md` and ADR-003.
 
 ## 3. Multi-tenancy
 
@@ -41,6 +46,9 @@ For tenant-owned data:
 - persistence access patterns include tenant scope as part of the key/query contract;
 - authorization and data partitioning are both required;
 - cross-tenant tests are mandatory for externally reachable tenant data operations.
+- Cognito/token validation proves external identity only; current Tenant/Membership/capability authority is resolved through Merchant Access for every protected request under ADR-004.
+- route, header, query, body, cursor, token custom claim, and aggregate identifiers may select/identify a target but never replace trusted Tenant scope.
+- merchant, onboarding, public, background-worker, and platform-admin execution contexts are distinct; no generic tenant-bypass flag is allowed.
 
 Target executable checks later:
 
@@ -72,6 +80,10 @@ Rules:
 - Event contracts are versioned.
 - Event handlers must not depend on producer persistence internals.
 - Do not use EventBridge merely to avoid a direct in-process call when no decoupling benefit exists.
+- Internal domain facts are not published automatically; a named producer-owned integration contract and consumer must exist.
+- Critical facts use the ADR-006 transactional-outbox/reliable-delivery pattern. A database write followed by best-effort publication is not sufficient.
+- Critical/bursty consumers use their own queue/DLQ; redrive preserves event/logical-source identity and does not create a new business fact.
+- Step Functions requires an approved business sequence and a demonstrated durable orchestration need; it must not encode a pending product decision.
 
 ## 5. Accounting integrity
 
@@ -123,6 +135,7 @@ Preferred default:
 - resource tags and cost attribution;
 - least-privilege IAM;
 - no public data store by default.
+- provision EventBridge, SQS/DLQ, DynamoDB Streams, or Step Functions only with a named contract/consumer/workflow; target diagrams are not a reason to pre-create resources.
 
 Adding one of the following requires explicit ADR/cost justification:
 

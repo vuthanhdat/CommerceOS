@@ -1,5 +1,7 @@
 # CommerceOS — Product Data Ingestion & Crawling
 
+> **Reconciliation note (TASK-0088):** This document describes source-adapter and worker direction. The [domain baseline](domains/commerce-operations.md) owns DataSource, SourceSnapshot, NormalizedSourceProduct, and ImportCandidate business meaning; `PD-026` and `PD-040` gate authority/lifecycle/cardinality. Pipeline labels such as queued, fetching, retry, and DLQ are operational telemetry unless the domain baseline explicitly defines a business fact. The AWS topology is conditional and is introduced only by a Ready task under the [integration baseline](architecture/integration-and-aws.md).
+
 ## 1. Goal
 
 CommerceOS should not depend on hand-written fake catalog data forever. The project needs repeatable external product sources that can bootstrap and enrich the catalog while also creating realistic serverless batch/event workloads.
@@ -219,7 +221,7 @@ Source-specific HTML selectors, API credentials, or parsing details must stay in
       changed / new?
            │
            ▼
- ProductSourceChanged event
+ approved PDI-owned fact/contract when a named consumer exists
            │
            ▼
  Import candidate / price history / review
@@ -402,17 +404,7 @@ priceHash         price/availability subset
 specHash          specifications subset
 ```
 
-Events can then be more meaningful:
-
-```text
-ProductSourceCrawled
-ProductSourcePriceChanged
-ProductSourceAvailabilityChanged
-ProductSourceSpecsChanged
-ParserBehaviorChanged
-```
-
-This creates real event-driven data without manually inventing a dataset.
+Hashes can support PDI-owned change analysis, but a comparison result is not automatically a published business event. The authoritative fact candidates remain `SourceSnapshotCaptured`, `SourceProductNormalized`/`SourceNormalizationRejected`, and the ImportCandidate facts in the domain baseline. A later named consumer may justify a more specific versioned source-observation contract; it must not use the vague `ProductSourceChanged` name or imply that a canonical Catalog Product changed.
 
 ---
 

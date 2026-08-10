@@ -129,6 +129,7 @@ src/
   Modules/<Module>/
     *.Domain/                  business rules; no framework/AWS dependencies
     *.Application/             use cases and ports
+    *.Contracts/               optional producer-owned boundary contracts when a real consumer exists
     *.Infrastructure/          persistence, messaging, and external adapters
 infra/CommerceOS.Cdk/          AWS infrastructure source of truth
 tests/                         unit, architecture, and CDK assertion tests
@@ -204,6 +205,10 @@ All AWS application infrastructure is deployed from version-controlled **AWS CDK
 - [Non-functional requirements](docs/01-non-functional-requirements.md)
 - [Business domains](docs/02-business-domains.md)
 - [Serverless architecture](docs/03-serverless-architecture.md)
+- [Technical architecture baseline](docs/architecture/technical-baseline.md)
+- [First-frontier contracts & trusted context](docs/architecture/first-frontier-contracts.md)
+- [Persistence ownership & access patterns](docs/architecture/persistence-access-patterns.md)
+- [Integration & AWS service matrix](docs/architecture/integration-and-aws.md)
 - [Monthly cost model](docs/04-cost-model.md)
 - [Product-data ingestion & crawling](docs/05-product-data-ingestion.md)
 - [Mock payment provider](docs/06-mock-payment-provider.md)

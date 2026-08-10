@@ -16,7 +16,7 @@ Important assumptions:
 - public storefront shoppers are mostly anonymous/guest users; Cognito MAU therefore primarily represents merchant staff;
 - no real payment processor cost;
 - no NAT Gateway, ALB, EC2, or always-on relational database;
-- CloudFront flat-rate plans are used as a planning model for public delivery;
+- while the AWS account remains on a Free Tier plan that is ineligible for CloudFront flat-rate pricing, public delivery uses normal CloudFront Free Tier/pay-as-you-go behavior; flat-rate tiers below are post-eligibility scenario planning only;
 - promotional/new-account credits are **not** counted as permanent architecture savings;
 - taxes are not included.
 
@@ -129,6 +129,8 @@ Current published flat-rate plans include:
 
 The plans bundle CloudFront delivery and several related capabilities, including security/DNS/logging/storage-credit features described by AWS.
 
+**Current CommerceOS deployment rule:** the Free Tier guardrail is authoritative. AWS documentation currently states that accounts using AWS Free Tier are not eligible for these flat-rate plans. CommerceOS therefore does not select or depend on a flat-rate plan while the account remains ineligible. The Pro/Business/Premium rows below are comparison scenarios for a later eligible account and require a fresh eligibility/pricing review before deployment.
+
 Sources:
 
 - https://aws.amazon.com/cloudfront/pricing/
@@ -193,7 +195,7 @@ This is deliberately simplistic. Actual cost must later use measured CloudWatch 
 - 0.03M EventBridge custom events;
 - 0.15M SQS requests;
 - 10,000 Step Functions transitions;
-- CloudFront Free plan;
+- normal CloudFront Free Tier/pay-as-you-go usage within the documented allowance;
 - 1 GB CloudWatch logs;
 - 5 GB S3 data.
 
@@ -207,7 +209,7 @@ This is deliberately simplistic. Actual cost must later use measured CloudWatch 
 | EventBridge | $0.03 |
 | SQS | $0.00 |
 | Step Functions | $0.15 |
-| CloudFront plan | $0.00 |
+| CloudFront Free Tier/pay-as-you-go | $0.00 |
 | CloudWatch Logs | $0.00 |
 | S3 storage | $0.11 |
 | Cognito | $0.00 |
@@ -242,7 +244,7 @@ If DynamoDB provisioned capacity is intentionally kept inside the documented fre
 - 0.4M EventBridge custom events;
 - 0.8M SQS requests;
 - 100,000 Step Functions transitions;
-- CloudFront Pro plan;
+- CloudFront Pro plan only as a post-Free-Tier eligible-account scenario;
 - 4 GB CloudWatch logs;
 - 20 GB S3 data.
 
@@ -256,7 +258,7 @@ If DynamoDB provisioned capacity is intentionally kept inside the documented fre
 | EventBridge | $0.40 |
 | SQS | $0.00 |
 | Step Functions | $2.40 |
-| CloudFront Pro | $15.00 |
+| CloudFront Pro (conditional on eligibility) | $15.00 |
 | CloudWatch Logs | $0.00 |
 | S3 storage | $0.46 |
 | Cognito | $0.00 |
@@ -266,7 +268,7 @@ Recommended planning budget:
 
 > **~$30/month**
 
-At this stage CloudFront's selected flat-rate plan becomes the largest single modeled fixed line item.
+In this hypothetical eligible-account scenario, the selected CloudFront flat-rate plan becomes the largest single modeled fixed line item. If the account remains ineligible, replace this row with a current pay-as-you-go calculation before deployment.
 
 ---
 
@@ -291,7 +293,7 @@ At this stage CloudFront's selected flat-rate plan becomes the largest single mo
 - 5M EventBridge custom events;
 - 8M SQS requests;
 - 1M Step Functions transitions;
-- CloudFront Business plan;
+- CloudFront Business plan only as an eligible-account scenario;
 - 20 GB CloudWatch logs;
 - 100 GB S3 data.
 
@@ -305,7 +307,7 @@ At this stage CloudFront's selected flat-rate plan becomes the largest single mo
 | EventBridge | $5.00 |
 | SQS | $2.80 |
 | Step Functions | $24.90 |
-| CloudFront Business | $200.00 |
+| CloudFront Business (conditional on eligibility) | $200.00 |
 | CloudWatch Logs | $7.50 |
 | S3 storage | $2.30 |
 | Cognito | $0.00 |
@@ -340,7 +342,7 @@ This scenario exists mainly to expose future cost cliffs rather than to set an e
 - 50M EventBridge custom events;
 - 80M SQS requests;
 - 10M Step Functions transitions;
-- CloudFront Premium plan;
+- CloudFront Premium plan only as an eligible-account scenario;
 - 150 GB CloudWatch logs;
 - 500 GB S3 data.
 
@@ -354,7 +356,7 @@ This scenario exists mainly to expose future cost cliffs rather than to set an e
 | EventBridge | $50.00 |
 | SQS | $31.60 |
 | Step Functions | $249.90 |
-| CloudFront Premium | $1,000.00 |
+| CloudFront Premium (conditional on eligibility) | $1,000.00 |
 | CloudWatch Logs | $72.50 |
 | S3 storage | $11.50 |
 | Cognito Essentials | $600.00 |
@@ -378,6 +380,8 @@ Important lesson: at larger scale, **Cognito MAU, CDN plan choice, Lambda durati
 | Larger scale | 5,000 | 50,000 | 2.5M | 500,000 | ~$3,035 |
 
 The cost curve is the reason the project should keep cost metrics as part of architecture review rather than only checking the bill after deployment.
+
+CloudFront plan rows are not current infrastructure defaults. Before leaving normal Free Tier/pay-as-you-go behavior, verify account eligibility, current Region/plan rules, request/transfer assumptions, and the comparison against ordinary pay-as-you-go pricing.
 
 ---
 
