@@ -1,6 +1,6 @@
 # CommerceOS Human Product-Decision Register
 
-_Created by TASK-0087 on 2026-08-09. Extended for Subscription & Billing by TASK-0091 on 2026-08-10._
+_Created by TASK-0087 on 2026-08-09. Extended for Subscription & Billing by TASK-0091 on 2026-08-10. Initial first-frontier decisions PD-001–PD-010 reviewed by the human Product Owner on 2026-08-10._
 
 ## 1. Rule
 
@@ -10,103 +10,163 @@ Status vocabulary:
 
 - **HUMAN PRODUCT DECISION REQUIRED** — no default is approved; listed candidate tasks cannot become Ready when the decision affects their scope.
 - **Deferred** — intentionally postponed and does not block the stated current frontier, provided the safe interim constraint is respected.
-- **Resolved** — human-approved choice, rationale, and approval date are recorded and affected domain documents are updated.
+- **Resolved** — a human-approved choice, mandatory rationale, approver, and approval date are recorded. Downstream baseline/task propagation must also be tracked explicitly and may remain pending until the responsible agent reconciles it.
 
 All entries are owned by the CommerceOS product owner/human maintainer. A recommendation or common industry practice is not approval. Technical Architecture may preserve alternatives but may not resolve these questions through an AWS, persistence, API, or project-structure choice.
 
-The safe interim constraint under each decision is mandatory until resolution.
+The safe interim constraint under each unresolved/deferred decision is mandatory until resolution. For a resolved decision, the recorded Decision and Rationale are authoritative product policy; downstream architecture and backlog work must preserve them unless a later human decision explicitly supersedes them.
+
+A resolution without a rationale is incomplete. The rationale should explain why the selected option is appropriate now, the important trade-offs it accepts, and why rejected complexity is being deferred.
 
 ## 2. First-frontier decisions — Tenant, Merchant Access, and Catalog
 
 ### PD-001 — Membership cardinality and tenant selection
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** May one authenticated merchant identity hold memberships in multiple tenants? If yes, how does the person intentionally select the active tenant and what prevents confused-deputy behavior?
+- **Decision:** One authenticated identity may hold Memberships in multiple Tenants. If exactly one eligible Tenant exists the product may select it automatically; if multiple eligible Tenants exist the person must intentionally select the active Tenant. Every protected request uses trusted server-validated Tenant context derived from the selected Tenant plus an eligible Membership; a client-supplied TenantId is never authority by itself.
+- **Rationale:** Multi-tenant membership is a natural B2B SaaS requirement for owners, operators, accountants, or support users who may work across businesses. Supporting it now avoids a later identity/authorization redesign. Explicit selection plus server-side Membership validation prevents confused-deputy and cross-tenant authorization mistakes.
 - **Why material:** Subject identity alone cannot determine trusted Tenant context if membership is many-to-many.
-- **Decision gate:** before TASK-0007 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0007, TASK-0008, all protected tenant operations.
-- **Safe interim constraint:** never infer Tenant from SubjectId alone and never let a client-supplied TenantId become authority.
+- **Approved policy constraint:** never infer Tenant from SubjectId alone and never let a client-supplied TenantId become authority.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-002 — Functional currency, precision, and rounding
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** Is the initial product VND-only, or does each Tenant select one functional currency? What amount precision and rounding rule applies?
+- **Decision:** CommerceOS MVP is VND-only. Every monetary value is still represented as Money with an explicit currency. Merchant-facing VND amounts use whole đồng with no fractional minor unit. CommerceOS MVP performs no currency conversion.
+- **Rationale:** Multi-currency would immediately introduce exchange-rate policy, FX gain/loss, settlement, tax, accounting, and rounding complexity that is not required for the current learning/MVP scope. Keeping Money currency-aware avoids baking VND into primitive types and preserves a clean future path to multi-currency support.
 - **Why material:** Tenant onboarding, Catalog price validation, Sales totals, supplier evidence, payment amounts, journals, and reports must use one consistent policy.
-- **Decision gate:** before TASK-0006 and TASK-0010 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0006, TASK-0010–0012, TASK-0024–0025, TASK-0032–0037, TASK-0041–0055.
-- **Safe interim constraint:** Money always includes currency; no implicit conversion; do not hard-code VND from examples.
+- **Approved policy constraint:** Money always includes currency; no implicit conversion; VND-only is an explicit product policy rather than an implicit implementation assumption.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-003 — Initial roles, role cardinality, and authority matrix
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** Does a Membership have one role or multiple roles? May there be multiple Owners? Which role may grant Admin/Owner, manage staff, manage/publish Catalog, and perform later sensitive actions?
+- **Decision:** A Membership has exactly one role at a time in the MVP. Initial roles are Owner, Admin, Staff, and Viewer. A Tenant may have multiple Owners and an Active Tenant must retain at least one Active Owner. Owner has full merchant administration authority. Admin may manage ordinary merchant operations, staff, and Catalog but may not grant/revoke Owner authority or remove the last Active Owner. Staff may perform ordinary operational work allowed by the relevant domain policy but may not manage Memberships/roles or other tenant-administration concerns. Viewer is read-only. Catalog administration/publishing requires Owner or Admin in the MVP. Later sensitive capabilities may introduce narrower permissions through an explicit future product decision rather than multiple roles now.
+- **Rationale:** One role per Membership gives the MVP a small, understandable authorization model and avoids prematurely building a custom RBAC/permission engine. Multiple Owners avoid a single-account administrative dead end. The role boundaries preserve a straightforward migration path toward permission-based/custom roles if product demand later justifies the complexity.
 - **Why material:** Product wording says “roles” while candidate tasks usually assume one role, and “catalog manager” is not a defined role.
-- **Decision gate:** before TASK-0008, TASK-0011, TASK-0012, or TASK-0013 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0008–0013 and later authorization-sensitive tasks.
-- **Safe interim constraint:** an Active Tenant retains an Active Owner, Viewer remains non-mutating, and no role name grants a capability without the approved matrix; Catalog/staff tasks remain blocked rather than assume Owner/Admin mappings.
+- **Approved policy constraint:** an Active Tenant retains an Active Owner; Viewer remains non-mutating; Owner changes cannot bypass the last-owner invariant.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-004 — Tenant suspension, reactivation, and closure behavior
 
 - **Status:** Deferred until platform administration refinement
 - **Question:** What can staff, shoppers, and support personnel read or do while a Tenant is Suspended? Is closure supported, and what retention/recovery behavior applies?
+- **Interim human direction:** While Suspended, ordinary merchant mutations and public commerce are denied. Suspension does not delete Tenant data, Memberships, Subscription, Orders, accounting history, or other business evidence. Reactivation restores ordinary eligibility subject to all other independent business constraints. Tenant closure, deletion, retention, recovery windows, and privacy/legal erasure semantics remain deferred.
+- **Rationale:** Minimal suspension semantics are needed to keep current authorization behavior deterministic, but closure/retention couples product policy to accounting, billing, audit, privacy, legal, and recovery requirements that are not needed at the present implementation frontier. Deferring those semantics avoids inventing irreversible lifecycle behavior too early.
 - **Why material:** Tenant status can gate every domain and public storefront.
 - **Decision gate:** before TASK-0068 or any earlier suspension capability becomes Ready.
 - **Affected tasks:** TASK-0068 and later lifecycle/privacy work; TASK-0007 must at least reject ordinary Suspended-tenant work.
 - **Safe interim constraint:** Suspended denies ordinary merchant/public commerce; it does not delete data or silently disable/reactivate Memberships.
+- **Approved by:** CommerceOS human Product Owner for the interim direction only
+- **Approved on:** 2026-08-10
 
 ### PD-005 — SKU requiredness, mutability, and reuse
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** Is SKU required when Draft is created or only before publication? Is uniqueness case-sensitive and what merchant-visible normalization applies? May SKU change after publication? May an Archived Product's normalized SKU be reused?
+- **Decision:** SKU is optional when a Draft Product is first created but is mandatory before first publication. SKU uniqueness is case-insensitive within a Tenant using a stable normalized representation. After the Product has been Published for the first time its SKU is immutable. A normalized SKU that has been used by an Archived Product is not reusable.
+- **Rationale:** Allowing SKU-less Draft creation keeps merchant editing/import workflows flexible, while requiring a stable SKU before publication gives Inventory, Sales, integrations, and operational workflows a durable business reference. Immutability and non-reuse remove historical ambiguity and avoid later references resolving to a different Product.
 - **Why material:** TASK-0010 omits SKU while TASK-0011 treats tenant-wide uniqueness as foundational; historical references and merchant operations differ by policy.
-- **Decision gate:** before TASK-0010/0011 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0010, TASK-0011, TASK-0012, Sales snapshots, import mapping.
-- **Safe interim constraint:** ProductId is immutable authority; any assigned SKU is normalized and tenant-unique; no task assumes reuse.
+- **Approved policy constraint:** ProductId is immutable authority; any assigned SKU is normalized and tenant-unique; a SKU cannot change after first publication or be reused after archive.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-006 — Sellable/publication-required fields and zero-price products
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** Must publication require positive price, Category, Brand, description, and/or media? Are free/zero-priced Products supported?
+- **Decision:** Publication requires a valid Name, SKU, and Money value. Price may be zero. Category, Brand, description, and media are optional for publication. Stock is not a publication prerequisite; a Published Product may independently be out of stock/unavailable for sale.
+- **Rationale:** Publication/catalog visibility and inventory availability are separate business concerns and should not be coupled. A small required-field set keeps the MVP usable and import-friendly. Allowing zero-price Products avoids introducing a special exception later for samples, free items, or future promotion use cases.
 - **Why material:** TASK-0012 requires “valid sellable fields” but none are approved beyond broad product attributes.
-- **Decision gate:** before TASK-0012 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0012, TASK-0020–0025, import review.
-- **Safe interim constraint:** publication always requires valid name, SKU, and Money; private/advisory cost is never public; stock is not a publication prerequisite.
+- **Approved policy constraint:** publication requires valid Name, SKU, and Money; private/advisory cost is never public; stock is not a publication prerequisite.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-007 — Published editing and archive lifecycle
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** Does editing a Published Product update the live projection immediately or create a draft revision requiring republish? Must a Published Product be explicitly unpublished before archive? Is Archived terminal or restorable?
+- **Decision:** In the MVP, editing a Published Product updates the canonical Product and its public projection without creating a separate draft revision workflow. A Published Product may be Archived directly without an intermediate unpublish action. Archived is terminal in the MVP and an Archived Product cannot be restored or republished.
+- **Rationale:** Draft-revision, approval, preview, scheduled publication, rollback, and restoration would turn Catalog into a CMS-style versioning system before the product needs it. Direct editing plus a terminal Archive state keeps lifecycle invariants small and clear while leaving versioned publishing as a future explicit capability.
 - **Why material:** lifecycle transitions, public consistency, error behavior, and UI recovery depend on it.
-- **Decision gate:** before TASK-0012/0013 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0012, TASK-0013, public Catalog tasks.
-- **Safe interim constraint:** Archived is never publishable; no unapproved restoration/live-revision mechanism may be invented.
+- **Approved policy constraint:** Archived is never publishable/restorable in the MVP; no hidden live-revision mechanism is implied.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-008 — Public Product address/slug policy
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** Is a Product addressed by immutable id, mutable slug, or both? Who generates slugs, how are collisions handled, and do renamed slugs redirect?
+- **Decision:** ProductId is the immutable canonical Product identity. A Published Product also has a tenant-scoped slug for its public URL. The product may propose a slug from the Product name and the merchant may edit it. Normalized slug must be unique within the Tenant. In the MVP, changing a slug does not require historical redirect support; ProductId remains unchanged and is never replaced by the slug as domain authority.
+- **Rationale:** Stable immutable identity prevents rename/address changes from corrupting references, while a human-readable slug provides a better storefront URL than exposing only an opaque id. Tenant-scoped uniqueness is sufficient for a multi-tenant storefront and avoids prematurely building redirect history/SEO lifecycle machinery.
 - **Why material:** the product definition shows `{productSlug}` but no domain owns its lifecycle.
-- **Decision gate:** before TASK-0012 public projection contract or TASK-0020 becomes Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0012, TASK-0020–0022, SEO/custom-domain work.
-- **Safe interim constraint:** ProductId remains immutable identity; no slug is treated as authority across tenants.
+- **Approved policy constraint:** ProductId remains immutable identity; slug is an address/presentation concern and never cross-tenant authority.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-009 — Category and Brand organization policy
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** May a Product have one or multiple Categories? Are categories hierarchical? Are Category/Brand names unique? What happens to referenced Products when a reference is retired?
+- **Decision:** In the MVP a Product may reference zero or one Category and zero or one Brand. Category is non-hierarchical. Category and Brand are Tenant-owned stable references whose normalized names are unique case-insensitively within the Tenant. A Category/Brand that is referenced by Products is not hard-deleted; it may be archived/retired while existing Product references remain historically intact.
+- **Rationale:** Single-category/non-hierarchical classification is sufficient for the MVP and avoids early tree management, cycle handling, breadcrumb/SEO semantics, inheritance, and many-to-many filtering complexity. Stable ids and non-destructive retirement preserve historical references while leaving a clean migration path to ProductCategory associations and hierarchical taxonomy later.
 - **Why material:** TASK-0011 asks for Category/Brand management without defining cardinality or retirement behavior.
-- **Decision gate:** before TASK-0011 can become Ready.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0011–0013, Storefront filters, imports.
-- **Safe interim constraint:** Category/Brand are tenant-owned stable references; no delete/archive/retire or cascading Product behavior is implemented until approved.
+- **Approved policy constraint:** Category/Brand are tenant-owned stable references; retirement never cascades destructive changes into Product history.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-010 — External media display and rights evidence
 
-- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Status:** Resolved
 - **Question:** May merchants display externally hosted media by attestation, only after explicit license evidence/source approval, or only use merchant-owned uploads? Is hotlinking allowed?
+- **Decision:** Public Product media in the MVP must be provided through merchant uploads managed by CommerceOS. CommerceOS does not copy external binaries from arbitrary URLs and does not support external-media hotlinking for public Product media. The merchant remains responsible for having the rights to content they upload.
+- **Rationale:** External URLs introduce availability, hotlink protection, tracking, mutable-content, performance, malware, and rights/licensing ambiguity outside CommerceOS control. Merchant-provided managed uploads create a simpler and more reliable product boundary; storage/CDN implementation remains a Technical Architecture decision rather than part of this product decision.
 - **Why material:** a reachable URL is not evidence of display/copy rights, and TASK-0012 must define “policy-safe.”
-- **Decision gate:** before external media is public under TASK-0012.
+- **Decision gate:** Resolved on 2026-08-10; affected tasks still require baseline/backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0012, TASK-0018, Storefront/media work.
-- **Safe interim constraint:** no external binary is copied or republished without explicit permission; preserve source attribution/reference metadata.
+- **Approved policy constraint:** external binary copy/hotlink is not supported for public Product media in the MVP; source attribution/reference metadata for ingestion evidence remains a separate concern.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** Pending Domain Architect reconciliation.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-034 — Registration admission, uniqueness, and Business Profile minimum
 
@@ -483,15 +543,17 @@ The decisions in this section are intentionally unresolved by TASK-0091. The dom
 
 ## 7. Resolution template
 
-When the human resolves an entry, replace its status and append:
+When the human resolves an entry, replace its status and append the complete resolution record below. **Rationale is mandatory**; a Decision without a Rationale is not a complete product resolution.
 
 ```text
 Decision:
-Rationale:
+Rationale (why this option, important trade-offs, and why deferred complexity is not needed now):
 Approved by:
 Approved on:
 Affected baseline documents updated:
 Affected candidate tasks notified:
 ```
+
+If baseline/task propagation cannot be completed in the same change, record it explicitly as `Pending <responsible role> reconciliation` rather than claiming it is updated. The product decision itself may be Resolved while propagation is pending, but an affected candidate task does not become Ready until the responsible architecture/domain/backlog reconciliation has been completed.
 
 The Technical Architect and Backlog Planner then determine architecture/task consequences. Resolution does not by itself make a candidate task Ready.
