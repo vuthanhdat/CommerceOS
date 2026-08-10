@@ -17,19 +17,61 @@ task_fields:
   - cloud_verification
   - spec_path
 
-lifecycle_state_default: Backlog
+task_defaults:
+  lifecycle_state: Backlog
+  exclusive_resources: []
+  merge_policy: verified_serial_main
+
 execution_permission:
   Ready: true
   Refined: false
   Outline: false
 
+ready_refinement_requirements:
+  - Ready task has a current detailed spec_path
+  - Ready task has explicit exclusive_resources metadata, even when the value is []
+  - every human/product/domain/architecture/security/cost/cloud gate required for execution is empty or satisfied
+  - cloud_verification required/conditional never grants cloud execution by itself
+
+execution_metadata:
+  TASK-0090:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, git-worktrees, main-merge-lane]
+    merge_policy: verified_serial_main
+  TASK-0093:
+    lifecycle_state: Backlog
+    exclusive_resources: [repo-architecture-tests]
+    merge_policy: verified_serial_main
+  TASK-0094:
+    lifecycle_state: Backlog
+    exclusive_resources: [aws-dev-foundation]
+    merge_policy: verified_serial_main
+
+lifecycle_semantics:
+  Backlog: canonical task exists but is not claimed by a Builder
+  Active: a Ready task is currently claimed/executing
+  Completed: accepted result is present on authoritative main and the canonical completion record exists
+  Blocked: execution stopped on an explicit unresolved gate; blockers do not count as Completed
+  dependency_unlock: only Completed dependencies or declared completed_roots satisfy a dependency
+
 dispatch_policy:
   dependency_satisfied: dependency is in completed_roots or canonical task lifecycle_state is Completed
-  dispatchable: maturity Ready + Backlog + dependencies/gates satisfied + no exclusive-resource conflict
+  dispatchable: maturity Ready + lifecycle_state Backlog + dependencies/gates satisfied + no exclusive-resource conflict
   max_writable_builders: 2
   merge_lane_concurrency: 1
   numeric_order_is_not_readiness: true
   cloud_requires_explicit_gate: true
+  outline_or_refined_is_never_dispatchable: true
+
+integration_policy:
+  builder_claim_does_not_complete_task: true
+  local_agent_success_does_not_complete_task: true
+  required_verification_must_pass: true
+  independent_review_required_for_builder_changes: true
+  integration_uses_latest_main: true
+  merge_lane_is_serial: true
+  force_push_main: false
+  completed_only_after_verified_result_on_main: true
 
 completed_roots:
   - [TASK-0003, tasks/completed/TASK-0003-codebase-skeleton.md]
