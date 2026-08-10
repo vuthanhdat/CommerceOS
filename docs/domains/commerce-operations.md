@@ -1,6 +1,6 @@
 # Commerce Operations & Cross-Domain Fact Baseline
 
-_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved operational/accounting decisions `PD-011`–`PD-042` where applicable. `PD-023` remains intentionally deferred._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved operational/accounting decisions `PD-011`–`PD-042` where applicable, including the resolved `PD-023` refund approval/return/accounting policy._
 
 ## 1. Purpose
 
@@ -28,10 +28,12 @@ Examples:
 - provider evidence is not `PaymentCaptured` until Payments verifies/accepts it.
 - `GoodsReceiptRecorded` is not `StockReceived`.
 - `PaymentCaptured` is not revenue recognition.
+- `RefundRequested` is not `RefundApproved`.
+- `RefundApproved` authorizes return/accounting consequences but is not `PaymentRefunded`.
 - `StockIssued` is not `OrderFulfilled`.
 - `JournalPosted` never changes the source operational fact.
 
-Replay of the same logical source must not create the same inventory, payment, usage, or accounting effect twice.
+Replay of the same logical source must not create the same inventory, payment, refund, usage, or accounting effect twice.
 
 ## 3. Shared MVP value rules
 
@@ -44,7 +46,7 @@ Replay of the same logical source must not create the same inventory, payment, u
 
 ### Quantity (`PD-012`)
 
-- Product/order/reservation/receipt/issue quantities are positive whole units only.
+- Product/order/reservation/receipt/issue/return quantities are positive whole units only.
 - Fractional quantities, variable units of measure, conversions, and fractional rounding are out of scope.
 
 ## 4. Authoritative fact catalog
@@ -56,17 +58,19 @@ Replay of the same logical source must not create the same inventory, payment, u
 | `OrderAllocated` | Sales | confirmed Order is backed by all required active Inventory reservations | physical fulfillment |
 | `OrderFulfilled` | Sales | all required whole-order fulfillment/issue evidence accepted | refund/correction history disappears |
 | `OrderCancelled` | Sales | merchant cancellation accepted before fulfillment | reservation release/refund succeeded |
-| `RefundRequested` | Sales | refund intent accepted as eligible | money refunded, stock returned, accounting corrected |
+| `RefundRequested` | Sales | refund intent accepted as eligible for review | refund approved, money refunded, stock returned, accounting corrected |
+| `RefundApproved` | Sales | merchant approval gate accepted the refund and authorized the approved return/refund consequences | provider money movement already committed |
+| `RefundRejected` | Sales | merchant review rejected the refund request | any stock/payment/accounting correction occurred |
 | `StockReserved` | Inventory | required quantity held | Order confirmed/paid |
 | `StockReleased` | Inventory | reservation ended without issue | Order cancelled |
 | `StockIssued` | Inventory | physical quantity left OnHand and reservation effect applied exactly once | Sales completed or COGS already posted |
 | `StockReceived` | Inventory | OnHand increased for accepted source evidence | PO receipt/invoice/accounting all succeeded |
-| `StockReturned` | Inventory | accepted physical return increased OnHand | refund/revenue/COGS correction accepted |
+| `StockReturned` | Inventory | approved returned goods increased OnHand exactly once | provider refund completed |
 | `StockAdjusted` | Inventory | accepted physical adjustment changed quantity for explicit reason | reservation/payment/sale changed |
 | `PaymentCaptured` | Payments | verified provider evidence proves full Order amount captured | Sales revenue recognized |
 | `PaymentDeclined` | Payments | one PaymentAttempt definitively declined/no-commit under provider semantics | Payment obligation/order is terminal |
 | `PaymentOutcomeBecameUnknown` | Payments | commit outcome cannot yet be proven | provider failed or declined |
-| `PaymentRefunded` | Payments | verified refund amount accepted | Inventory or Accounting correction occurred |
+| `PaymentRefunded` | Payments | verified provider evidence proves the approved refund money movement committed | Inventory return or Accounting correction happened unless their owners accepted them |
 | `PurchaseOrderSubmitted` | Procurement | immutable supplier/line/commercial commitment snapshot submitted | supplier acceptance, receipt, AP |
 | `GoodsReceiptRecorded` | Procurement | confirmed immutable physical receipt evidence | Inventory application or journal succeeded |
 | `SupplierInvoiceRecorded` | Procurement | supplier invoice evidence accepted | payment/journal succeeded |
@@ -91,7 +95,7 @@ It owns:
 - immutable guest contact/fulfillment snapshot when supplied;
 - commercial lifecycle;
 - Sales-owned view of allocation/fulfillment evidence;
-- cancellation/refund-request intent/history.
+- cancellation/refund-request intent and refund-approval history.
 
 Sales does not own current Product, current stock, provider state, or journal truth.
 
@@ -177,7 +181,7 @@ Placed ──verified capture──► Confirmed ──whole fulfillment──�
   └────────cancel before Fulfilled──────────────────────────► Cancelled
 ```
 
-`Completed` is terminal for normal commerce operations.
+`Completed` is terminal for normal commerce operations, but historical refund/correction facts may still be appended without rewriting the original completion history.
 
 ### 5.7 Cancellation (`PD-042`)
 
@@ -192,7 +196,34 @@ Cancellation is only a Sales commercial fact:
 
 A Fulfilled Order is not cancellable under MVP normal cancellation semantics.
 
-### 5.8 Sales invariants
+### 5.8 Refund request and approval (`PD-023`)
+
+Refund is a **request-and-approval workflow**, not an immediate side effect.
+
+Sales owns the refund-review business state:
+
+```text
+RefundRequested
+      ├──Approve──► RefundApproved
+      └──Reject───► RefundRejected
+```
+
+Rules:
+
+1. a refund request must appear in a dedicated merchant refund-approval experience before any refund consequence is authorized;
+2. `RefundRequested` alone creates no `StockReturned`, no accounting correction, and no provider refund authorization;
+3. approval is explicit and records `RefundApproved`; rejection records `RefundRejected`;
+4. in MVP, `RefundApproved` means the merchant accepts the corresponding returned goods as restockable; Inventory must record the approved return quantity as one logical `StockReturned` effect;
+5. `RefundApproved` also authorizes the required Accounting compensating/reversal effects described in section 9.8;
+6. approval may authorize/request the Payments refund operation, but approval itself is **not** `PaymentRefunded`;
+7. `PaymentRefunded` requires verified provider evidence and remains Payments-owned truth;
+8. rejection creates no return, no refund payment authorization, and no accounting correction;
+9. duplicate approval/rejection/replay cannot create duplicate StockReturned, payment-refund, or journal effects;
+10. non-restock refund semantics are outside the MVP policy established by `PD-023`.
+
+The approval action must require an explicitly authorized merchant refund-approval capability. Exact UI composition and role-to-capability wiring belong to subsequent planning/refinement; implementation must not treat visibility of the approval screen as authorization by itself.
+
+### 5.9 Sales invariants
 
 - trusted storefront Tenant context determines Tenant; cart/request TenantId never grants authority;
 - every Product is revalidated as currently sellable;
@@ -201,7 +232,9 @@ A Fulfilled Order is not cancellable under MVP normal cancellation semantics.
 - one logical checkout intent produces at most one logical Order for equivalent input;
 - incompatible reuse of the same intent is a conflict;
 - later Catalog/Customer changes never rewrite Order snapshots;
-- `OutcomeUnknown` blocks unsafe payment-dependent terminal transitions.
+- `OutcomeUnknown` blocks unsafe payment-dependent terminal transitions;
+- one logical refund request reaches at most one terminal approval decision;
+- approved refund quantities/amounts cannot exceed the eligible original Order/payment/issue evidence.
 
 ## 6. Inventory
 
@@ -246,6 +279,8 @@ A downward adjustment may not reduce `OnHand` below `Reserved`. Existing reserva
 
 Every accepted non-zero physical quantity effect produces exactly one immutable movement/effect. Replay must not duplicate it.
 
+For an approved refund under `PD-023`, `StockReturned` is the authoritative Inventory fact that restores the approved return quantity to OnHand. The return references the original Order/issue/refund approval evidence and cannot exceed eligible issued quantity.
+
 ### 6.4 Reservation and ambiguous payment (`PD-018`)
 
 For an Order whose Payment is `OutcomeUnknown`:
@@ -287,7 +322,18 @@ A provider-verifiable Declined/Rejected/NoCommit result terminates only that Pay
 - no new capture attempt may start while the previous attempt remains unknown;
 - reconciliation/provider inquiry must establish the terminal outcome first.
 
-### 7.3 Payment invariants
+### 7.3 Refund execution (`PD-023`)
+
+Payments may execute a refund only for a Sales-approved refund intent.
+
+- `RefundApproved` authorizes the refund operation but does not prove provider commit;
+- provider timeout/network ambiguity remains `OutcomeUnknown` and requires reconciliation;
+- only verified provider evidence creates `PaymentRefunded`;
+- duplicate refund requests/evidence cannot refund the same logical approved amount twice;
+- cumulative verified refund cannot exceed captured amount;
+- rejection of the Sales refund request authorizes no payment refund.
+
+### 7.4 Payment invariants
 
 - amount/currency originate from accepted Sales obligation;
 - equivalent operation retry has one logical effect;
@@ -484,18 +530,48 @@ Reservation changes are not physical adjustments and create no accounting postin
 - manual journals in MVP use current Tenant business date only;
 - user-selected past/future EffectiveDate and formal backdating are not supported until later period-control policy exists.
 
-### 9.8 Refund/return accounting — deferred (`PD-023`)
+### 9.8 Refund/return accounting (`PD-023`)
 
-No specific refund/return posting model is approved yet.
+Refund accounting is explicit and append-only.
 
-Mandatory interim rules:
+#### At `RefundApproved`
 
-- `PaymentRefunded`, Sales refund/cancellation, `StockReturned`, and `JournalPosted` remain separate facts;
-- no refund event automatically implies stock, revenue, COGS, or journal effects not confirmed by owning domain;
-- posted history remains immutable;
-- future correction uses explicit compensating/reversal journals.
+For an already fulfilled/recognized sale, Accounting posts a linked compensating entry for the approved refund amount:
 
-**HUMAN PRODUCT DECISION REQUIRED** before refund/return accounting implementation (`TASK-0050` refund portion / `TASK-0063`–`TASK-0066` or equivalent) becomes Ready.
+```text
+Dr Sales Revenue
+Cr Customer Deposits / Unearned Revenue
+```
+
+This reverses the applicable revenue recognition without editing the original `OrderFulfilled` journal.
+
+When Inventory accepts the corresponding approved return as `StockReturned`, Accounting reverses the applicable COGS effect using the original issue cost basis/provenance:
+
+```text
+Dr Inventory
+Cr COGS
+```
+
+The return/accounting effect is idempotent by the approved refund/return source identity and cannot restore more quantity/value than the eligible original issue.
+
+#### At verified `PaymentRefunded`
+
+Only after Payments has verified provider evidence that the money refund committed does Accounting clear the corresponding refund liability against Cash:
+
+```text
+Dr Customer Deposits / Unearned Revenue
+Cr Cash
+```
+
+Thus:
+
+- `RefundApproved` is not proof that cash left the merchant;
+- `PaymentRefunded` is not allowed without an approved refund intent;
+- provider `OutcomeUnknown` never posts Cash movement until reconciled;
+- `RefundRejected` produces no return/payment/accounting correction;
+- posted source journals remain immutable and every correction references the original Order/payment/issue/refund evidence.
+
+The dedicated merchant refund-approval experience is therefore a business gate before StockReturned and compensating financial effects may begin.
 
 ## 10. Reporting
 
@@ -578,6 +654,8 @@ Audit stores append-oriented evidence for:
 - Subscription/platform-admin actions;
 - security-significant Tenant-isolation denials.
 
+Refund approval/rejection and resulting privileged accounting corrections are auditable actions. Audit records who decided the request and the safe outcome/correlation evidence, but does not become refund or journal truth.
+
 Evidence includes actor, trusted Tenant, action, safe target identity where permitted, outcome, timestamp, correlation, and safe reason metadata.
 
 Tenant Audit is readable by Owner/Admin only in MVP.
@@ -601,7 +679,7 @@ MVP guest checkout does not automatically create/match CRM Customer (`PD-035`).
 
 ## 15. Cross-domain operational sequence
 
-Approved MVP commerce flow:
+Approved MVP commerce flow plus refund recovery path:
 
 ```text
 Catalog sellable facts + authoritative price
@@ -632,6 +710,16 @@ Payments full capture attempt
        Accounting revenue + COGS use distinct facts
                          ↓
                     Order Completed
+
+Later eligible refund:
+RefundRequested
+      ↓ merchant approval screen
+RefundApproved
+      ├────► Inventory StockReturned ───► Accounting COGS reversal
+      ├────► Accounting revenue compensating journal
+      └────► Payments refund operation ─► verified PaymentRefunded
+                                              ↓
+                                      Accounting Cash settlement
 ```
 
 The sequence expresses business dependencies only, not orchestration technology.
@@ -647,6 +735,9 @@ The sequence expresses business dependencies only, not orchestration technology.
 - `ORDER_PAYMENT_OUTCOME_UNKNOWN`
 - `ORDER_CANCELLATION_NOT_ALLOWED`
 - `ORDER_STATE_TRANSITION_INVALID`
+- `REFUND_NOT_ELIGIBLE`
+- `REFUND_APPROVAL_REQUIRED`
+- `REFUND_ALREADY_DECIDED`
 
 ### Inventory
 
@@ -656,6 +747,7 @@ The sequence expresses business dependencies only, not orchestration technology.
 - `RESERVATION_ALREADY_TERMINAL`
 - `RESERVATION_SOURCE_CONFLICT`
 - `STOCK_MOVEMENT_ALREADY_APPLIED`
+- `RETURN_EXCEEDS_ELIGIBLE_ISSUED_QUANTITY`
 - `WAREHOUSE_OR_PRODUCT_REFERENCE_INVALID`
 
 ### Payments
@@ -665,6 +757,7 @@ The sequence expresses business dependencies only, not orchestration technology.
 - `PAYMENT_OPERATION_CONFLICT`
 - `PAYMENT_AMOUNT_MISMATCH`
 - `PAYMENT_REFUND_EXCEEDS_CAPTURED`
+- `PAYMENT_REFUND_NOT_APPROVED`
 
 ### Procurement
 
@@ -683,17 +776,16 @@ The sequence expresses business dependencies only, not orchestration technology.
 - `SOURCE_POSTING_ALREADY_APPLIED`
 - `CONTROL_ACCOUNT_CHANGE_FORBIDDEN`
 - `MANUAL_EFFECTIVE_DATE_NOT_ALLOWED`
-- `REFUND_ACCOUNTING_POLICY_UNRESOLVED`
+- `REFUND_CORRECTION_ALREADY_APPLIED`
+- `REFUND_CORRECTION_SOURCE_MISMATCH`
 
 Transport/status-code mapping remains a Technical Architecture concern.
 
 ## 17. Remaining human product decision
 
-For the contexts in this document, all listed MVP policy decisions are resolved **except**:
+For the commerce-operation and accounting semantics covered by this document, the currently registered MVP product decisions are reconciled. `PD-023` is no longer a human-product-decision gate.
 
-- `PD-023` — refund/return accounting treatment.
-
-Its safe interim constraints are encoded in section 9.8. Builders must not invent contra-revenue/restock/COGS reversal rules.
+A future capability that changes the approved refund model — for example non-restock refunds, new return disposition choices, or a different refund approval policy — requires an explicit later product decision rather than being inferred by a Builder.
 
 ## 18. Downstream reconciliation handoff
 
@@ -705,9 +797,12 @@ The technical baseline was completed before these decisions were approved and mu
 - all-line reservation before full immediate capture;
 - one Payment obligation with multiple attempts;
 - `OutcomeUnknown` reconciliation with indefinite stock hold until evidence;
+- refund request → explicit approval/rejection state;
+- dedicated merchant refund-approval experience as a business gate;
+- `RefundApproved` causing exactly-once `StockReturned` and compensating Accounting effects while `PaymentRefunded` remains provider-evidence truth;
 - zero-floor Inventory invariants and non-destructive adjustments;
 - immutable submitted PO / receipt-correction evidence;
-- GRNI + weighted-average valuation + distinct revenue/COGS triggers;
+- GRNI + weighted-average valuation + distinct revenue/COGS/refund triggers;
 - Tenant-local business date versus journal posting timestamp;
 - source-governance authority split;
 - per-recipient Notification state and non-disclosing Audit.
@@ -716,6 +811,6 @@ No AWS/persistence/transport choice is made here.
 
 ### Backlog Planner
 
-Reconcile candidate tasks to remove obsolete `PD-011`–`PD-022`, `PD-024`–`PD-042` planning gates where their product behavior is now approved. Keep refund/return accounting work gated by `PD-023`.
+Reconcile candidate tasks to remove obsolete `PD-011`–`PD-042` planning gates where their product behavior is now approved, including `PD-023`. Refund tasks must explicitly include the dedicated approval experience and the cross-domain consequences above rather than treating `RefundRequested` as an automatic refund.
 
-**Stop condition: DOMAIN BASELINE READY for approved Commerce Operations MVP semantics; HUMAN PRODUCT DECISION REQUIRED only for `PD-023` scope.**
+**Stop condition: DOMAIN BASELINE READY for approved Commerce Operations MVP semantics.**
