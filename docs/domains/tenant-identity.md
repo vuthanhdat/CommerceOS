@@ -1,6 +1,6 @@
 # Tenant Management & Merchant Access Domain Baseline
 
-_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved decisions `PD-001`, `PD-002`, `PD-003`, `PD-004`, `PD-033`, `PD-034`, `PD-036`, and the relevant Subscription & Billing decisions._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved decisions `PD-001`, `PD-002`, `PD-003`, `PD-004`, `PD-033`, `PD-034`, `PD-036`, and the relevant Subscription & Billing decisions including resolved `PD-044`._
 
 ## 1. Boundary and language
 
@@ -37,28 +37,37 @@ The initial identity must be authenticated with a verified email. No legal/tax i
 
 CommerceOS MVP is VND-only (`PD-002`). Money still carries an explicit currency; the Business Profile does not choose another functional currency in MVP.
 
-### Tenant lifecycle
+### Tenant lifecycle (`PD-004`)
+
+MVP has exactly two Tenant states:
 
 ```text
-Active ──Suspend──► Suspended
-   ▲                    │
-   └────Reactivate──────┘
+Active ──platform Suspend(reason)──► Suspended
+   ▲                                     │
+   └────platform Reactivate(reason)──────┘
 ```
 
 Rules:
 
 1. successful onboarding creates an `Active` Tenant;
-2. while Suspended, ordinary merchant mutations and public commerce are denied;
-3. suspension does not delete Tenant data, Memberships, Subscription, Orders, accounting history, or other evidence;
-4. reactivation restores Tenant eligibility only; it does not reactivate a separately Disabled Membership or ended Subscription;
-5. Tenant closure, deletion, retention windows, recovery windows, and legal/privacy erasure semantics remain deferred under `PD-004`;
-6. exact support/read-only behavior of a Suspended Tenant must not be invented beyond the approved safe constraint.
+2. Tenant suspension and reactivation are explicit authorized platform-administration actions, not merchant self-service;
+3. both actions require an explicit reason and produce Audit evidence;
+4. while Suspended, public storefront/checkout is unavailable and all ordinary merchant mutations are denied;
+5. authenticated Memberships remain intact and may use controlled read-only access according to normal role visibility;
+6. Owner/Admin may inspect tenant history, operational data, billing/support/recovery information, and Audit views they are otherwise authorized to read;
+7. Staff/Viewer may read only data their normal role permits and cannot perform operational mutations while the Tenant is Suspended;
+8. authorized platform support/administration may use an explicit privileged read-only investigation path and never becomes a Tenant Membership by implication;
+9. suspension does not delete Tenant data, Memberships, Subscription, Orders, accounting history, or other evidence;
+10. reactivation restores Tenant eligibility only; it does not reactivate a separately Disabled Membership, Ended Subscription, or another independent lifecycle;
+11. Tenant closure, hard deletion, automatic retention expiry, and privacy/legal erasure are not supported in MVP;
+12. Suspended Tenant data is retained indefinitely until a future explicit privacy/retention policy supersedes this rule.
 
 ### Tenant invariants
 
 - `TenantId` is immutable and never becomes authorization merely because it appears in client input.
 - An Active Tenant always has at least one Active Owner Membership.
 - Tenant suspension never rewrites another context's lifecycle.
+- A merchant cannot bypass platform suspension by self-reactivating the Tenant.
 - Registration retry is idempotent for the same logical onboarding intent.
 - Tenant name or external SubjectId is not a global real-business uniqueness key.
 
@@ -67,6 +76,14 @@ Rules:
 MVP registration is open self-service for an authenticated identity with a verified email (`PD-034`). The identity that successfully initiates registration becomes the initial Active Owner.
 
 `PD-043` additionally requires successful Tenant registration to start a **30-day Trial subscription** with dedicated Trial terms/Entitlements and no payment method.
+
+Under resolved `PD-044`, Trial starts with:
+
+- all core CommerceOS capabilities enabled;
+- `MaxActiveMemberships = 3`;
+- `MaxWarehouses = 1`;
+- scheduled product ingestion enabled;
+- order-volume warning threshold = 500 confirmed Orders per Trial/billing period semantics where applicable.
 
 The merchant-facing onboarding outcome is therefore:
 
@@ -123,6 +140,7 @@ Active ──Disable──► Disabled
 - Disabled denies ordinary protected work even if authentication remains valid.
 - Reactivation is explicit.
 - Subscription downgrade, cancellation, expiry, or delinquency does not directly disable a Membership.
+- Tenant suspension does not directly disable a Membership; it independently blocks merchant mutations at the Tenant eligibility dimension.
 
 ## 5. MVP roles and authority (`PD-003`)
 
@@ -195,9 +213,22 @@ verified identity
 + owning domain invariant accepts the change
 ```
 
-### Staff-count limits (`PD-048`, `PD-050`)
+### Active-Membership limits (`PD-044`, `PD-048`, `PD-050`)
 
-Subscription & Billing may define `MaxActiveStaff` as a hard growth/activation limit, but Merchant Access remains authoritative for Membership identity/status and active-member count.
+The approved initial commercial catalog uses `MaxActiveMemberships` as a hard counted-resource growth/activation limit.
+
+It counts **all Active Memberships regardless of role**: Owner, Admin, Staff, and Viewer.
+
+Current approved limits:
+
+| Terms | MaxActiveMemberships |
+|---|---:|
+| Trial | 3 |
+| Starter | 3 |
+| Growth | 10 |
+| Business | 30 |
+
+Merchant Access remains authoritative for Membership identity/status and the current Active Membership count.
 
 Rules:
 
@@ -229,13 +260,13 @@ Rules:
 5. platform administration is a separate explicit path, not an Owner Membership in every Tenant;
 6. client plan/entitlement claims never become subscription authority.
 
-## 9. Privileged Audit relationship (`PD-033`)
+## 9. Privileged Audit relationship (`PD-004`, `PD-033`)
 
 Audit owns append-oriented evidence, while Tenant Management/Merchant Access own the business action.
 
 MVP Audit covers successful and rejected privileged mutations, including:
 
-- Tenant administration;
+- Tenant administration, including platform `SuspendTenant`/`ReactivateTenant` reasoned actions;
 - Membership/role/security administration;
 - security-significant tenant-isolation denials.
 
@@ -251,6 +282,8 @@ Audit acknowledgement/evidence is not a substitute for the underlying business f
 - `UpdateBusinessProfile`
 - `SuspendTenant`
 - `ReactivateTenant`
+
+`SuspendTenant` and `ReactivateTenant` are platform-administration commands in MVP and require a reason.
 
 ### Tenant Management facts
 
@@ -289,7 +322,8 @@ Fact names describe accepted business meaning, not transport/event schemas.
 | Outcome | Meaning |
 |---|---|
 | `TENANT_REGISTRATION_CONFLICT` | same logical registration identity is reused incompatibly; no second logical Tenant is created |
-| `TENANT_SUSPENDED` | Tenant status blocks ordinary operation |
+| `TENANT_SUSPENDED` | Tenant status blocks ordinary merchant/public operation while preserving approved read-only visibility |
+| `TENANT_ADMINISTRATION_REQUIRED` | requested Tenant status action requires the explicit authorized platform-administration path |
 | `MEMBERSHIP_REQUIRED` | authenticated subject has no eligible Membership in the selected Tenant context |
 | `MEMBERSHIP_INACTIVE` | applicable Membership exists but is Disabled |
 | `MEMBERSHIP_TENANT_MISMATCH` | target and trusted Tenant differ; response remains non-disclosing |
@@ -299,36 +333,35 @@ Fact names describe accepted business meaning, not transport/event schemas.
 | `MEMBERSHIP_ALREADY_EXISTS` | Active Membership already exists for the Tenant/Subject |
 | `LAST_OWNER_REQUIRED` | requested change would leave an Active Tenant without an Active Owner |
 | `ROLE_ASSIGNMENT_FORBIDDEN` | actor may not perform the requested role/ownership change |
-| `MEMBERSHIP_ENTITLEMENT_LIMIT_REACHED` | current trusted hard staff limit rejects growth/activation; existing Memberships remain unchanged |
+| `MEMBERSHIP_ENTITLEMENT_LIMIT_REACHED` | current trusted hard Active-Membership limit rejects growth/activation; existing Memberships remain unchanged |
 | `STALE_MEMBERSHIP_REVISION` | concurrent Membership state won; newer accepted state is preserved |
 
 Transport mapping belongs to Technical Architecture.
 
 ## 12. Remaining human product decision
 
-Only this Tenant/Access product-policy area remains intentionally unresolved:
+There is **no remaining current Tenant/Merchant Access human product-decision gate** in the register.
 
-- `PD-004` — exact Suspended-tenant read/support behavior plus closure/deletion/retention/recovery/privacy semantics.
-
-Its approved interim constraint is already encoded above and must not be expanded by implementation guesswork.
+Future Tenant closure, hard deletion, timed retention, privacy/legal erasure, or a different suspension authority/read policy requires a new explicit product/privacy decision rather than being inferred from `PD-004`.
 
 ## 13. Downstream reconciliation handoff
 
 ### Technical Architect
 
-Reconcile the already-completed technical baseline against these newly approved business semantics, especially:
+Reconcile the already-completed technical baseline against these approved business semantics, especially:
 
 - multi-Tenant Membership selection and trusted Tenant resolution;
 - one-role `Owner/Admin/Staff/Viewer` authority model;
 - invitation verified-email binding, 7-day expiry, single active pending invitation, and resend rotation;
 - onboarding spanning Tenant + initial Owner + automatic 30-day Trial without collapsing bounded-context ownership;
-- fresh-enough Membership/entitlement checks for hard growth limits;
+- `MaxActiveMemberships` hard growth limit and authoritative Membership count;
+- platform-only reasoned Tenant suspend/reactivate path with controlled read-only Suspended access;
 - non-disclosing tenant-isolation and Audit requirements.
 
-Do not resolve `PD-004` through API, persistence, or infrastructure convenience.
+No closure/deletion/privacy workflow should be introduced merely as a consequence of resolving `PD-004`; those capabilities remain outside MVP.
 
 ### Backlog Planner
 
-Reconcile candidate tasks so Builders no longer see obsolete pending assumptions for `PD-001`, `PD-002`, `PD-003`, `PD-034`, or `PD-036`. Keep any closure/privacy/suspension-detail work gated by `PD-004`.
+Reconcile candidate tasks so Builders no longer see obsolete pending assumptions for `PD-001`, `PD-002`, `PD-003`, `PD-004`, `PD-034`, `PD-036`, or the Membership-limit portion of `PD-044`. Lifecycle/privacy work outside the approved two-state MVP must be represented as future explicit product work rather than a current unresolved gate.
 
-**Stop condition: DOMAIN BASELINE READY for approved Tenant/Merchant Access MVP semantics; HUMAN PRODUCT DECISION REQUIRED only where `PD-004` is explicitly reached.**
+**Stop condition: DOMAIN BASELINE READY for approved Tenant/Merchant Access MVP semantics.**
