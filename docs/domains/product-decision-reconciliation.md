@@ -18,12 +18,12 @@ This pass changes business/domain documentation only. It introduces no applicati
 |---|---|---|
 | `PD-001`–`PD-004`, `PD-033`, `PD-034`, `PD-036` | `tenant-identity.md`, `02-business-domains.md` | Reconciled; only deferred scope in `PD-004` remains gated |
 | `PD-002`, `PD-003`, `PD-005`–`PD-010`, `PD-037`, `PD-040` | `catalog.md`, `02-business-domains.md` | Reconciled |
-| `PD-011`–`PD-032`, `PD-035`, `PD-038`, `PD-039`, `PD-041`, `PD-042` | `commerce-operations.md`, `02-business-domains.md` | Reconciled; only deferred refund/return accounting in `PD-023` remains gated |
+| `PD-011`–`PD-032`, `PD-035`, `PD-038`, `PD-039`, `PD-041`, `PD-042` | `commerce-operations.md`, `02-business-domains.md` | Reconciled; `PD-023` refund approval/return/accounting policy is resolved and propagated |
 | `PD-043`–`PD-053` | `subscription-billing.md`, `tenant-identity.md`, `02-business-domains.md` | Reconciled; only exact commercial plan catalog/pricing in `PD-044` remains gated |
 
-The product-decision register currently contains **no** entry with status `HUMAN PRODUCT DECISION REQUIRED`. The only intentionally deferred product-policy areas are `PD-004`, `PD-023`, and the exact commercial-catalog portion of `PD-044`.
+The product-decision register currently contains **no** entry with status `HUMAN PRODUCT DECISION REQUIRED`. The only intentionally deferred product-policy areas are `PD-004` and the exact commercial-catalog portion of `PD-044`.
 
-## 3. Remaining human-decision gates
+## 3. Remaining human-decision gates and resolved refund policy
 
 ### `PD-004` — Tenant suspension detail, closure, retention, privacy lifecycle
 
@@ -40,15 +40,35 @@ Still requires human product decision before implementation needs:
 - retention/recovery windows;
 - privacy/legal erasure semantics.
 
-### `PD-023` — Refund/return accounting
+### `PD-023` — Refund approval, return, and accounting correction — Resolved
 
-Approved interim domain policy:
+Approved MVP domain policy:
 
-- `PaymentRefunded`, Sales cancellation/refund, `StockReturned`, and Accounting correction remain independent facts;
-- posted journals are never rewritten;
-- no refund/return accounting effect may be inferred without explicit policy.
+```text
+RefundRequested
+      ↓ dedicated merchant refund-approval experience
+RefundApproved
+      ├────► Inventory StockReturned
+      ├────► Accounting revenue compensating journal
+      ├────► Accounting COGS reversal after StockReturned
+      └────► Payments refund operation
+                    ↓
+          verified PaymentRefunded
+                    ↓
+          Accounting Cash settlement
+```
 
-Still requires human product decision before implementation needs the exact revenue/COGS/inventory correction model.
+- `RefundRequested` alone has no stock/accounting/payment effect.
+- The request must be explicitly approved or rejected through a dedicated merchant refund-approval experience.
+- `RefundApproved` means the MVP return is accepted as restockable and authorizes exactly one logical `StockReturned` for the approved quantity.
+- For an already recognized sale, approval creates a linked revenue compensating journal rather than editing posted history: `Dr Sales Revenue / Cr Customer Deposits`.
+- Accepted `StockReturned` reverses the applicable original issue-cost COGS effect: `Dr Inventory / Cr COGS`.
+- Approval authorizes the Payments refund operation but is not proof the provider committed it.
+- Only verified provider evidence creates `PaymentRefunded`; that fact clears the refund liability against Cash: `Dr Customer Deposits / Cr Cash`.
+- `RefundRejected` produces no StockReturned, payment-refund authorization, or refund accounting correction.
+- Non-restock refund semantics are outside this MVP policy and require a future explicit product decision if introduced.
+
+`PD-023` is no longer a human-product-decision gate. Technical Architecture and Backlog Planning still need to propagate the newly approved workflow/contracts before affected tasks become Ready.
 
 ### `PD-044` — Exact sellable SaaS plan catalog/pricing
 
@@ -94,10 +114,11 @@ Still requires human product decision before implementation needs exact `Starter
 - all-or-nothing allocation/fulfillment, no backorder;
 - one Payment obligation per Order with multiple attempts;
 - definitive decline is attempt-terminal only; `OutcomeUnknown` requires reconciliation and keeps stock held;
+- refund is now an explicit `RefundRequested → RefundApproved/RefundRejected` workflow with a dedicated merchant approval experience;
+- `RefundApproved` authorizes restockable `StockReturned`, linked revenue/COGS compensating entries, and the Payments refund attempt, while `PaymentRefunded` remains verified provider truth;
 - Inventory cannot go negative and adjustments cannot consume Reserved stock;
 - Procurement submitted/receipt evidence is immutable with explicit correction;
-- Accounting uses cash/deposit-at-capture, revenue-at-fulfillment, moving weighted-average valuation, COGS-at-StockIssued, GRNI procurement accounting, and explicit journal date semantics;
-- exact refund/return accounting remains deferred.
+- Accounting uses cash/deposit-at-capture, revenue-at-fulfillment, moving weighted-average valuation, COGS-at-StockIssued, GRNI procurement accounting, explicit journal date semantics, and append-only refund corrections.
 
 ### Reporting / Ingestion / Notification / Audit
 
@@ -105,7 +126,8 @@ Still requires human product decision before implementation needs exact `Starter
 - Tenant IANA timezone defines operational business day;
 - source policy is platform-governed with Tenant opt-in;
 - Notification read/acknowledgement state is per recipient;
-- privileged Audit coverage and Owner/Admin tenant visibility are explicit and non-disclosing cross-Tenant.
+- privileged Audit coverage and Owner/Admin tenant visibility are explicit and non-disclosing cross-Tenant;
+- refund approval/rejection and resulting privileged accounting corrections are auditable without Audit becoming refund/accounting source truth.
 
 ### Subscription & Billing
 
@@ -124,7 +146,7 @@ Still requires human product decision before implementation needs exact `Starter
 
 ### Technical Architect reconciliation required
 
-The completed TASK-0092 technical baseline predates the final product-decision propagation. Therefore its architecture decisions/contracts must be rechecked against the updated domain meaning before affected implementation tasks become Ready.
+The completed TASK-0092 technical baseline predates the final product-decision propagation and the subsequent resolution of `PD-023`. Therefore its architecture decisions/contracts must be rechecked against the updated domain meaning before affected implementation tasks become Ready.
 
 This is **not** permission for the Domain Architect to choose:
 
@@ -133,18 +155,20 @@ This is **not** permission for the Domain Architect to choose:
 - sync/async transport;
 - AWS services;
 - API/event wire schemas;
-- billing-provider implementation details.
+- payment/refund provider implementation details.
 
-The Technical Architect should preserve the business semantics recorded in the detailed domain documents and explicitly reconcile any earlier preserved alternatives that are now closed by product policy.
+The Technical Architect should preserve the business semantics recorded in the detailed domain documents and explicitly reconcile any earlier preserved alternatives that are now closed by product policy, including the refund approval boundary, exactly-once cross-domain effects, and provider-evidence separation.
 
 ### Backlog Planner reconciliation required
 
 After Technical Architecture reconciliation, Backlog Planning should:
 
-- remove obsolete product-decision gates for decisions now approved and propagated;
+- remove obsolete product-decision gates for decisions now approved and propagated, including `PD-023`;
 - refine only the first safe dependency frontier;
-- keep work touching `PD-004`, `PD-023`, or exact `PD-044` scope non-Ready until its human-decision gate is actually reached/resolved;
-- repair tasks whose assumptions conflict with the approved role model, onboarding Trial, Catalog lifecycle, commerce sequence, accounting semantics, or subscription lifecycle.
+- ensure refund tasks explicitly include the dedicated approval experience and do not treat `RefundRequested` as an automatic refund;
+- preserve Sales/Inventory/Payments/Accounting ownership and the `RefundApproved` versus `PaymentRefunded` distinction;
+- keep work touching `PD-004` or exact `PD-044` scope non-Ready until its human-decision gate is actually reached/resolved;
+- repair tasks whose assumptions conflict with the approved role model, onboarding Trial, Catalog lifecycle, commerce sequence, accounting semantics, refund workflow, or subscription lifecycle.
 
 The Domain Architect does not mark implementation tasks Ready.
 
@@ -157,7 +181,8 @@ This reconciliation pass satisfies the Domain Architect contract because:
 - aggregates/state dimensions/invariants needed by approved decisions are recorded;
 - cross-domain effects retain owning-context authority;
 - resolved product decisions are no longer left as Builder guesses in the detailed domain baseline;
-- the three intentionally deferred product-policy areas remain explicit rather than guessed;
+- refund approval/return/accounting semantics are now explicit without conflating provider refund truth;
+- the two intentionally deferred product-policy areas remain explicit rather than guessed;
 - downstream Technical Architect and Backlog Planner reconciliation is stated;
 - no application/AWS/persistence decision was introduced.
 
