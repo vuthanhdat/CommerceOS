@@ -151,6 +151,19 @@ def check_task_specs(errors: list[str]) -> None:
             )
 
         text = path.read_text(encoding="utf-8")
+        maturity_match = re.search(
+            r"^Specification maturity:\s*([^\n]+)$", text, flags=re.MULTILINE
+        )
+        maturity = maturity_match.group(1).strip() if maturity_match else None
+
+        # The full task template is an execution contract. Enforce it for Ready work
+        # and anything already claimed under tasks/active. Outline/Refined planning
+        # nodes and role-specific completed records are valid historical/planning
+        # artifacts and must not be forced into a Builder-spec shape retroactively.
+        requires_full_spec = maturity == "Ready" or path.parent.name == "active"
+        if not requires_full_spec:
+            continue
+
         for heading in TASK_REQUIRED_HEADINGS:
             if heading not in text:
                 fail(f"Task missing heading '{heading}': {path.relative_to(ROOT)}", errors)
