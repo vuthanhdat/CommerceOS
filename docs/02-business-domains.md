@@ -1,6 +1,6 @@
 # CommerceOS — Business-Domain Baseline
 
-_Canonical business-domain baseline. Originally reconciled by TASK-0087, extended for Subscription & Billing by TASK-0091, and reconciled again on 2026-08-10 after the human product-decision pass._
+_Canonical business-domain baseline. Originally reconciled by TASK-0087, extended for Subscription & Billing by TASK-0091, and reconciled again on 2026-08-10 after the human product-decision pass, including the resolved `PD-023` refund approval policy._
 
 ## 1. Purpose and authority
 
@@ -30,13 +30,14 @@ This baseline deliberately does **not** select AWS services, databases, table/ke
 
 The 2026-08-10 decision pass resolved or intentionally deferred the full current register. The register contains no entry currently marked `HUMAN PRODUCT DECISION REQUIRED`.
 
-Only three product-policy areas remain intentionally deferred:
+Only two product-policy areas remain intentionally deferred:
 
 - `PD-004` — exact Suspended-tenant read/support behavior plus Tenant closure/deletion/retention/recovery/privacy semantics;
-- `PD-023` — exact refund/return accounting treatment;
 - `PD-044` — exact sellable `Starter`/`Growth`/`Business` prices and entitlement/limit packages; immutable PlanVersion structure is already approved.
 
-These are not permission to guess. When implementation actually requires one of those deferred meanings, the affected work remains non-Ready and stops with the appropriate human product-decision gate.
+`PD-023` is resolved: refund requires explicit merchant approval before return/accounting/payment-refund execution is authorized.
+
+Deferred areas are not permission to guess. When implementation actually requires one of those deferred meanings, the affected work remains non-Ready and stops with the appropriate human product-decision gate.
 
 ## 3. Modeling vocabulary
 
@@ -95,13 +96,13 @@ Arrows show business knowledge/dependency only. They do not prescribe synchronou
 | Catalog | canonical Product, SKU, base selling price, lifecycle/public eligibility, slug, Category/Brand, specifications, Product-media/source associations | stock, final Order price, accounting inventory value, SaaS plan pricing |
 | Pricing & Promotion | future authoritative offer/discount rules | canonical Product, immutable Order snapshot, journals |
 | Storefront | public tenant experience, transient tenant-bound cart, public projections, checkout intent | canonical Product, Order, stock, Payment |
-| Sales & Order Management | accepted Order, immutable commercial snapshots, Sales lifecycle, cancellation/refund intent | current Product, physical stock, provider Payment state, journal truth |
+| Sales & Order Management | accepted Order, immutable commercial snapshots, Sales lifecycle, cancellation/refund request and refund approval decision | current Product, physical stock, provider Payment state, journal truth |
 | Customer/CRM | explicit tenant-owned Customer profile/contact preferences | guest Order snapshot, authentication, Sales history source, ledger balance |
 | Inventory | Warehouse/Location, OnHand/Reserved/Available, reservations, movements, physical adjustments/receipts/issues/returns | Product merchandising, Subscription policy, accounting valuation |
 | Procurement | Supplier, PurchaseOrder commitment, GoodsReceipt, SupplierInvoice/SupplierPayment evidence | Inventory balances, journals, bank/payment-provider execution |
 | Payments | merchant-order Payment obligation, attempts, verified/unknown outcome, captures/refunds | CommerceOS SaaS charges, Order agreement, revenue policy |
 | Merchant-order Mock Payment Provider | simulated shopper-order provider intents/operations/evidence | SaaS billing, SalesOrder, Inventory, Accounting |
-| Accounting | merchant chart of accounts, valuation/posting policy, immutable journals/ledger | operational Order/stock/Payment/Procurement state, SaaS charge truth |
+| Accounting | merchant chart of accounts, valuation/posting/refund-correction policy, immutable journals/ledger | operational Order/stock/Payment/Procurement state, SaaS charge truth |
 | Reporting | derived operational/financial/usage/platform projections | transactional truth, entitlement authority |
 | Product Data Ingestion | DataSource policy/run/snapshot/candidate truth | canonical Product, subscription capability, sell price/publication |
 | Notification | delivery/read/acknowledgement state per recipient | source business outcome |
@@ -191,7 +192,7 @@ Subscription SaaS charges are also VND whole đồng under `PD-046`, but remain 
 
 ### Quantity (`PD-012`)
 
-MVP order/reservation/receipt/issue quantities are positive whole units only. No fractional quantity/unit conversion exists.
+MVP order/reservation/receipt/issue/return quantities are positive whole units only. No fractional quantity/unit conversion exists.
 
 ### Tenant business date (`PD-031`, `PD-039`)
 
@@ -272,6 +273,35 @@ MVP rules:
 - downward adjustment cannot consume already Reserved stock;
 - Owner/Admin/Staff may cancel before Fulfilled; cancellation does not itself prove refund/release.
 
+### Refund approval and recovery (`PD-023`)
+
+Refund is not immediate when requested.
+
+```text
+RefundRequested
+      ↓ dedicated merchant approval experience
+RefundApproved
+      ├────► Inventory StockReturned
+      ├────► Accounting revenue compensating journal
+      ├────► Accounting COGS reversal after StockReturned
+      └────► Payments refund operation
+                    ↓
+          verified PaymentRefunded
+                    ↓
+          Accounting Cash settlement
+```
+
+`RefundRejected` produces none of those effects.
+
+Approved semantics:
+
+- `RefundRequested` has no stock/accounting/payment effect by itself;
+- `RefundApproved` means returned goods are accepted as restockable in MVP and authorizes exactly-once `StockReturned` for approved quantity;
+- approval creates linked compensating Accounting effects without editing historical journals;
+- Payments still requires verified provider evidence before `PaymentRefunded` exists;
+- provider ambiguity remains `OutcomeUnknown` and cannot be guessed into Cash movement;
+- non-restock refund behavior is outside the current MVP refund policy.
+
 ### Guest data (`PD-035`)
 
 Guest checkout creates no shopper/CRM account. Sales keeps immutable per-Order contact/fulfillment snapshot, with name/email required and phone/address only when fulfillment requires them. No automatic profile matching or historical rewrite.
@@ -304,7 +334,12 @@ Core postings/business triggers:
 - physical stock adjustments post explicit gain/loss effects;
 - journals are balanced, immutable, idempotent by source, and corrected through reversal/compensating entries.
 
-`PD-023` remains deferred: refund/return accounting must not be invented from PaymentRefunded/StockReturned/Sales refund state.
+Refund/return accounting under resolved `PD-023`:
+
+- `RefundApproved` for a recognized sale → `Dr Sales Revenue / Cr Customer Deposits` as a compensating journal;
+- accepted `StockReturned` → `Dr Inventory / Cr COGS` using original issue-cost provenance;
+- verified `PaymentRefunded` → `Dr Customer Deposits / Cr Cash`;
+- each effect is linked/idempotent and original posted journals remain immutable.
 
 ## 12. Reporting, Ingestion, Notification, and Audit
 
@@ -317,6 +352,8 @@ Operational KPI sources are explicit:
 - Top products = confirmed whole-unit quantity by Product snapshot;
 - failed-payment rate excludes `OutcomeUnknown` and uses terminal attempt outcomes;
 - operational Gross Sales = confirmed OrderTotal sum and is never Accounting revenue.
+
+Refund/correction facts are attributed to their own occurrence business date and do not rewrite original operational counts.
 
 Reporting is projection only, never command/entitlement authority.
 
@@ -332,7 +369,7 @@ Notification read/acknowledgement state is per recipient. Owner/Admin receive ap
 
 ### Audit
 
-Audit records successful/rejected privileged mutations, security administration, accounting corrections, subscription/admin actions, and security-significant tenant-isolation denials. Tenant Audit is readable by Owner/Admin only and must not leak cross-Tenant existence/identifiers.
+Audit records successful/rejected privileged mutations, security administration, accounting corrections, subscription/admin actions, refund approval/rejection, and security-significant tenant-isolation denials. Tenant Audit is readable by Owner/Admin only and must not leak cross-Tenant existence/identifiers.
 
 ## 13. Subscription & Billing baseline
 
@@ -393,7 +430,8 @@ Platform-admin Subscription/Billing support is read-only visibility; no plan/cha
 | What Product/base price/public eligibility exists? | Catalog |
 | What price did shopper agree to? | Sales immutable snapshot |
 | What was ordered/commercial state? | Sales |
-| What merchant-order payment outcome is verified/unknown? | Payments |
+| Was refund requested/approved/rejected? | Sales |
+| What merchant-order payment/refund outcome is verified/unknown? | Payments |
 | What physical stock quantity effect occurred? | Inventory |
 | What supplier commitment/receipt/invoice/payment evidence exists? | Procurement |
 | What has been posted to merchant books / inventory valuation? | Accounting |
@@ -416,7 +454,9 @@ Platform-admin Subscription/Billing support is read-only visibility; no plan/cha
 11. posted journal balances and immutability are mandatory;
 12. Inventory zero-floor/Reserved invariants are concurrency-critical business requirements;
 13. every hard entitlement write uses current trusted entitlement plus authoritative owning-domain state;
-14. public commerce and ordinary mutations require applicable effective subscription entitlements, while approved read/history/export/recovery remains distinct.
+14. public commerce and ordinary mutations require applicable effective subscription entitlements, while approved read/history/export/recovery remains distinct;
+15. refund request never creates return/payment/accounting effects before explicit approval;
+16. refund approval may authorize cross-domain effects but never substitutes for Inventory/Payments/Accounting owning facts.
 
 ## 16. Business error semantics
 
@@ -436,6 +476,7 @@ Common families:
 | `InvalidStateTransition` | requested transition is not approved from current state |
 | `AlreadyApplied` | equivalent logical intent/source already accepted; prior result is referenced |
 | `OutcomeUnknown` | independent external commit outcome cannot currently be proven |
+| `ApprovalRequired` | requested financially/materially sensitive effect requires an explicit approved business decision first |
 | `RemediationRequired` | requested downgrade/change cannot become effective until owning-domain usage is remediated |
 | `HumanProductDecisionRequired` | implementation reached one of the intentionally deferred product-policy scopes |
 
@@ -447,19 +488,15 @@ Technical Architecture decides transport representation.
 
 **HUMAN PRODUCT DECISION REQUIRED** only when work needs exact Suspended read/support semantics beyond the safe restriction, or Tenant closure/deletion/retention/recovery/privacy behavior.
 
-### `PD-023`
-
-**HUMAN PRODUCT DECISION REQUIRED** before exact refund/return Accounting postings and revenue/COGS/restock correction policy are implemented.
-
 ### `PD-044`
 
 **HUMAN PRODUCT DECISION REQUIRED** before exact Starter/Growth/Business prices or entitlement/limit packages are exposed/sold/seeded/hard-coded as product truth.
 
-No other current `PD-*` remains an unresolved Domain Architect product gate.
+No other current `PD-*` remains an unresolved Domain Architect product gate. `PD-023` is resolved and propagated.
 
 ## 18. Downstream reconciliation required
 
-The final product-decision pass occurred **after** the previous TASK-0092 technical baseline. Therefore the Technical Architect must reconcile technical artifacts against this updated business baseline before affected implementation tasks become Ready.
+The final product-decision pass and subsequent `PD-023` resolution occurred **after** the previous TASK-0092 technical baseline. Therefore the Technical Architect must reconcile technical artifacts against this updated business baseline before affected implementation tasks become Ready.
 
 Priority technical rechecks include:
 
@@ -468,26 +505,14 @@ Priority technical rechecks include:
 - invitation verified-email/rotation/expiry behavior;
 - Catalog SKU/slug/lifecycle/reference/media/import rules;
 - checkout reconfirmation and reserve→capture→confirm→allocate sequence;
+- refund request/approval/rejection contract and dedicated approval experience;
+- exactly-once `StockReturned`, compensating Accounting effects, and provider-evidence `PaymentRefunded` separation;
 - PaymentAttempt/OutcomeUnknown/reconciliation and stock hold;
 - Inventory zero-floor/reserved invariants;
 - immutable Procurement evidence;
-- Accounting trigger/valuation/GRNI/date semantics;
+- Accounting trigger/valuation/GRNI/date/refund-correction semantics;
 - Subscription monthly periods, upgrade/downgrade/PastDue/end, entitlement categories, SaaS provider simulation, and read-only platform support.
 
-After Technical Architecture reconciliation, Backlog Planner must reconcile candidate tasks and readiness. Resolved product decisions should no longer remain artificial blockers; deferred `PD-004`, `PD-023`, and exact `PD-044` scope must remain explicit gates.
+After Technical Architecture reconciliation, Backlog Planner must reconcile candidate tasks and readiness. Resolved product decisions should no longer remain artificial blockers; deferred `PD-004` and exact `PD-044` scope must remain explicit gates.
 
 The Domain Architect does not mark implementation tasks Ready.
-
-## 19. Acceptance statement
-
-The current business/domain baseline now:
-
-- represents all approved product decisions in bounded-context ownership and invariants;
-- distinguishes source truth, intent, projection, provider evidence, and Audit evidence;
-- records the approved aggregate/lifecycle semantics needed by the current backlog;
-- preserves cross-domain ownership rather than absorbing responsibility for convenience;
-- explicitly surfaces the three remaining deferred human product-policy areas;
-- gives actionable handoff to Technical Architect and Backlog Planner;
-- introduces no application code, AWS, persistence, API, or deployment choice.
-
-**Stop condition: DOMAIN BASELINE EXTENDED AND RECONCILED.**
