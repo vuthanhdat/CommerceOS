@@ -1,490 +1,470 @@
 # Subscription & Billing Domain Baseline
 
-_Extension to the CommerceOS business-domain baseline produced by TASK-0091 on 2026-08-10._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved `PD-043`–`PD-053`; only the exact commercial plan catalog/pricing sub-decision in `PD-044` remains intentionally deferred._
 
 ## 1. Boundary and business language
 
-CommerceOS models **Subscription & Billing** as one bounded context initially.
+CommerceOS models **Subscription & Billing** as one bounded context for the current MVP.
 
-This is the smallest coherent business boundary for the current product scope because plan terms, the merchant's subscription lifecycle, effective entitlements, usage evidence needed by those entitlements, and CommerceOS SaaS charge evidence all describe one commercial relationship between CommerceOS and a merchant Tenant. Splitting Plan Catalog, Subscription, Entitlements, Usage Metering, and Billing into separate bounded contexts now would add coordination boundaries before the product has independent teams, scale, regulatory needs, or materially different lifecycles that justify them.
+It owns the merchant Tenant's commercial relationship with CommerceOS:
 
-The internal model still keeps these concepts distinct so they can split later without changing business ownership:
+- stable Plan identity and versioned commercial terms;
+- Subscription lifecycle and accepted terms;
+- Trial and paid effective periods;
+- immutable effective EntitlementSets;
+- approved usage-meter truth;
+- CommerceOS `PlatformCharge` obligations/evidence;
+- verified interpretation of the dedicated simulated SaaS billing-provider evidence;
+- enough history to explain why a capability/limit/charge was effective at any point in time.
+
+It does not own:
+
+- Tenant identity, Business Profile, or TenantStatus;
+- Membership identity/status/roles;
+- Product, Warehouse, Inventory, Order, merchant-order Payment, source snapshot, or journal truth;
+- merchant bookkeeping/accounting entries;
+- Audit evidence or Reporting projections.
+
+A subscription restriction may make an operation in another bounded context ineligible, but Subscription & Billing never becomes owner of that aggregate.
+
+## 2. Separation from merchant-order Payments
+
+These are different commercial relationships:
 
 ```text
-Commercial Plan / accepted terms
-            ↓
-       Subscription
-            ↓
- Effective Entitlement Set
-            ↓
- capability / limit decisions
-            ↓
- tenant-owned domains keep their own truth
-
-Subscription ── may create/relate to ──► Platform Charge
-                                      └─ external billing evidence later
+Shopper  ── pays merchant Order ──► Payments / merchant-order Mock Payment Provider
+Merchant ── pays CommerceOS SaaS ─► Subscription & Billing / PlatformCharge
 ```
 
-A future architecture may map this bounded context to one or more modules or deployed components. That is not decided here.
+MVP SaaS billing uses a **dedicated simulated SaaS billing-provider seam** (`PD-052`). It is not the existing merchant-order Mock Payment Provider.
 
-### What this context owns
+No real card/bank data is stored and no real money is charged in the learning/MVP billing path.
 
-Subscription & Billing owns:
+## 3. Core business model
 
-- the merchant Tenant's CommerceOS subscription identity and commercial lifecycle;
-- the specific CommerceOS plan/version/terms accepted for an effective period;
-- plan-change and cancellation intent/history;
-- the effective entitlement set produced by accepted subscription terms and approved policy;
-- usage-meter truth only where a limit requires an accumulated metered window;
-- CommerceOS platform charge obligations/references and the outcome CommerceOS currently knows about them;
-- references/evidence from any future external SaaS billing provider;
-- enough history to explain why a capability or limit was effective at a point in time.
-
-### What this context does not own
-
-It does **not** own:
-
-- Tenant identity, Business Profile, or TenantStatus — Tenant Management;
-- authentication credentials or staff Membership identity/lifecycle — Merchant Access;
-- Products, Orders, stock, Warehouses, source snapshots, or merchant operational transactions;
-- the merchant-order `Payment` aggregate or Mock Payment Provider semantics used for shopper checkout;
-- the merchant's bookkeeping journals/ledger — Accounting;
-- Audit evidence or Reporting projections;
-- another context's current resource count merely because that count is compared with a subscription limit.
-
-A subscription restriction may make an operation in another context ineligible, but it does not transfer ownership of that context's aggregate to Subscription & Billing.
-
-## 2. Source-of-truth rules
-
-| Business question | Authoritative owner | Other contexts may hold only |
-|---|---|---|
-| Which CommerceOS commercial subscription currently governs this Tenant? | Subscription & Billing | subscription reference/status projection |
-| Which plan/version/terms did the Tenant accept for a period? | Subscription & Billing | immutable reference/projection needed for the consumer's own history |
-| Which capability/limit is effective for this Tenant now? | Subscription & Billing | trusted decision/result and provenance |
-| Why was a capability/limit effective at a historical time? | Subscription & Billing | copied business snapshot where required for the consumer's own historical meaning |
-| How many active staff Memberships exist? | Merchant Access | usage evidence/projection; never Membership truth |
-| How many Warehouses/Locations exist or are active? | Inventory | usage evidence/projection; never Warehouse truth |
-| How many Orders were accepted in a metered window? | Sales owns the source Orders; Subscription & Billing may own an idempotent usage meter derived from accepted source facts when an approved plan requires it | reporting projection |
-| May scheduled external product ingestion be used? | Subscription & Billing owns the capability entitlement; Product Data Ingestion still owns whether a source/run is otherwise policy-eligible | trusted entitlement result |
-| What CommerceOS SaaS charge is due/recorded and what outcome does CommerceOS currently know? | Subscription & Billing | billing-history projection/reference |
-| What did an external SaaS billing provider commit? | the future provider is external evidence; Subscription & Billing owns CommerceOS's verified interpretation | provider reference/evidence |
-| What did a shopper pay for a merchant Order? | Payments | payment reference/projection |
-| What has the merchant posted in its own books? | Accounting | journal reference/financial projection |
-
-External provider evidence, tenant usage projections, and UI plan labels never become the subscription source of truth.
-
-## 3. Core model and aggregate boundaries
-
-Aggregate boundaries are chosen by business consistency, not by nouns or storage tables.
-
-### 3.1 Plan aggregate
+### 3.1 Plan aggregate (`PD-044` structural policy)
 
 `Plan` is the aggregate root for a stable CommerceOS commercial offering identity.
 
-A Plan may have one or more `PlanVersion` / commercial-term revisions. A version contains or references the business terms needed to determine what a tenant accepted, including:
+A Plan has immutable/versioned `PlanVersion` terms. Once a PlanVersion has been accepted by any Subscription:
 
-- stable plan/version identity;
-- merchant-facing label/description where applicable;
-- price terms and billing-cycle terms when approved;
-- effective/availability period when approved;
-- the entitlement definitions promised by that version;
-- commercial-policy version/provenance needed to interpret the terms later.
+- it is never edited in place;
+- later commercial changes require a new PlanVersion;
+- a version may be withdrawn from new purchase without changing existing Subscriptions or history.
 
-The exact Starter/Growth/Business catalog, version mutability policy, price values, availability/retirement behavior, and whether accepted versions become immutable records are human decision `PD-044`.
+`Starter`, `Growth`, and `Business` remain **candidate marketing packages only** until a deliberate commercial-pricing exercise approves exact prices and entitlements. `Enterprise`/custom pricing is out of MVP.
 
-Safe baseline invariant:
-
-> Once a Tenant has accepted commercial terms, later catalog editing must not retroactively change the historical meaning of that accepted subscription period.
-
-The implementation may preserve this through immutable versions or an accepted-terms snapshot, but that technical representation is not chosen here.
+The exact sellable plan catalog/prices/entitlement matrix is the only intentionally deferred part of `PD-044` and must not be invented by implementation.
 
 ### 3.2 Subscription aggregate
 
-`Subscription` is the aggregate root for the merchant Tenant's base CommerceOS commercial relationship.
+`Subscription` is the aggregate root for one Tenant's base CommerceOS subscription relationship.
 
-For the approved product scope, a Tenant has at most one current base subscription relationship governing its ordinary CommerceOS plan entitlements at a time. Future add-ons, multiple concurrent products, reseller contracts, or enterprise side agreements are not modeled by this task.
+A Tenant has at most one current base Subscription relationship governing ordinary CommerceOS entitlements at a time.
 
-The Subscription owns conceptually:
+The Subscription owns:
 
-- immutable `SubscriptionId`;
-- immutable Tenant reference;
-- current commercial subscription condition;
-- current accepted Plan/PlanVersion or accepted-terms reference;
-- current effective subscription period;
-- current effective EntitlementSet reference/history;
-- accepted plan-change intents and their state/reason;
-- accepted cancellation intent and effective-end information when policy permits it;
-- trial phase/terms if and only if `PD-043` approves trial behavior;
-- history sufficient to explain each effective commercial-term change.
+- immutable `SubscriptionId` and Tenant reference;
+- accepted Trial or paid terms/version;
+- current commercial condition;
+- current effective period;
+- immutable EntitlementSet history;
+- plan-change intents and outcomes;
+- cancellation-renewal intent;
+- delinquency/grace history where evidence establishes it;
+- enough accepted history to explain every commercial transition.
 
-A retry of the same accepted logical subscription command produces one logical effect. Reusing the same command identity for materially different target terms is a conflict.
+Retry of the same logical command creates one logical effect. Incompatible reuse of an intent identity is conflict.
 
-### 3.3 Effective EntitlementSet
+### 3.3 EntitlementSet
 
-`EntitlementSet` is an immutable business snapshot/value associated with an effective interval and provenance. It is not a marketing-plan name and does not become another domain's aggregate.
+`EntitlementSet` is an immutable business snapshot with:
 
-An entitlement expresses one of these business meanings:
-
-- capability: allowed/not allowed;
-- bounded limit: an explicit numeric/unit limit;
-- operationally unlimited: an explicit semantic value, not a very large magic number;
-- optional policy metadata needed to interpret a limit, such as a usage window after that policy is approved.
-
-Each effective set identifies conceptually:
-
-- Tenant and Subscription;
-- source PlanVersion/accepted terms;
-- entitlement keys and values;
-- effective-from and, where known, effective-until;
+- Tenant + Subscription provenance;
+- source Trial terms or PlanVersion;
+- explicit capabilities/limits;
+- effective-from/effective-until interval;
 - policy/version provenance;
-- the subscription change that made the set effective.
+- transition that made the set effective.
 
-Historical EntitlementSets are not rewritten when the merchant later upgrades, downgrades, cancels, or a Plan's marketing name changes.
+Marketing plan names are never authority outside this context.
 
-### 3.4 UsageMeter aggregate, only where needed
+`Unlimited` is an explicit entitlement value, never the absence of an entitlement record.
 
-A `UsageMeter` is a separate consistency boundary only for an approved entitlement that requires accumulated usage over a window, for example an order-volume allowance.
+### 3.4 UsageMeter
 
-It may own:
+A `UsageMeter` exists only for an approved accumulated usage policy that needs duplicate-safe counting over a window.
 
-- Tenant + entitlement/meter identity;
-- approved usage window identity/bounds;
-- counted quantity/value;
-- exact logical source identities already applied;
-- current threshold/over-limit condition as defined by approved policy.
+For MVP order volume (`PD-051`):
 
-Rules:
+- source fact is idempotent `OrderConfirmed`;
+- window is the current Subscription billing period;
+- reaching/exceeding threshold is warning/operational follow-up only;
+- it never rejects an otherwise valid shopper checkout;
+- it never cancels an Order;
+- it never creates an automatic overage charge.
 
-1. source domains still own the business facts being counted;
-2. replay of the same logical source fact cannot increment usage twice;
-3. a Reporting total is not command authority for a hard limit;
-4. current-resource cardinality such as active staff or Warehouses need not be copied into a UsageMeter merely to check a limit;
-5. exact order-volume blocking/overage behavior is `PD-051`.
+Current-resource counts such as Active Memberships or Warehouses remain authoritative in their owning contexts rather than being blindly copied into a meter.
 
-### 3.5 PlatformCharge aggregate
+### 3.5 PlatformCharge
 
-`PlatformCharge` is a separate aggregate root from Subscription because billing execution can retry, become ambiguous, reconcile later, or fail independently from the current subscription state.
+`PlatformCharge` is a separate aggregate root because charge attempts/evidence may become ambiguous or reconcile independently from Subscription state.
 
 It owns conceptually:
 
-- immutable platform-charge identity and Tenant/Subscription reference;
-- charge reason/period/accepted commercial-term reference;
-- amount and currency when SaaS charging is approved;
-- CommerceOS invoice/reference identifier where applicable;
-- external billing-provider customer/subscription/invoice/payment references when a provider exists;
-- charge attempts/observations needed for idempotency and reconciliation;
-- the outcome CommerceOS currently knows, including an explicit unknown/ambiguous condition;
-- traceability back to the subscription period/change that caused the charge.
+- immutable charge identity;
+- Tenant/Subscription reference;
+- charge reason/period/accepted terms reference;
+- VND Money amount;
+- simulated provider references/attempt observations;
+- verified known outcome, including explicit `OutcomeUnknown`;
+- traceability to the Subscription transition/renewal it supports.
 
-A `PlatformCharge` is **not** the existing merchant-order `Payment` aggregate.
+A PlatformCharge is not a merchant-order Payment and does not become a merchant Accounting Journal by implication.
 
-## 4. Subscription lifecycle semantics
+## 4. Acquisition and automatic Trial (`PD-043`)
 
-The domain must not collapse subscription commercial state, charge/payment outcome, TenantStatus, or MembershipStatus into one enum.
-
-### 4.1 Stable commercial conditions
-
-The baseline needs only these stable meanings before the remaining human policy is resolved:
-
-- `PendingActivation` — a subscription intent/record exists but no normal entitlement set has yet become effective;
-- `Active` — one accepted commercial term set is effective for the Tenant now;
-- `Ended` — no current normal subscription term set remains effective under the accepted end/expiry policy.
-
-`Trialing`, `PastDue`, `Grace`, `SuspendedForBilling`, `PendingCancellation`, `Reactivated`, and similar labels are **not** adopted as unconditional states by this baseline. They are introduced only after the corresponding human decisions approve their business meaning.
-
-### 4.2 Orthogonal lifecycle dimensions
-
-Plan change is modeled separately from commercial subscription condition:
-
-```text
-Active Subscription
-      │
-      └─ PlanChangeIntent
-            ├─ Requested
-            ├─ BlockedByUsage / RemediationRequired
-            └─ Scheduled      only if approved timing policy requires it
-                  ↓
-              PlanChanged
-```
-
-Cancellation intent is also separate:
-
-```text
-Active Subscription
-      │
-      └─ CancellationRequested
-                  ↓
-          Ended at approved effective time
-```
-
-A cancellation request does not by itself prove the subscription ended. A billing failure or unknown billing outcome does not by itself prove the subscription ended. A Tenant suspension does not by itself cancel the subscription. A Membership disablement does not change the subscription.
-
-### 4.3 Trial, grace, delinquency, and reactivation
-
-If the product owner approves a trial, the trial is modeled as an explicit subscription phase/period with accepted trial terms and an effective EntitlementSet. It is never modeled as a TenantStatus or authentication state.
-
-If the product owner approves delinquency/grace behavior, billing standing and any resulting commercial restriction remain explicit and evidence-based. Timeout/missing callback alone cannot create `PastDue`, suspension, cancellation, or failure semantics.
-
-`PD-043` and `PD-049` are required before these flows become implementation-ready.
-
-## 5. Entitlement semantics and invariants
-
-Other contexts must consume entitlement meaning, not marketing plan names.
-
-Conceptually the domain answers:
-
-```text
-May Tenant X use capability Y now?
-What limit applies to resource/usage Z now?
-Which accepted terms produced this decision?
-When did/will the current value become effective?
-```
-
-Invariants:
-
-1. entitlement authority is always tenant-scoped and evaluated from trusted Tenant context; client-supplied plan names, limits, claims, or cached browser state are never authority;
-2. every effective entitlement decision has provenance to an accepted Subscription and commercial term set;
-3. changing marketing plan labels/prices does not rewrite historical entitlement truth;
-4. a requested upgrade/downgrade does not change entitlements until the approved effective condition occurs;
-5. removed entitlements do not delete the affected domain's historical business data;
-6. a domain write governed by a hard limit must be evaluated against a current authoritative entitlement and authoritative local usage/state at the business command boundary; a stale Reporting/UI projection cannot authorize it;
-7. inability to establish a trusted current entitlement for a protected paid capability is not silently treated as an unlimited grant;
-8. `Unlimited` is explicit policy, not the absence of a record;
-9. entitlement evaluation does not replace TenantStatus or Membership authorization; an operation may require all applicable independent conditions to be satisfied.
-
-Exact hard/soft/overage behavior is `PD-050`.
-
-## 6. Upgrade and downgrade invariants
-
-### Upgrade
-
-`RequestPlanChange` is an intent, not evidence that higher entitlements or a billing effect already occurred.
-
-Until `PD-047` resolves timing/proration prerequisites:
-
-- no upgrade request grants higher entitlements immediately by assumption;
-- any required PlatformCharge outcome remains separate evidence;
-- once the approved effective condition is satisfied, one new immutable EntitlementSet becomes effective and the prior set remains historical;
-- retry/duplicate plan-change intent cannot create duplicate commercial or charge effects.
-
-### Downgrade
-
-Downgrade must preserve existing domain-owned business data and invariants.
-
-Before a lower-limit change becomes effective, Subscription & Billing must be able to compare target hard limits against required authoritative usage evidence from the owning contexts or an approved metered UsageMeter.
-
-Safe interim rule while `PD-048` remains unresolved:
-
-```text
-current authoritative usage > target hard limit
-              ↓
-    downgrade does not become effective
-              ↓
-BlockedByUsage / RemediationRequired
-              ↓
-human-approved policy or merchant remediation
-              ↓
-only then may lower terms become effective
-```
-
-Subscription & Billing must **not** silently delete Products, disable Memberships, remove Warehouses, erase source snapshots, mutate Orders, or rewrite Accounting history to make the tenant fit a lower plan.
-
-If future policy requires remediation in another context, Subscription & Billing may request that context to attempt an approved action, but only the owning context can accept and report that action's fact. A request is never treated as proof that the resource was removed/deactivated.
-
-## 7. Platform billing truth and uncertainty
-
-CommerceOS SaaS billing remains a separate business responsibility from merchant shopper-order Payments.
-
-```text
-Shopper ──pays merchant order──► Payments
-Merchant ──pays CommerceOS plan──► Subscription & Billing / PlatformCharge
-```
+Successful merchant registration automatically creates a **30-day Trial Subscription** with a dedicated Trial terms/EntitlementSet.
 
 Rules:
 
-1. a PlatformCharge has one logical effect for the same charge identity/period/reason;
-2. retries cannot create duplicate charges or duplicate subscription transitions;
-3. external provider callbacks/records are evidence, not Subscription truth;
-4. only verified evidence may establish a definitive provider payment outcome;
-5. timeout, network error, missing callback, or caller cancellation creates/retains an unknown observation where commit status cannot be proven;
-6. unknown billing outcome is not converted into success, failure, delinquency, cancellation, or Tenant suspension merely because time passes;
-7. subscription effects caused by billing outcome require an explicit approved product rule and a verified business fact;
-8. provider references are retained for traceability without making provider-private state authoritative for other CommerceOS domains;
-9. no real card data or secrets belong in domain fixtures or business history.
+- Trial requires no payment method;
+- Trial semantics are explicit and are not inferred from a marketing plan name;
+- Tenant/Membership/Trial facts remain owned by their respective bounded contexts;
+- onboarding must not pretend complete success while knowingly omitting the required Trial outcome;
+- technical coordination/recovery is outside this domain document.
 
-Candidate PlatformCharge outcome facts may include:
+At Trial expiry without a paid/subsequent Subscription:
 
-- `PlatformChargeRecorded`;
-- `PlatformChargeOutcomeBecameUnknown`;
-- `PlatformChargeSettled`;
-- `PlatformChargeDefinitivelyNotSettled` when verified evidence proves no commit under the selected provider semantics;
-- `PlatformChargeReconciled` when later evidence resolves a prior unknown observation.
+- Subscription becomes `Ended`;
+- ordinary merchant mutations are disabled by missing effective operational entitlements;
+- scheduled automation is disabled;
+- public commerce is disabled;
+- authenticated merchant read/history/export/recovery access remains available;
+- Tenant identity/data and Memberships are not deleted or disabled.
 
-Exact invoice/tax/proration/provider semantics remain `PD-046` and `PD-052`.
+## 5. Commercial lifecycle and independent dimensions
 
-## 8. Cross-domain interactions
+Subscription commercial state, billing outcome, TenantStatus, MembershipStatus, plan-change intent, and cancellation intent are independent dimensions.
 
-This section defines business ownership and required semantics only. It does not select synchronous calls, events, caches, databases, or workflows.
+### 5.1 Commercial conditions
 
-| Context | Subscription & Billing responsibility | Existing context remains authoritative for | Safe interaction rule / pending policy |
-|---|---|---|---|
-| Tenant Management | associate a subscription with an existing Tenant and expose commercial eligibility/entitlements | Tenant identity, BusinessProfile, Active/Suspended TenantStatus | TenantStatus and subscription state are independent. Whether a Tenant may exist/use ordinary commerce without an Active subscription is `PD-043`; billing delinquency must not mutate TenantStatus by implication (`PD-049`). |
-| Merchant Access | provide staff-related entitlement such as `MaxActiveStaff` and target-plan limit during downgrade analysis | Invitation, Membership identity/status/role, active-member count | Merchant Access enforces its own Membership invariants. Subscription & Billing never disables members to force compliance. Enforcement timing/mode is `PD-050`; downgrade excess behavior is `PD-048`. |
-| Inventory | provide Warehouse/location-related entitlement/target limit | Warehouse/Location identity/status and all stock truth | Inventory decides whether its own create/activate command is eligible after trusted entitlement evaluation. Existing Warehouses are never deleted by plan change. `PD-048`/`PD-050`. |
-| Product Data Ingestion | provide capability entitlement for scheduled/automated ingestion and any approved quota | DataSource policy, source/run/snapshot/candidate truth | Entitlement removal does not delete snapshots/candidates or bypass source-policy rules. Whether running/scheduled work is stopped, allowed to finish, or merely prevents new starts is governed by `PD-050`. |
-| Sales | own plan-defined order-volume entitlement/usage-meter policy when approved | SalesOrder truth and accepted checkout | Sales facts may contribute idempotently to a UsageMeter. Until `PD-051`, an order-volume threshold must not silently reject an otherwise valid shopper checkout. |
-| Payments | none for SaaS billing; remain completely separate | shopper/order payment obligations, attempts, captures/refunds | Existing `Payment` and Mock Payment Provider must not become SaaS-billing source of truth by convenience. |
-| Accounting | keep CommerceOS platform charge truth outside the merchant's operational ledger | merchant chart, journals, ledger and financial reports | A merchant may later choose to record a CommerceOS subscription expense only through an explicit Accounting integration/product rule; SaaS charge is not a merchant Journal by implication. |
-| Audit | identify privileged subscription/plan/billing actions that require evidence | append-oriented actor/action/outcome evidence | Audit records do not own Subscription state. Exact platform-admin mutation authority is `PD-053`; existing audit coverage policy `PD-033` still applies. |
-| Reporting | provide authoritative source facts/queries for subscription/usage/billing projections | rebuildable dashboards and aggregate views | Projection lag cannot grant entitlement or change billing truth. |
-| Platform administration/support | expose business commands/visibility from this context | no new transactional source of truth | Support UI/projection does not authorize direct state mutation. Manual plan/charge/entitlement override authority requires `PD-053`. |
+Approved MVP commercial conditions include:
 
-### Independent eligibility dimensions
+- `Trial` — 30-day dedicated Trial terms effective;
+- `Active` — paid Subscription terms effective;
+- `PastDue` — definitive renewal failure established and grace period active;
+- `Ended` — no current normal operational Subscription entitlement remains effective.
 
-A protected tenant operation can be blocked for different reasons that must stay distinguishable:
+`OutcomeUnknown` is a PlatformCharge/billing-evidence condition, not `PastDue`.
+
+### 5.2 Cancellation intent
+
+Merchant cancellation means **cancel renewal**, not immediate termination (`PD-049`).
 
 ```text
-Authenticated identity
-      +
-Active Merchant Access authority
-      +
-TenantStatus allows operation
-      +
-Subscription entitlement allows capability/limit
-      +
-owning domain invariant accepts the command
+Active/PastDue eligible subscription
+        └─ CancelRenewalRequested
+                  ↓
+current effective terms continue until paid period end
+                  ↓
+Ended at period boundary if no subsequent accepted continuation
 ```
 
-Failure in one dimension does not rewrite the others.
+A cancellation request never rewrites the already-effective period.
 
-## 9. Commands, queries, and business facts
+### 5.3 Plan-change intent
 
-Names below are semantic candidates for domain refinement/technical contracts; they are not API or message schemas.
+Plan change is distinct from current Subscription condition:
 
-### Commands
+```text
+RequestPlanChange
+      ├─ upgrade pending required charge evidence
+      └─ downgrade scheduled for renewal boundary
+```
 
-Plan/commercial catalog:
+Requested is never equivalent to effective.
 
-- `DefineCommercialPlanVersion`
-- `MakeCommercialPlanVersionAvailable`
-- `RetireCommercialPlanVersion`
+## 6. Billing periods (`PD-045`)
 
-Subscription:
+Paid MVP subscriptions are **monthly only**. Annual billing is out of scope.
 
-- `StartSubscription`
-- `ActivateSubscription`
-- `RequestPlanChange`
-- `ConfirmPlanChangeEffective`
-- `RequestCancellation`
-- `EndSubscription`
-- `StartTrial` only if `PD-043` approves a trial
-- `ReactivateSubscription` only if `PD-049` defines it
+Rules:
 
-Usage/billing:
+- activation records an explicit billing anchor;
+- each next paid period advances one calendar month from the anchor;
+- if equivalent day does not exist in the target month, use the last valid day of that month;
+- effective periods are explicit, non-overlapping intervals;
+- period semantics do not depend on server/reporting timezone assumptions;
+- Trial remains a separate fixed 30-day period.
 
-- `RecordMeteredUsage`
-- `RecordPlatformCharge`
-- `RecordPlatformBillingEvidence`
-- `ReconcilePlatformChargeOutcome`
+## 7. SaaS Money, tax, invoice, and proration (`PD-046`)
 
-### Queries/decisions
+CommerceOS SaaS learning/MVP charges are:
 
-- `GetCurrentSubscription`
-- `GetEffectiveEntitlements`
-- `EvaluateCapability`
-- `GetEffectiveLimit`
-- `GetUsageStatus`
-- `GetSubscriptionHistory`
-- `GetPlatformBillingHistory`
+- VND-only;
+- whole đồng;
+- explicit `Money` values.
 
-### Candidate owned business facts
+MVP does not support:
 
-- `SubscriptionStarted` / `SubscriptionActivated`
-- `TrialStarted`, `TrialExpired` only after trial policy is approved
-- `PlanChangeRequested`
-- `PlanChangeBlockedByUsage`
-- `PlanChangeScheduled` only if approved timing policy needs a scheduled state
+- currency conversion;
+- tax calculation;
+- tax-inclusive/exclusive logic;
+- statutory/tax invoices;
+- proration.
+
+CommerceOS may present a billing statement/PlatformCharge record for traceability, but it must not be represented as a legally compliant tax invoice.
+
+## 8. Upgrade policy (`PD-047`)
+
+An upgrade becomes effective **only after** the required new-plan PlatformCharge has a verified successful outcome.
+
+When a successful mid-period upgrade occurs:
+
+1. current old terms stop at the approved upgrade boundary;
+2. a fresh monthly paid Subscription period begins at upgraded terms;
+3. a new immutable EntitlementSet becomes effective at that same boundary;
+4. unused old-period value is not credited because MVP has no proration.
+
+If PlatformCharge is Declined/definitive no-commit or remains `OutcomeUnknown`:
+
+- higher entitlements do not become effective;
+- existing Subscription/EntitlementSet remains authoritative;
+- an unknown charge is not silently converted into failure or success.
+
+## 9. Downgrade policy (`PD-048`)
+
+Downgrade is scheduled for the **next renewal boundary**, never immediate in MVP.
+
+Before effectivity, authoritative owning-domain usage/state is revalidated against target hard limits.
+
+If current usage exceeds a target hard limit:
+
+```text
+scheduled downgrade
+      ↓
+revalidate authoritative usage
+      ↓
+usage > target hard limit
+      ↓
+BlockedByUsage / RemediationRequired
+      ↓
+no lower EntitlementSet becomes effective
+      ↓
+current plan/terms continue for next period
+```
+
+Merchant remediation uses normal owning-domain commands.
+
+Subscription & Billing never auto-deletes Products, disables Memberships, removes Warehouses, erases snapshots, mutates Orders, or rewrites Accounting history to fit a lower plan.
+
+The downgrade itself grants no temporary overage/grandfathered write expansion.
+
+## 10. Renewal failure, grace, end, and reactivation (`PD-049`)
+
+A **definitive** renewal-charge failure creates `PastDue` with a **7-day grace period**.
+
+During grace:
+
+- existing effective operational entitlements continue;
+- merchant should be able to see the billing exception through appropriate projections/notifications;
+- business history remains unchanged.
+
+A billing `OutcomeUnknown` does **not** become PastDue until reconciliation establishes a definitive failed renewal outcome.
+
+If grace ends without successful renewal:
+
+- Subscription becomes Ended;
+- ordinary merchant mutations, scheduled automation, and public commerce are disabled;
+- authenticated merchant read/history/export/recovery access remains;
+- no Tenant/business data is automatically deleted.
+
+Reactivation starts a **new** Subscription period/accepted terms and does not rewrite ended history.
+
+Data retention/deletion remains governed by the broader future privacy/Tenant-lifecycle decision, not Subscription end.
+
+## 11. Entitlement enforcement categories (`PD-050`)
+
+MVP does not use one generic limit rule.
+
+### Hard capability gates
+
+Examples: scheduled ingestion/API access when present.
+
+- checked at the owning business command boundary;
+- capability absent/disabled rejects the protected operation;
+- read/history/recovery access remains where approved;
+- missing entitlement is never interpreted as Unlimited.
+
+### Hard counted-resource growth/activation limits
+
+Examples: `MaxActiveStaff`, `MaxWarehouses`.
+
+- creation/activation that would exceed current trusted limit is rejected;
+- existing resources caused to be over a target downgrade limit are not destroyed;
+- existing resources remain readable/manageable for remediation;
+- authoritative current count comes from the owning bounded context;
+- stale Reporting/UI usage is not command authority.
+
+### Soft usage warning
+
+Order-volume threshold follows `PD-051`: warning only, no shopper checkout rejection and no overage billing.
+
+Overage billing is out of MVP.
+
+## 12. Provider simulation and uncertainty (`PD-052`)
+
+The dedicated SaaS billing simulation must be able to represent business evidence for:
+
+- success;
+- definitive decline/no-commit;
+- timeout/`OutcomeUnknown`;
+- duplicate delivery;
+- retry/idempotency;
+- provider query/reconciliation;
+- out-of-order evidence.
+
+Domain rules:
+
+1. equivalent retry creates one logical charge effect;
+2. callbacks/provider records are evidence, not direct Subscription truth;
+3. only verified evidence may establish definitive charge outcome;
+4. timeout/network failure/missing callback/caller cancellation never proves no commit;
+5. `OutcomeUnknown` remains explicit until reconciled;
+6. time passage alone never converts Unknown into success/failure/PastDue/Ended;
+7. duplicate/out-of-order evidence cannot duplicate or regress accepted charge/subscription effects;
+8. no real card/bank secrets belong in fixtures/history.
+
+Choosing a real billing provider later is a new product/architecture/compliance decision behind this provider boundary.
+
+## 13. Platform administration (`PD-053`)
+
+MVP platform-admin Subscription & Billing capability is **read/support visibility only**.
+
+Authorized platform administrators may inspect appropriate subscription, entitlement, usage, PlatformCharge, and reconciliation projections.
+
+They may **not**:
+
+- manually comp/assign/change plans;
+- cancel/reactivate a Tenant Subscription;
+- mutate charge outcomes;
+- bypass entitlements/limits;
+- create a hidden cross-Tenant override.
+
+Any future platform-admin mutation must be introduced as an explicit Subscription & Billing business command with Product Owner decision, authorization/notice policy, and Audit evidence.
+
+## 14. Cross-domain interaction rules
+
+| Context | Subscription & Billing provides/owns | Other context remains authoritative for | Approved rule |
+|---|---|---|---|
+| Tenant Management | Subscription commercial eligibility | Tenant identity/Profile/Active-Suspended status | Subscription end/delinquency does not mutate TenantStatus. |
+| Merchant Access | MaxActiveStaff entitlement/target limit | Membership identity/status/role/current count | hard growth gate; no automatic Membership disable; last-owner preserved. |
+| Inventory | MaxWarehouses or other approved capability/limit | Warehouse/stock truth | hard growth/activation gate; downgrade cannot delete Warehouses. |
+| Product Data Ingestion | scheduled-ingestion capability | source policy/run/snapshot/candidate truth | both entitlement and PDI source-policy eligibility must pass. |
+| Sales | order-volume metering policy | SalesOrder/OrderConfirmed truth | OrderConfirmed may feed duplicate-safe meter; threshold never blocks shopper checkout. |
+| Payments | none for SaaS billing | merchant-order Payment | do not reuse merchant-order Payment as PlatformCharge. |
+| Accounting | no merchant-journal authority | merchant books | PlatformCharge is not automatically a merchant journal. |
+| Reporting | projection inputs | projections only | Reporting/UI never authorizes entitlement/state mutation. |
+| Audit | auditable business-action references | Audit evidence | Subscription/admin actions produce required Audit evidence without Audit owning state. |
+
+## 15. Commands, queries, and facts
+
+### Command candidates
+
+- `StartTrialSubscription`
+- `ActivatePaidSubscription`
+- `RequestPlanUpgrade`
+- `RequestPlanDowngrade`
+- `CancelSubscriptionRenewal`
+- `AttemptSubscriptionRenewal`
+- `ReactivateSubscription`
+- `RecordPlatformChargeAttempt`
+- `ReconcilePlatformCharge`
+- `ApplyUsageFact`
+
+These are business intent names, not API schemas.
+
+### Query intents
+
+- resolve current Subscription and accepted terms for Tenant;
+- resolve current effective EntitlementSet/capability/limit with provenance;
+- explain historical entitlement period;
+- list current/historical PlatformCharge outcomes;
+- resolve current order-volume meter/window;
+- surface downgrade remediation status;
+- support read-only platform-admin investigation.
+
+### Owned fact candidates
+
+- `TrialSubscriptionStarted`
+- `SubscriptionActivated`
 - `SubscriptionPlanChanged`
-- `CancellationRequested`
+- `SubscriptionDowngradeScheduled`
+- `SubscriptionDowngradeBlockedByUsage`
+- `SubscriptionRenewalCancellationRequested`
+- `SubscriptionEnteredPastDue`
 - `SubscriptionEnded`
-- `SubscriptionReactivated` only if approved
-- `EffectiveEntitlementsChanged`
-- `UsageRecorded`
-- `UsageLimitReached` / `UsageLimitExceeded` only where approved policy gives those occurrences business meaning
+- `SubscriptionReactivated`
+- `EntitlementSetBecameEffective`
+- `UsageCountApplied`
+- `UsageThresholdCrossed`
 - `PlatformChargeRecorded`
-- `PlatformChargeOutcomeBecameUnknown`
 - `PlatformChargeSettled`
 - `PlatformChargeDefinitivelyNotSettled`
+- `PlatformChargeOutcomeBecameUnknown`
 - `PlatformChargeReconciled`
 
-`PlanChangeRequested` is not `SubscriptionPlanChanged`. `CancellationRequested` is not `SubscriptionEnded`. `PlatformChargeSettled` is not automatically `SubscriptionActivated`. `EffectiveEntitlementsChanged` means a new effective entitlement snapshot was accepted, not merely that a plan record was edited.
+A requested plan change/cancellation/charge attempt is never proof of the resulting effect.
 
-## 10. Business error semantics
+## 16. Business error semantics
 
-Domain-level meanings include:
-
-- `SUBSCRIPTION_REQUIRED_OR_INACTIVE` — the requested subscription-governed capability has no applicable effective subscription under approved policy;
-- `ENTITLEMENT_NOT_GRANTED` — capability is not present/enabled in the current effective EntitlementSet;
-- `ENTITLEMENT_LIMIT_REACHED` — a hard limit selected by approved policy rejects the requested increase;
-- `PLAN_CHANGE_NOT_ALLOWED` — current subscription/target terms do not allow the requested transition under approved policy;
-- `DOWNGRADE_BLOCKED_BY_USAGE` — current authoritative usage exceeds a target hard limit and the safe interim/approved policy prevents effectivity;
-- `SUBSCRIPTION_CHANGE_ALREADY_APPLIED` — equivalent retry returns/references the previous logical result;
-- `SUBSCRIPTION_CHANGE_CONFLICT` — the same logical intent identity is reused for incompatible target terms;
-- `PLATFORM_CHARGE_OUTCOME_UNKNOWN` — CommerceOS cannot yet prove whether the independent billing boundary committed;
-- `PLATFORM_CHARGE_OPERATION_CONFLICT` — billing operation identity is reused incompatibly;
-- `PLATFORM_BILLING_EVIDENCE_INVALID` — evidence cannot be verified/matched to the expected charge/terms.
+| Outcome | Meaning |
+|---|---|
+| `SUBSCRIPTION_REQUIRED` | no current entitlement exists for an operation that requires one; read/recovery access may still remain |
+| `ENTITLEMENT_DENIED` | current trusted EntitlementSet does not grant capability |
+| `ENTITLEMENT_LIMIT_REACHED` | hard growth/activation limit rejects proposed increase; existing resources unchanged |
+| `PLAN_CHANGE_CONFLICT` | logical plan-change identity reused incompatibly |
+| `UPGRADE_CHARGE_NOT_SETTLED` | higher terms cannot become effective because required verified successful charge is absent |
+| `PLATFORM_CHARGE_OUTCOME_UNKNOWN` | charge commit cannot currently be proven; not success/failure |
+| `DOWNGRADE_BLOCKED_BY_USAGE` | authoritative current usage exceeds target hard limit |
+| `SUBSCRIPTION_ENDED` | operational entitlements ended; read/history/export/recovery semantics remain as approved |
+| `PLAN_VERSION_NOT_AVAILABLE_FOR_NEW_PURCHASE` | version withdrawn/not currently sellable but historical accepted Subscriptions remain valid |
+| `PLAN_CATALOG_NOT_YET_APPROVED` | requested exact commercial package/price/entitlement definition depends on deferred `PD-044` |
 
 Transport mapping belongs to Technical Architecture.
 
-## 11. Human product decisions and safe planning gates
+## 17. Remaining human product decision
 
-TASK-0091 records the material unresolved policy in `product-decisions.md`:
+All Subscription & Billing structural/lifecycle/enforcement/provider/admin semantics needed for the current domain model are approved except the exact commercial sellable catalog in `PD-044`:
 
-- `PD-043` — acquisition/trial/tenant-without-subscription policy;
-- `PD-044` — plan catalog/version/accepted-terms policy;
-- `PD-045` — monthly/annual billing-cycle and period policy;
-- `PD-046` — SaaS currency, tax, invoice, proration policy;
-- `PD-047` — upgrade effective-time policy;
-- `PD-048` — downgrade effective-time and excess-resource remediation policy;
-- `PD-049` — cancellation, grace, delinquency, suspension, reactivation, retention policy;
-- `PD-050` — hard/soft/overage/unlimited entitlement-limit behavior;
-- `PD-051` — order-volume limit behavior and shopper-checkout impact;
-- `PD-052` — billing-provider strategy for learning/MVP versus later real SaaS;
-- `PD-053` — platform-admin subscription/billing override/support authority.
+- exact `Starter`/`Growth`/`Business` prices;
+- exact entitlement/limit matrix for those marketing packages;
+- deliberate availability/launch commercial choices beyond the approved immutable-version structure.
 
-These decisions do not prevent the bounded context, aggregate ownership, entitlement semantics, historical-truth invariants, and safe downgrade rule from being modeled now. They **do** prevent downstream implementation tasks from becoming Ready when those tasks require the unresolved behavior.
+**HUMAN PRODUCT DECISION REQUIRED** before a task must expose, sell, seed, or hard-code exact plan prices/entitlement packages. This deferment does not authorize a Builder to invent placeholders as product truth.
 
-## 12. Technical Architecture handoff — TASK-0092
+## 18. Downstream reconciliation handoff
 
-TASK-0092 must reconcile this domain extension into the accepted technical baseline without changing its business meaning.
+### Technical Architect
 
-It must decide, at minimum:
+TASK-0092 was completed before this product-decision pass. Reconcile the technical baseline against the now-approved semantics, especially:
 
-1. how this one bounded context maps to implementation module/project boundaries and dependencies;
-2. how trusted TenantContext reaches subscription and entitlement decisions without accepting client plan/limit authority;
-3. how another domain obtains a current entitlement/capability/limit decision and how a hard-limit write revalidates against authoritative local usage;
-4. persistence ownership and access patterns for Plan/version terms, Subscription/history, immutable effective EntitlementSets, optional UsageMeter, and PlatformCharge evidence;
-5. transaction/consistency boundaries inside each aggregate, especially plan-change idempotency, EntitlementSet effectivity, UsageMeter duplicate counting, and PlatformCharge ambiguity;
-6. technical interaction choices with Tenant Management, Merchant Access, Inventory, Product Data Ingestion, Sales, Audit, Reporting, and platform administration while preserving no-cross-domain persistence access;
-7. how downgrade usage evidence/remediation is coordinated without destructive distributed writes or pretending one cross-domain transaction exists;
-8. how effective-entitlement changes become visible consistently enough for command authorization, including stale/unknown-state behavior;
-9. the external SaaS billing adapter seam, idempotency, verified evidence, timeout/unknown outcome, duplicate/out-of-order callback handling, and reconciliation path **only if `PD-052` places provider execution in scope**;
-10. security/audit requirements for privileged plan/subscription actions and any platform-admin path, preserving `PD-033` and `PD-053`;
-11. reliability/observability requirements for ambiguous billing and partially completed plan changes;
-12. any material architecture/ADR changes required by these needs, without preselecting AWS services or persistence in this domain task.
+- automatic 30-day Trial as part of merchant onboarding while preserving bounded-context ownership;
+- monthly billing anchors and explicit periods;
+- charge-success-first immediate upgrade with fresh monthly period;
+- next-renewal downgrade + revalidation/block-by-usage;
+- PastDue only after definitive renewal failure and 7-day grace;
+- Ended read/history/export/recovery access;
+- hard capability vs hard growth vs soft order-volume semantics;
+- dedicated SaaS billing-provider simulation distinct from merchant-order Mock Payment Provider;
+- explicit `OutcomeUnknown` reconciliation;
+- read-only platform-admin support with no override.
 
-TASK-0092 must preserve all `PD-043`–`PD-053` alternatives until the human resolves them. A technical mechanism may not become a hidden product decision.
+Do not resolve exact plan pricing/entitlement packages through persistence, API, seed data, AWS, or provider convenience.
 
-## 13. Backlog Planner handoff
+### Backlog Planner
 
-After TASK-0092, TASK-0089 must ensure that:
+Remove obsolete `PD-043`, `PD-045`–`PD-053` unresolved gates from affected candidate tasks once technical reconciliation is completed. Keep exact plan-catalog/pricing/entitlement-package work gated by deferred `PD-044`.
 
-- Subscription & Billing work is represented in canonical Backlog V2;
-- implementation tasks are split by safe dependency/frontier rather than by every noun in this document;
-- no task requiring unresolved `PD-043`–`PD-053` behavior is marked Ready;
-- existing merchant Payments/Accounting tasks are not repurposed as SaaS billing work;
-- entitlement-enforced Merchant Access/Inventory/Ingestion/Sales tasks depend on the appropriate subscription/entitlement prerequisites only when the approved product policy actually requires them;
-- downgrade/remediation work cannot instruct a Builder to delete/deactivate foreign-domain data as a shortcut;
-- platform billing can remain provider-deferred while domain modeling/plan/subscription/entitlement work proceeds if the approved product strategy allows that sequence.
-
-**Stop condition: DOMAIN BASELINE EXTENDED.**
+**Stop condition: DOMAIN BASELINE READY for approved Subscription & Billing MVP semantics; HUMAN PRODUCT DECISION REQUIRED only when exact `PD-044` commercial catalog/pricing is needed.**
