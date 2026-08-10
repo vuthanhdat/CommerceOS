@@ -1,6 +1,6 @@
 # CommerceOS — Business-Domain Baseline
 
-_Canonical business-domain baseline. Originally reconciled by TASK-0087, extended for Subscription & Billing by TASK-0091, and reconciled again on 2026-08-10 after the human product-decision pass, including the resolved `PD-023` refund approval policy._
+_Canonical business-domain baseline. Originally reconciled by TASK-0087, extended for Subscription & Billing by TASK-0091, and reconciled again on 2026-08-10 after the human product-decision pass, including resolved `PD-004`, `PD-023`, and `PD-044`._
 
 ## 1. Purpose and authority
 
@@ -28,16 +28,15 @@ This baseline deliberately does **not** select AWS services, databases, table/ke
 
 ## 2. Current product-decision state
 
-The 2026-08-10 decision pass resolved or intentionally deferred the full current register. The register contains no entry currently marked `HUMAN PRODUCT DECISION REQUIRED`.
+The 2026-08-10 decision pass and follow-up resolutions have now resolved the full current `PD-001`–`PD-053` register for the approved MVP scope. The register contains no entry currently marked `HUMAN PRODUCT DECISION REQUIRED` or `Deferred`.
 
-Only two product-policy areas remain intentionally deferred:
+Important MVP exclusions are still explicit product boundaries rather than unresolved gates:
 
-- `PD-004` — exact Suspended-tenant read/support behavior plus Tenant closure/deletion/retention/recovery/privacy semantics;
-- `PD-044` — exact sellable `Starter`/`Growth`/`Business` prices and entitlement/limit packages; immutable PlanVersion structure is already approved.
+- Tenant closure, hard deletion, timed retention, and privacy/legal erasure are **not supported in MVP** under resolved `PD-004`; a future capability requires a new explicit privacy/product decision.
+- Non-restock refund behavior is outside the approved `PD-023` MVP refund model and requires a future explicit decision if introduced.
+- Enterprise/custom pricing is outside MVP under resolved `PD-044`.
 
-`PD-023` is resolved: refund requires explicit merchant approval before return/accounting/payment-refund execution is authorized.
-
-Deferred areas are not permission to guess. When implementation actually requires one of those deferred meanings, the affected work remains non-Ready and stops with the appropriate human product-decision gate.
+Builders must not infer future semantics merely because the current register has no unresolved item.
 
 ## 3. Modeling vocabulary
 
@@ -90,7 +89,7 @@ Arrows show business knowledge/dependency only. They do not prescribe synchronou
 
 | Bounded context | Owns | Explicitly does not own |
 |---|---|---|
-| Tenant Management | Tenant identity, `TenantStatus`, one Business Profile | authentication, Memberships, Subscription lifecycle, merchant transactions |
+| Tenant Management | Tenant identity, `TenantStatus`, one Business Profile, platform suspension/reactivation policy | authentication, Memberships, Subscription lifecycle, merchant transactions |
 | Merchant Access | Invitations, Membership identity/status, one MVP role per Membership, trusted Tenant authority | authentication credentials, Subscription entitlements, Products/Orders/stock |
 | Subscription & Billing | Trial/paid Subscription, Plan/PlanVersion accepted terms, EntitlementSets, approved UsageMeters, PlatformCharge/SaaS billing interpretation | TenantStatus, Memberships, Warehouses/stock, merchant Orders/Payments/Journals |
 | Catalog | canonical Product, SKU, base selling price, lifecycle/public eligibility, slug, Category/Brand, specifications, Product-media/source associations | stock, final Order price, accounting inventory value, SaaS plan pricing |
@@ -150,17 +149,31 @@ Failure in one dimension never silently rewrites another.
 
 ## 7. Tenant lifecycle and onboarding
 
-### Tenant lifecycle
+### Tenant lifecycle (`PD-004`)
+
+MVP Tenant lifecycle is intentionally two-state:
 
 ```text
-Active ──Suspend──► Suspended
-   ▲                    │
-   └────Reactivate──────┘
+Active ──platform Suspend(reason)──► Suspended
+   ▲                                     │
+   └────platform Reactivate(reason)──────┘
 ```
 
-While Suspended, ordinary merchant mutations and public commerce are denied. Suspension does not delete or rewrite Memberships, Subscription, Orders, Accounting, or other business evidence. Exact closure/retention/privacy semantics remain deferred under `PD-004`.
+Approved rules:
 
-### MVP onboarding (`PD-034`, `PD-043`)
+- suspension/reactivation are authorized platform-administration actions, not merchant self-service;
+- reason + Audit evidence are required;
+- Suspended disables public storefront/checkout and all ordinary merchant mutations;
+- authenticated Memberships remain intact;
+- Owner/Admin retain controlled read-only history, operational, billing/support/recovery and otherwise-authorized Audit visibility;
+- Staff/Viewer retain only normal-role read visibility and no operational mutation;
+- platform support may use an explicit privileged read-only investigation path without becoming a Tenant Membership;
+- suspension does not delete or rewrite Memberships, Subscription, Orders, Accounting, or other business evidence;
+- reactivation only restores Tenant eligibility and never rewrites another lifecycle;
+- MVP has no Tenant closure, hard deletion, automatic retention expiry, or privacy/legal erasure;
+- Suspended data is retained indefinitely until a future explicit privacy/retention policy supersedes this rule.
+
+### MVP onboarding (`PD-034`, `PD-043`, `PD-044`)
 
 Open self-service registration requires an authenticated identity with verified email plus Business Profile minimum:
 
@@ -172,10 +185,12 @@ The registering identity becomes initial Active Owner. Retry of the same logical
 Successful merchant onboarding requires three owned outcomes:
 
 ```text
-Tenant Management:  Active Tenant
-Merchant Access:     Active initial Owner Membership
+Tenant Management:   Active Tenant
+Merchant Access:      Active initial Owner Membership
 Subscription/Billing: 30-day no-card Trial + Trial EntitlementSet
 ```
+
+Approved Trial terms enable all core CommerceOS capabilities with `MaxActiveMemberships=3`, `MaxWarehouses=1`, scheduled product ingestion enabled, and order-volume warning threshold 500. Trial does not auto-convert to Starter at expiry.
 
 The business must not knowingly report complete onboarding while leaving one required accepted outcome absent. The three facts remain owned by their separate contexts; technical consistency/recovery is not decided here.
 
@@ -369,15 +384,25 @@ Notification read/acknowledgement state is per recipient. Owner/Admin receive ap
 
 ### Audit
 
-Audit records successful/rejected privileged mutations, security administration, accounting corrections, subscription/admin actions, refund approval/rejection, and security-significant tenant-isolation denials. Tenant Audit is readable by Owner/Admin only and must not leak cross-Tenant existence/identifiers.
+Audit records successful/rejected privileged mutations, security administration, reasoned Tenant suspension/reactivation, accounting corrections, subscription/admin actions, refund approval/rejection, and security-significant tenant-isolation denials. Tenant Audit is readable by Owner/Admin only and must not leak cross-Tenant existence/identifiers.
 
 ## 13. Subscription & Billing baseline
 
-### Plan/terms
+### Approved Plan catalog (`PD-044`)
 
 Plan has stable identity and immutable accepted PlanVersions. Accepted version is never edited in place and may later be withdrawn from new sale without rewriting history.
 
-Exact `Starter`/`Growth`/`Business` price/entitlement packages remain deferred under `PD-044`; Enterprise/custom pricing is out of MVP.
+Initial paid monthly catalog:
+
+| Plan | Price/month | MaxActiveMemberships | MaxWarehouses | Scheduled ingestion | Order warning |
+|---|---:|---:|---:|---|---:|
+| Starter | 199,000 VND | 3 | 1 | No | 500 |
+| Growth | 499,000 VND | 10 | 3 | Yes | 2,000 |
+| Business | 999,000 VND | 30 | 10 | Yes | 10,000 |
+
+All paid Plans include Catalog, Storefront, Orders/Sales, Inventory, Procurement, Accounting, and Reporting. They differ primarily by scale and scheduled automation. `MaxActiveMemberships` counts all Active roles. Order thresholds are warning-only. Enterprise/custom pricing is out of MVP.
+
+Trial is dedicated terms, not a paid-plan alias: all core capabilities enabled, `MaxActiveMemberships=3`, `MaxWarehouses=1`, scheduled ingestion enabled, order warning 500. Trial does not automatically convert to Starter.
 
 ### Trial/paid periods
 
@@ -392,7 +417,7 @@ Upgrade is immediate only after required PlatformCharge has verified successful 
 
 ### Downgrade
 
-Downgrade schedules for next renewal boundary. Authoritative owning-domain usage is revalidated. If current usage exceeds target hard limit, downgrade is `BlockedByUsage/RemediationRequired`; lower entitlements do not become effective and current terms continue. No foreign-domain data/resource is auto-deleted/disabled.
+Downgrade schedules for next renewal boundary. Authoritative owning-domain usage is revalidated against target `MaxActiveMemberships`, `MaxWarehouses`, and other applicable hard limits. If current usage exceeds target hard limit, downgrade is `BlockedByUsage/RemediationRequired`; lower entitlements do not become effective and current terms continue. No foreign-domain data/resource is auto-deleted/disabled.
 
 ### Cancellation/delinquency/end
 
@@ -406,17 +431,18 @@ Downgrade schedules for next renewal boundary. Authoritative owning-domain usage
 
 ### Entitlement categories
 
-- capability flags: hard command-boundary gates;
-- counted resource limits such as MaxActiveStaff/MaxWarehouses: hard growth/activation gates only; existing resources preserved for remediation;
-- order-volume meter: idempotent `OrderConfirmed` count in current billing period, warning-only and never blocks shopper checkout;
+- core capabilities are enabled on all three paid Plans;
+- scheduled product ingestion is a hard capability gate: Starter off, Growth/Business on, Trial on;
+- `MaxActiveMemberships` and `MaxWarehouses` are hard growth/activation limits only; existing resources preserved for remediation;
+- order-volume meter is idempotent `OrderConfirmed` count in current billing period, warning-only and never blocks shopper checkout;
 - overage billing absent;
-- `Unlimited` explicit.
+- `Unlimited` remains explicit when a future approved entitlement uses it.
 
 ### SaaS billing provider/admin
 
 MVP uses a dedicated simulated SaaS billing-provider seam supporting success, no-commit/decline, `OutcomeUnknown`, duplicates, retry/idempotency, query/reconciliation, and out-of-order evidence. No real money/card/bank data.
 
-Platform-admin Subscription/Billing support is read-only visibility; no plan/charge/entitlement override backdoor exists.
+Platform-admin Subscription/Billing support is read-only visibility; no plan/charge/entitlement override backdoor exists. Tenant Management's separate platform suspend/reactivate authority does not mutate Subscription truth.
 
 ## 14. Source-of-truth questions
 
@@ -425,6 +451,7 @@ Platform-admin Subscription/Billing support is read-only visibility; no plan/cha
 | Does Tenant exist and what Profile/status does it have? | Tenant Management |
 | May authenticated subject act for selected Tenant? | Merchant Access |
 | Which Subscription/terms/EntitlementSet govern Tenant now? | Subscription & Billing |
+| Which PlanVersion/pricing/limits are currently sellable? | Subscription & Billing |
 | How many Active Memberships exist? | Merchant Access |
 | How many Warehouses / what stock exists? | Inventory |
 | What Product/base price/public eligibility exists? | Catalog |
@@ -456,7 +483,9 @@ Platform-admin Subscription/Billing support is read-only visibility; no plan/cha
 13. every hard entitlement write uses current trusted entitlement plus authoritative owning-domain state;
 14. public commerce and ordinary mutations require applicable effective subscription entitlements, while approved read/history/export/recovery remains distinct;
 15. refund request never creates return/payment/accounting effects before explicit approval;
-16. refund approval may authorize cross-domain effects but never substitutes for Inventory/Payments/Accounting owning facts.
+16. refund approval may authorize cross-domain effects but never substitutes for Inventory/Payments/Accounting owning facts;
+17. Tenant suspension is a platform reasoned action and cannot be bypassed by merchant self-reactivation;
+18. Plan name is presentation/commercial identity; effective EntitlementSet, not the plan-name string, authorizes gated operations.
 
 ## 16. Business error semantics
 
@@ -478,30 +507,26 @@ Common families:
 | `OutcomeUnknown` | independent external commit outcome cannot currently be proven |
 | `ApprovalRequired` | requested financially/materially sensitive effect requires an explicit approved business decision first |
 | `RemediationRequired` | requested downgrade/change cannot become effective until owning-domain usage is remediated |
-| `HumanProductDecisionRequired` | implementation reached one of the intentionally deferred product-policy scopes |
+| `HumanProductDecisionRequired` | a future capability reaches business semantics not covered by the currently resolved product baseline |
 
 Technical Architecture decides transport representation.
 
-## 17. Remaining human product-decision gates
+## 17. Current human product-decision gates
 
-### `PD-004`
+There are **no unresolved current `PD-*` human product-decision gates** for the approved MVP baseline.
 
-**HUMAN PRODUCT DECISION REQUIRED** only when work needs exact Suspended read/support semantics beyond the safe restriction, or Tenant closure/deletion/retention/recovery/privacy behavior.
-
-### `PD-044`
-
-**HUMAN PRODUCT DECISION REQUIRED** before exact Starter/Growth/Business prices or entitlement/limit packages are exposed/sold/seeded/hard-coded as product truth.
-
-No other current `PD-*` remains an unresolved Domain Architect product gate. `PD-023` is resolved and propagated.
+This does not authorize scope invention. Future Tenant deletion/privacy workflows, non-restock refund behavior, Enterprise/custom pricing, new entitlement types/commercial strategies, or other materially new semantics require new explicit product decisions before implementation.
 
 ## 18. Downstream reconciliation required
 
-The final product-decision pass and subsequent `PD-023` resolution occurred **after** the previous TASK-0092 technical baseline. Therefore the Technical Architect must reconcile technical artifacts against this updated business baseline before affected implementation tasks become Ready.
+The final product-decision pass and follow-up resolutions occurred **after** the previous TASK-0092 technical baseline. Therefore the Technical Architect must reconcile technical artifacts against this updated business baseline before affected implementation tasks become Ready.
 
 Priority technical rechecks include:
 
 - multi-Tenant Membership selection and one-role authorization;
-- onboarding consistency across Tenant + Owner + automatic Trial;
+- onboarding consistency across Tenant + Owner + approved automatic Trial EntitlementSet;
+- platform-only reasoned Tenant suspension/reactivation and Suspended read-only access paths;
+- `MaxActiveMemberships` authoritative count and hard growth enforcement;
 - invitation verified-email/rotation/expiry behavior;
 - Catalog SKU/slug/lifecycle/reference/media/import rules;
 - checkout reconfirmation and reserve→capture→confirm→allocate sequence;
@@ -511,9 +536,11 @@ Priority technical rechecks include:
 - Inventory zero-floor/reserved invariants;
 - immutable Procurement evidence;
 - Accounting trigger/valuation/GRNI/date/refund-correction semantics;
-- Subscription monthly periods, upgrade/downgrade/PastDue/end, entitlement categories, SaaS provider simulation, and read-only platform support.
+- approved Starter/Growth/Business PlanVersions/prices and Trial terms;
+- hard `MaxActiveMemberships`/`MaxWarehouses`, scheduled-ingestion gate, and soft order-volume thresholds;
+- Subscription monthly periods, upgrade/downgrade/PastDue/end, SaaS provider simulation, and read-only platform Subscription support.
 
-After Technical Architecture reconciliation, Backlog Planner must reconcile candidate tasks and readiness. Resolved product decisions should no longer remain artificial blockers; deferred `PD-004` and exact `PD-044` scope must remain explicit gates.
+After Technical Architecture reconciliation, Backlog Planner must reconcile candidate tasks and readiness. Resolved product decisions should no longer remain artificial blockers. Future out-of-MVP semantics must become explicit new product work rather than hidden assumptions.
 
 The Domain Architect does not mark implementation tasks Ready.
 
@@ -521,11 +548,12 @@ The Domain Architect does not mark implementation tasks Ready.
 
 The current business/domain baseline now:
 
-- represents all approved product decisions in bounded-context ownership and invariants;
+- represents all approved current product decisions in bounded-context ownership and invariants;
 - distinguishes source truth, intent, projection, provider evidence, and Audit evidence;
 - records the approved aggregate/lifecycle semantics needed by the current backlog;
 - preserves cross-domain ownership rather than absorbing responsibility for convenience;
-- explicitly surfaces the two remaining deferred human product-policy areas;
+- contains no unresolved current human product-decision gate for the approved MVP;
+- keeps future destructive/privacy/non-restock/Enterprise/new-commercial semantics explicitly outside MVP rather than guessed;
 - gives actionable handoff to Technical Architect and Backlog Planner;
 - introduces no application code, AWS, persistence, API, or deployment choice.
 
