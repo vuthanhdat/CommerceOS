@@ -516,3 +516,17 @@ Priority technical rechecks include:
 After Technical Architecture reconciliation, Backlog Planner must reconcile candidate tasks and readiness. Resolved product decisions should no longer remain artificial blockers; deferred `PD-004` and exact `PD-044` scope must remain explicit gates.
 
 The Domain Architect does not mark implementation tasks Ready.
+
+## 19. Acceptance statement
+
+The current business/domain baseline now:
+
+- represents all approved product decisions in bounded-context ownership and invariants;
+- distinguishes source truth, intent, projection, provider evidence, and Audit evidence;
+- records the approved aggregate/lifecycle semantics needed by the current backlog;
+- preserves cross-domain ownership rather than absorbing responsibility for convenience;
+- explicitly surfaces the two remaining deferred human product-policy areas;
+- gives actionable handoff to Technical Architect and Backlog Planner;
+- introduces no application code, AWS, persistence, API, or deployment choice.
+
+**Stop condition: DOMAIN BASELINE EXTENDED AND RECONCILED.**
