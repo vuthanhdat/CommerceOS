@@ -1,49 +1,80 @@
-# ADR-006 — Reliable Cross-Domain Integration and Deferred Workflow Orchestration
+# ADR-006 — Reliable Cross-Domain Integration and Workflow Selection
 
 Status: Accepted
 Date: 2026-08-09
+Last reconciled: 2026-08-10
 Decision owners: CommerceOS Technical Architecture
 Supersedes: N/A
 Superseded by: N/A
 
 ## Context
 
-CommerceOS requires explicit cross-domain contracts and assumes at-least-once delivery. Future Inventory, Payments, Procurement, Accounting, Reporting, Notification, Audit, and Product Data Ingestion flows need independent retry, backpressure, fan-out, or honest partial/recovery states.
+CommerceOS requires explicit cross-domain contracts and assumes at-least-once delivery. Inventory, Payments, Procurement, Accounting, Reporting, Notification, Audit, SubscriptionBilling, and Product Data Ingestion need different combinations of immediate owner decisions, independent retry, backpressure, fan-out, durable waiting, and reconciliation.
 
-The existing architecture diagrams name EventBridge, SQS, DLQ, direct Lambda, and Step Functions but do not decide when each is justified or how a committed DynamoDB fact is published reliably. Writing domain state and then calling EventBridge is a dual-write gap: a crash can commit the fact and lose its integration effect. Publishing first can expose a fact that never committed.
+The original ADR deliberately deferred Step Functions for checkout/payment because business sequence and timeout semantics were unresolved. The 2026-08-10 product/domain reconciliation now defines the purchase-confirmation sequence and Payment `OutcomeUnknown` behavior sufficiently for one named workflow: ADR-010 selects Step Functions Standard from accepted `OrderPlaced` through `OrderAllocated`.
 
-TASK-0087 also leaves high-risk business sequences intentionally unresolved. A generic checkout workflow that maps timeout/“failed” to stock release or Order failure would invent `PD-014`, `PD-017`, `PD-018`, and `PD-042`. Accounting routes cannot be created until one approved source fact/policy is selected for each effect.
-
-The architecture needs one reliable delivery pattern without pre-creating resources or choosing missing business semantics.
+The general rule remains: no generic event bus/queue/workflow is created because a diagram contains an AWS icon, and no transport failure is allowed to manufacture a business fact.
 
 ## Decision
 
-### Interaction selection
+### 1. Interaction selection
 
-- Use a synchronous producer-owned application contract when the caller needs the owner's immediate accepted/rejected result, both modules share the current runtime, and independent retry/backpressure/waiting is not required.
-- Use direct SQS work messages when one known worker needs buffering/backpressure/retry and fact fan-out is not the problem.
-- Use versioned integration facts through EventBridge when a committed owner fact has one or more independent consumers and eventual consistency is acceptable.
-- Give each critical/bursty side-effecting consumer its own SQS queue and DLQ.
-- Permit direct EventBridge-to-Lambda only for bounded, idempotent, demonstrably rebuildable low-risk projections with an explicit recovery source/failure destination.
-- Do not use EventBridge merely to avoid an in-process call and do not publish generic database changes.
+Use a **synchronous producer-owned application contract** when:
 
-### Reliable fact publication
+- the caller cannot truthfully complete without the owner's immediate accepted/rejected/current result;
+- modules share the current runtime;
+- independent buffering/fan-out/durable wait is not required.
 
-When the first named cross-domain fact consumer is Ready:
+Use a **direct SQS work item** when:
 
-1. The producer's module transaction writes its accepted business state and a complete immutable outbox record in the same module table transaction.
-2. A filtered DynamoDB Stream event source invokes an idempotent relay Lambda for outbox records.
-3. The relay publishes the producer-owned, versioned integration envelope to a custom EventBridge bus and marks publication/retry evidence without changing the business fact.
-4. EventBridge routes by producer, type, and version to consumer-specific SQS queues when durable side effects/backpressure are required.
-5. The consumer atomically records its inbox/logical source identity with its owned effect where possible.
-6. Duplicate publication/delivery is safe. Equivalent replay returns the prior effect; incompatible source reuse conflicts.
-7. Pending outbox records remain queryable for reconciliation after stream records expire. The stream is a wake-up/delivery mechanism, not the sole recovery record.
+- one known worker needs retry/backpressure/latency isolation;
+- fan-out is not the problem.
 
-The outbox payload contains the stable contract fields needed by consumers; it is not a pointer that forces cross-domain persistence reads and is not a raw database row.
+Use a **versioned integration fact via EventBridge** when:
 
-### Envelope and identity
+- a producer has already committed an owner fact;
+- one or more independent consumers need that fact;
+- eventual consumer completion is acceptable.
 
-Every tenant-owned integration event includes:
+Give critical/side-effecting consumers their own **SQS queue + DLQ**.
+
+Use **Step Functions Standard** only for a named approved process with real durable wait/branch/retry/reconciliation/compensation pressure. ADR-010 is the first accepted specialization.
+
+### 2. Reliable business-fact publication
+
+When a named cross-domain fact consumer is Ready:
+
+1. producer transaction writes accepted business state + complete immutable outbox record in the producer's module table;
+2. filtered DynamoDB Stream invokes an idempotent relay Lambda;
+3. relay publishes producer-owned versioned integration envelope to a custom EventBridge bus;
+4. EventBridge routes explicit producer/type/version to consumer-specific queue/target;
+5. side-effecting consumer records inbox/logical source identity with its owned effect atomically where possible;
+6. duplicate publication/delivery is safe;
+7. pending outbox remains queryable for reconciliation after stream retention expires.
+
+A database commit followed by best-effort `PutEvents` is not reliable publication.
+
+The outbox payload is the stable contract data required by consumers, not a raw item/domain serialization and not a pointer that forces foreign-table reads.
+
+### 3. Transactional work-outbox for required one-worker recovery
+
+A direct SQS work item also needs crash-safe source delivery when the work is required after a source commit.
+
+In that case:
+
+1. source module writes a complete `WORKOUTBOX` record in the same transaction as the local source operation/state;
+2. filtered Stream relay sends the stable work contract directly to the named SQS queue;
+3. worker invokes the target application contract using stable logical work/source identity;
+4. duplicate relay/queue delivery is safe;
+5. durable work-outbox remains queryable for repair.
+
+EventBridge is unnecessary when there is exactly one known worker and no fact fan-out.
+
+ADR-009 onboarding Trial-bootstrap recovery is the first accepted use of this pattern.
+
+### 4. Integration event envelope
+
+Every tenant-owned integration fact includes:
 
 ```text
 eventId
@@ -58,123 +89,246 @@ producer
 data
 ```
 
-An internal domain fact is not published automatically. A named producer-owned contract and consumer must exist. Redrive/retry preserves eventId and logical source; it does not create a new fact.
+Rules:
 
-### Retry, DLQ, and recovery
+- event identity describes one immutable published fact;
+- `tenantId` required for tenant-owned facts;
+- `data` contains only stable consumer-required facts;
+- consumers reject unsupported type/version rather than guessing;
+- sensitive/private data minimized;
+- redrive preserves eventId/source/correlation/causation rather than manufacturing a new fact;
+- an internal domain event is not published automatically — a named contract/consumer must exist.
 
-- Classify transient versus permanent validation/business failures.
-- Bound Lambda/queue/EventBridge retries and configure consumer redrive/DLQ behavior and alarms.
-- Use partial batch response/batch isolation for stream/queue handlers so successfully processed records are not needlessly repeated.
-- Alarm on relay errors/lag, EventBridge target failures, queue oldest-message age/backlog, Lambda errors/throttles, and DLQ depth.
-- Redrive has a documented operator procedure, preserves identity, and remains idempotent.
-- Critical integrations define reconciliation for a committed source with no expected consumer effect.
-- Retry exhaustion, DLQ placement, queue age, and redrive are operational states only; they do not change Order, Payment, stock, journal, or another business state.
+### 5. Consumer requirements
 
-### Audit
+Every side-effecting consumer:
 
-Audit records are not domain events. After `PD-033` designates an action as requiring Audit evidence, the source transaction writes a safe, durable audit-delivery intent/outbox record atomically with the accepted state. Audit appends its owned immutable evidence idempotently. A completed success therefore cannot silently omit recoverable evidence.
+- assumes at-least-once and possible out-of-order delivery;
+- validates envelope/Tenant/source/type/version and owner-specific invariants;
+- writes inbox/logical source marker atomically with its owned effect where possible;
+- returns prior effect for equivalent replay and rejects incompatible source reuse;
+- cannot regress later accepted state from older evidence;
+- classifies transient/permanent errors and bounds automatic retry;
+- has DLQ/redrive/reconciliation before production use;
+- never reads/writes producer persistence;
+- never treats message TenantId as merchant actor authority.
 
-The exact covered successes/rejections, readers, and safe content remain product-gated. A rejected attempt with no source-state transaction requires the separately approved rejection-audit contract; this ADR does not invent its coverage.
+For external side effects, persist stable operation identity before unsafe retry and use provider idempotency/query/reconciliation semantics. Timeout remains potentially ambiguous.
 
-### Step Functions
+### 6. Named business fact routes after reconciliation
 
-Do not introduce a Step Functions state machine for Tenancy/Catalog or preselect one for checkout, payment, refund, Procurement, or another flow.
+The following routes are now approved in principle and may be introduced by their Ready producer/consumer tasks:
 
-A future workflow requires its own task/ADR after the business sequence is approved and must demonstrate a need for durable waiting, branching, callback, retry, timeout handling, or compensation that is clearer/reliabler than application state plus queues. It must define execution idempotency, unknown outcomes, operator recovery, reconciliation, and bounded state-transition cost.
+- `OrderConfirmed` -> SubscriptionBilling UsageMeter and Reporting;
+- `PaymentCaptured` -> Accounting and asynchronous Sales convergence where needed;
+- `OrderFulfilled` -> Accounting revenue and Reporting;
+- `StockIssued` -> Accounting COGS;
+- `GoodsReceiptRecorded` -> Inventory receipt application and Accounting inventory/GRNI posting;
+- `SupplierInvoiceRecorded` -> Accounting AP/GRNI posting;
+- `SupplierPaymentRecorded` -> Accounting AP/Cash posting;
+- `StockAdjusted` -> Accounting adjustment posting;
+- approved privileged action/rejection Audit intents -> Audit;
+- selected domain facts -> Notification only where a named recipient/event contract exists.
 
-### Provisioning
+`PaymentRefunded`/`StockReturned` do not receive an Accounting posting route until `PD-023` is resolved.
 
-No event bus, stream relay, queue, DLQ, or workflow resource is created until its producer contract and named consumer/work item are Ready. `FoundationStack` does not contain an empty event bus by default.
+A route is still provisioned only when the producer + consumer implementation task is Ready; approval of business meaning does not justify an empty bus/queue.
+
+### 7. Audit delivery
+
+Audit records are not domain events or CloudWatch logs.
+
+For a **successful covered mutation**, the source transaction writes a safe durable Audit-delivery intent/outbox atomically with accepted state.
+
+For a **covered rejected attempt** that has no business-state transaction, the rejecting owning module persists a standalone idempotent Audit-delivery intent before completing the application result where practical.
+
+Audit appends its owned evidence idempotently through the reliable delivery path. No source module writes the Audit table directly.
+
+### 8. Order Step Functions specialization
+
+ADR-010 selects **Step Functions Standard** for the approved process from already accepted `OrderPlaced` through `OrderAllocated`.
+
+The state machine may coordinate:
+
+```text
+Inventory reserve
+  -> Payments capture/query/reconcile
+  -> Sales Confirm
+  -> Sales Allocate
+```
+
+with durable technical branches for:
+
+- definitive decline/no-commit -> payment retry needed;
+- `OutcomeUnknown` -> reconciliation/wait;
+- bounded automation unable to resolve -> technical `NeedsAttention`.
+
+The state machine cannot:
+
+- create Order before price reconfirmation;
+- infer Payment failure from timeout/retry exhaustion/workflow failure;
+- auto-cancel Order or release stock from technical failure/Unknown;
+- call provider internals instead of Payments contracts;
+- post Accounting;
+- invent refund/fulfillment/shipping business behavior.
+
+Workflow/process state is operational coordination, not source-domain truth.
+
+### 9. Workflow selection beyond ADR-010
+
+Do not introduce Step Functions for Tenancy/Catalog CRUD or preselect it for onboarding, Subscription plan changes, Procurement, refunds, or fulfillment merely for consistency of tooling.
+
+Any later workflow requires a focused task/ADR showing:
+
+- approved business sequence and owner of every transition;
+- why application code + durable records/queues are insufficient;
+- execution identity/duplicate-start semantics;
+- timeout/Unknown rules;
+- retry/catch/wait/callback/compensation semantics;
+- operator recovery/reconciliation;
+- bounded transition/cost envelope.
+
+## EventBridge policy
+
+Use EventBridge for versioned business-fact routing/fan-out with named consumers.
+
+Do not use it for:
+
+- ordinary in-process commands/queries;
+- generic database changes;
+- one-worker commands where SQS is sufficient;
+- an empty FoundationStack event bus.
+
+Each rule documents owner/source/type/version, target, retry/failure policy, IAM, payload minimization, compatibility/deletion, and cost.
+
+## SQS/DLQ policy
+
+Standard queue by default. FIFO only if an explicit ordering/dedup requirement cannot be safely handled by source/aggregate idempotency and its cost/throughput trade-off is justified.
+
+Every queue defines:
+
+- producer/consumer + message contract;
+- visibility timeout greater than bounded handler duration;
+- batch/concurrency cap;
+- maximum receives/redrive policy;
+- DLQ retention/alarm;
+- transient/permanent classification;
+- identity-preserving replay;
+- poison-message/manual recovery;
+- tenant-safe logs/metrics.
+
+Queue age/retry/DLQ is never business state.
 
 ## Alternatives considered
 
-### Option A — Commit state, then call EventBridge directly
+### Commit state then publish/send directly
 
-- Benefits: least infrastructure/code and low latency.
-- Costs/risks: unrecoverable dual-write gap on crash/outage unless every producer has another durable reconciliation mechanism; unsafe for Accounting, Inventory, Payment, Procurement, and mandatory Audit effects.
+Rejected for required delivery because it creates a dual-write gap.
 
-### Option B — Share/read producer persistence from consumers
+### Share/read producer persistence from consumers
 
-- Benefits: no event-publication dual write; consumers can poll current state.
-- Costs/risks: destroys ownership, couples consumers to private schemas, broadens IAM, cannot distinguish fact occurrence/causation safely, and makes migrations difficult.
+Rejected because it breaks ownership/IAM/migration and cannot reliably express occurrence/causation.
 
-### Option C — Transactional outbox + stream relay + EventBridge/SQS
+### Transactional outbox + Stream relay + EventBridge/SQS
 
-- Benefits: business state and delivery intent commit atomically; fan-out/backpressure/retry are explicit; producer/consumer ownership and duplicate handling remain clear; pay-per-use services fit the project.
-- Costs/risks: additional writes/storage/functions/events/queues; at-least-once duplicates; stream retention requires durable outbox repair; operational tooling/DLQs/reconciliation are mandatory.
+Chosen for reliable business facts because state and delivery intent commit together while consumers remain independently retryable/idempotent.
 
-### Option D — Put every cross-module action in SQS/Step Functions
+### Transactional work-outbox + Stream relay + direct SQS
 
-- Benefits: uniform distributed model and durable execution history.
-- Costs/risks: asynchronous ceremony for immediate local decisions, more cost/latency/contracts, premature workflow semantics, and a distributed monolith.
+Chosen for required one-worker recovery because it closes the dual-write gap without unnecessary fan-out/EventBridge.
 
-Chosen: synchronous contracts by default for immediate local ownership; Option C for reliable published facts; direct SQS for one-worker work; Step Functions deferred to demonstrated need.
+### Put every cross-domain action in SQS/Step Functions
+
+Rejected because it adds asynchronous ceremony/latency and creates a distributed monolith for immediate owner decisions.
+
+### Never use Step Functions
+
+Rejected after the order/payment domain reconciliation because `OutcomeUnknown` creates a legitimate durable cross-module wait/reconciliation process. ADR-010 uses Step Functions selectively for that named process.
 
 ## Consequences
 
 ### Positive
 
-- No Builder must invent a dual-write, bus/queue topology, duplicate strategy, or workflow default.
-- Critical future side effects survive producer response loss and independent consumer outages without sharing persistence.
-- EventBridge solves fact routing/fan-out; SQS solves work/backpressure; Step Functions remains tied to actual orchestration pressure.
-- Business fact identity and operational delivery state remain separate.
-- Audit can meet durable-evidence requirements without becoming a shared write model.
+- no Builder invents a dual-write, event topology, duplicate strategy, or workflow default;
+- immediate owner decisions stay simple/synchronous;
+- required recovery work survives source commit;
+- critical facts survive consumer outages without shared persistence;
+- order Payment Unknown has a durable coordinator without false business failure;
+- EventBridge, SQS, and Step Functions each have a distinct purpose;
+- business fact identity and operational delivery/workflow state remain separate.
 
 ### Negative / trade-offs
 
-- Reliable integration adds outbox/inbox items, streams, relay code, queues/DLQs, alarms, and recovery procedures.
-- Delivery is at least once; every consumer must implement idempotency and out-of-order safeguards.
-- Eventual consistency and honest processing/needs-attention states become visible to applications/operations.
-- Stream delivery is time-bounded; durable pending-outbox reconciliation is required.
-- Resource count grows per critical consumer, though resources remain pay-per-use and conditional.
-- Business product decisions still gate the exact event routes and workflow sequence.
+- reliable integration adds outbox/inbox items, Streams, relays, queues/DLQs, alarms, and reconciliation;
+- work-outbox adds another durable delivery shape to govern/test;
+- at-least-once means every consumer/worker must be idempotent;
+- Step Functions introduces state-machine/task/IAM/transition cost for the named order process;
+- eventual consumer completion/NeedsAttention becomes visible operationally.
 
 ## Security and tenant impact
 
-- Tenant isolation: tenant-owned envelopes carry TenantId and consumers validate/scope their own persistence by it; a message is never merchant actor authority.
-- Authentication/authorization: producer application authorization occurs before accepting the fact; workers use service IAM plus contract validation, not interactive capabilities.
-- Sensitive data/secrets: envelopes contain minimum stable facts and no tokens, credentials, raw personal/payment/source payloads, or database rows. Broad EventBridge routing does not justify broad data.
-- IAM: relay can read its module stream and publish to the named bus; EventBridge can target named queues; consumers receive only their queue and owned table. No wildcard cross-module table access.
-- Encryption/key choices must be compatible with EventBridge/SQS target policies and justified in the implementing task; customer-managed keys are not introduced by default.
+- tenant-owned envelopes/work items carry TenantId for routing/scope validation but are never merchant actor authority;
+- producer authorization occurs before accepting source fact/operation;
+- workers use service IAM + contract validation;
+- minimum stable payload only, no tokens/credentials/raw card/provider/source data/database rows;
+- relay/queue/event IAM is explicit and narrow;
+- customer-managed keys are not introduced by default without security/cost justification.
 
 ## Reliability and operability impact
 
-- Failure modes: producer transaction cancellation, stream/relay failure, EventBridge target delivery failure, queue consumer failure, poison message, duplicate/out-of-order event, and missing consumer effect are separately observable.
-- Retry/recovery: bounded retry, partial-batch handling, DLQs, identity-preserving redrive, durable outbox repair, and source/effect reconciliation are required.
-- Idempotency: relay/event delivery may duplicate; consumer inbox/logical source and effect commit together where possible. External effects also use provider idempotency and reconcile ambiguous outcomes.
-- Observability: preserve request/command/event/correlation/causation identities; monitor iterator age, failed target delivery, queue age/depth, DLQ, consumer errors, and reconciliation gaps.
-- Operational burden: every critical integration task includes an owner/runbook/redrive/reconciliation test and cloud verification; an event is not “done” when `PutEvents` succeeds.
+Observe separately:
+
+- producer transaction cancellation;
+- work/event outbox pending age;
+- Stream/relay error/iterator lag;
+- EventBridge target failure;
+- queue backlog/oldest age/DLQ;
+- consumer error/throttle/source conflict;
+- Step Functions execution/NeedsAttention state;
+- provider Unknown/reconciliation;
+- committed source with missing expected consumer effect.
+
+Retry/redrive preserves logical identities. Operational exhaustion never changes domain state unless an owner command independently accepts a transition.
 
 ## Cost impact
 
-- Learning profile: TASK-0088 deploys nothing. When first used, the existing cost model already budgets low-volume DynamoDB, Lambda, EventBridge, and SQS; incremental outbox/inbox writes/storage and relay invocations are expected to be negligible but measured. Current modeled EventBridge cost is about $0.03 and SQS remains under its initial free request allowance.
-- Beta profile: current model includes about $0.40 EventBridge and SQS under its initial free allowance, before per-consumer write/compute amplification. Queue/relay/log usage must be measured by contract.
-- Larger-scale implication: event fan-out, outbox/inbox writes, Lambda duration, queue requests, and log volume become cost drivers. Batch/filter/item-size choices and direct-vs-queued rebuildable projections should be revisited with metrics.
-- Step Functions: remains absent; the current cost model's ~$0.15 learning/~$2.40 beta scenario is not a commitment and must be recalculated for an approved state machine including retries.
-- Cost-model update required? No current runtime change. The implementation task updates measured event/queue/transition assumptions when material.
+This ADR update deploys nothing and changes runtime cost by zero.
+
+When introduced, current serverless cost model already covers low-volume DynamoDB/Lambda/EventBridge/SQS and selective Step Functions. Each Ready task must calculate its own request/write/transition/log amplification.
+
+Step Functions Unknown paths use waits/backoff and bounded automated campaigns, not high-frequency polling.
+
+No standing-cost infrastructure is introduced.
 
 ## Reversibility / migration
 
-- Changing the relay transport from EventBridge requires preserving producer event contracts, event IDs, consumer subscriptions, and replay history during cutover.
-- A consumer can move from direct Lambda to SQS by adding a versioned route and replay/cutover plan; critical effects should begin queued to avoid losing recovery isolation.
-- Replacing DynamoDB Streams requires another durable outbox dispatcher with equivalent crash/reconciliation guarantees.
-- Extracting a module/service retains integration contracts but requires independent deployment/IAM/observability and timeout/compatibility management.
-- Introducing Step Functions later migrates an approved process using stable command/fact identities; it cannot reinterpret past facts or bypass consumer idempotency.
+- changing relay transport preserves producer event/work contracts and logical identities during cutover;
+- consumer direct-Lambda/SQS topology can change with replay/cutover plan without changing producer fact meaning;
+- replacing DynamoDB Streams requires an equivalent durable outbox dispatcher;
+- extracting a module retains integration/application contracts while changing deployment/IAM/network boundaries;
+- replacing Step Functions later must preserve Sales process/source identities and Payment Unknown/recovery semantics.
 
 ## Validation
 
-- Producer failure injection proves business state and outbox commit together or neither commits.
-- Relay duplicate/retry tests publish the same eventId safely and never manufacture a new fact.
-- Real DynamoDB Streams/Lambda tests cover duplicate delivery, partial batch failure, retry exhaustion/destination behavior, iterator lag, and recovery from pending outbox records.
-- EventBridge cloud tests verify source/type/version matching, SQS target permissions, retry, and target DLQ behavior.
-- SQS tests cover visibility timeout, bounded receive/redrive, duplicates, out-of-order events, poison messages, DLQ alarm, and identity-preserving redrive.
-- Consumer tests prove inbox/source marker and owned effect are atomic where possible and incompatible reuse fails.
-- Reconciliation finds a committed source with a missing critical consumer effect and repairs/requeues idempotently without foreign-table access.
-- Architecture/contract tests enforce the required envelope and forbid published database-row/domain-entity schemas.
-- CDK assertions prove no event/queue/workflow resources exist before a named consumer and verify least-privilege grants/retention/tags when introduced.
+Dependent implementation must verify:
+
+- producer state + outbox/work intent commit together or neither;
+- duplicate Stream relay preserves same event/work identity;
+- EventBridge source/type/version routing + target failure handling;
+- SQS visibility/retry/duplicate/out-of-order/DLQ/redrive;
+- consumer inbox/source marker + owned effect idempotency;
+- onboarding work-outbox/SQS recovery produces one Trial;
+- order workflow duplicate start/task retry does not duplicate business effects;
+- workflow/provider timeout/retry exhaustion cannot cause false Payment failure/cancellation/stock release;
+- Accounting/source consumers never read producer tables;
+- Audit rejection evidence is not reduced to best-effort logging;
+- CDK creates no Stream/bus/queue/state-machine before named Ready use case and enforces least privilege/retention/tags;
+- measured cloud cost stays within Ready-task guardrails.
 
 ## References
 
-- relevant task: [TASK-0088](../../tasks/completed/TASK-0088-technical-architecture-baseline-reconciliation.md)
-- architecture docs: [Integration and AWS service matrix](../architecture/integration-and-aws.md), [Persistence access patterns](../architecture/persistence-access-patterns.md)
-- AWS: [Lambda with DynamoDB Streams](https://docs.aws.amazon.com/lambda/latest/dg/with-ddb.html), [stream event-source parameters](https://docs.aws.amazon.com/lambda/latest/dg/services-ddb-params.html), [SQS at-least-once delivery](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html), [EventBridge targets](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-targets.html), [EventBridge target DLQs](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-rule-dlq.html)
+- [Integration/AWS matrix](../architecture/integration-and-aws.md)
+- [Persistence access patterns](../architecture/persistence-access-patterns.md)
+- [Technical baseline](../architecture/technical-baseline.md)
+- [ADR-009](ADR-009-cross-domain-onboarding-completion-and-trial-bootstrap-recovery.md)
+- [ADR-010](ADR-010-order-payment-allocation-durable-orchestration.md)
