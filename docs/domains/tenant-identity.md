@@ -1,42 +1,19 @@
 # Tenant Management & Merchant Access Domain Baseline
 
-_Deep baseline for the first delivery frontier. Reconciled by TASK-0087 and extended for Subscription & Billing interactions by TASK-0091._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved decisions `PD-001`, `PD-002`, `PD-003`, `PD-004`, `PD-033`, `PD-034`, `PD-036`, and the relevant Subscription & Billing decisions._
 
 ## 1. Boundary and language
 
-CommerceOS separates four ideas that must not be collapsed:
+CommerceOS keeps four business authorities separate:
 
-1. **Tenant Management** owns the merchant business account and its business profile.
-2. **Merchant Access** owns invitations, tenant memberships, and initial role policy.
-3. An **authentication authority** proves a person's external identity. It does not own Tenant or Membership and does not grant tenant authority on its own.
-4. **Subscription & Billing** owns the merchant's CommerceOS commercial subscription and effective entitlements/limits. It does not own TenantStatus or Membership lifecycle.
+1. **Tenant Management** owns the merchant business account, Business Profile, and `TenantStatus`.
+2. **Merchant Access** owns Invitations, Memberships, Membership status, and merchant roles.
+3. The external authentication authority proves a person's identity. Authentication alone never grants tenant authority.
+4. **Subscription & Billing** owns trial/paid subscription state and effective entitlements. Subscription state never becomes Tenant or Membership state by implication.
 
-These are business boundaries. Technical Architecture decides whether they share or separate implementation modules.
-
-```text
-Authenticated subject
-        │ proves identity only
-        ▼
-Merchant Access ── active membership + approved capabilities ──► Trusted tenant authority
-        │                                           │
-        └──────── membership belongs to ────────────┘
-                                                    ▼
-                                            Tenant Management
-                                                    │
-                                                    │ tenant reference
-                                                    ▼
-                                      Subscription & Billing
-                                      commercial eligibility /
-                                      effective entitlements
-```
-
-An ordinary protected operation may require both Merchant Access authority and an applicable Subscription & Billing entitlement, but neither condition rewrites the other context's state.
+These are business boundaries only. This document does not choose modules, storage, transports, or cloud services.
 
 ## 2. Tenant Management
-
-### Responsibility
-
-Tenant Management owns whether a merchant business account exists, its immutable tenant identity, its operating status, and the profile the merchant maintains about that business.
 
 ### Aggregate: Tenant
 
@@ -44,108 +21,97 @@ Tenant Management owns whether a merchant business account exists, its immutable
 
 Owned concepts:
 
-- `TenantId` — immutable, system-assigned identity;
-- `TenantStatus` — current business-account availability;
-- `BusinessProfile` — the tenant's single owned profile;
-- tenant creation and status history sufficient to explain current state.
+- immutable `TenantId`;
+- `TenantStatus`;
+- exactly one current `BusinessProfile`;
+- status/profile history sufficient to explain the current business state.
 
-`BusinessProfile` is owned by Tenant for the initial product. It is not a free-standing cross-tenant record. Candidate fields such as display name, legal/trading name, locale, contact details, and functional currency must follow `PD-002` and `PD-034`; a Builder must not infer jurisdictional requirements.
+### Business Profile
 
-### Tenant states
+For MVP, successful self-service registration requires:
 
-The baseline recognizes:
+- merchant display name;
+- explicit IANA business timezone.
+
+The initial identity must be authenticated with a verified email. No legal/tax identifier, business-name uniqueness rule, or cross-tenant duplicate-business detection is required in MVP (`PD-034`).
+
+CommerceOS MVP is VND-only (`PD-002`). Money still carries an explicit currency; the Business Profile does not choose another functional currency in MVP.
+
+### Tenant lifecycle
 
 ```text
-Active  ──Suspend──► Suspended
+Active ──Suspend──► Suspended
    ▲                    │
    └────Reactivate──────┘
 ```
 
-- A successful initial onboarding outcome creates an `Active` Tenant.
-- `Suspended` means ordinary merchant and public commerce activity is unavailable. Exact read-only/support behavior is a pending product decision (`PD-004`).
-- Trial, plan, subscription, billing standing, grace, delinquency, and subscription expiry are **not Tenant states**. They are owned by Subscription & Billing where approved. Whether absence/end/delinquency of a subscription restricts ordinary commerce remains `PD-043` and `PD-049` and must not be implemented by mutating TenantStatus implicitly.
-- Tenant closure/deletion remains outside the accepted Tenant lifecycle until explicitly approved.
-- A failed registration does not leave a business-visible partial Tenant.
+Rules:
+
+1. successful onboarding creates an `Active` Tenant;
+2. while Suspended, ordinary merchant mutations and public commerce are denied;
+3. suspension does not delete Tenant data, Memberships, Subscription, Orders, accounting history, or other evidence;
+4. reactivation restores Tenant eligibility only; it does not reactivate a separately Disabled Membership or ended Subscription;
+5. Tenant closure, deletion, retention windows, recovery windows, and legal/privacy erasure semantics remain deferred under `PD-004`;
+6. exact support/read-only behavior of a Suspended Tenant must not be invented beyond the approved safe constraint.
 
 ### Tenant invariants
 
-1. `TenantId` is immutable and never supplied as the authority for registration.
-2. A Tenant owns exactly one current BusinessProfile.
-3. BusinessProfile changes cannot move the profile to another Tenant.
-4. An Active Tenant has at least one Active Owner Membership.
-5. Suspension does not erase memberships or historical tenant-owned transactions.
-6. Reactivation restores tenant status but does not silently reactivate a Membership that was separately disabled.
-7. Retrying the same accepted onboarding intent returns/references the same logical Tenant; it does not create another tenant accidentally.
-8. Subscription activation/end/delinquency does not change `TenantStatus` unless a future human-approved policy explicitly defines a separate Tenant Management command and accepted transition.
+- `TenantId` is immutable and never becomes authorization merely because it appears in client input.
+- An Active Tenant always has at least one Active Owner Membership.
+- Tenant suspension never rewrites another context's lifecycle.
+- Registration retry is idempotent for the same logical onboarding intent.
+- Tenant name or external SubjectId is not a global real-business uniqueness key.
 
-### Onboarding business outcome
+## 3. Merchant onboarding business outcome
 
-The merchant-facing registration promise established by TASK-0087 is one complete tenancy/access outcome:
+MVP registration is open self-service for an authenticated identity with a verified email (`PD-034`). The identity that successfully initiates registration becomes the initial Active Owner.
+
+`PD-043` additionally requires successful Tenant registration to start a **30-day Trial subscription** with dedicated Trial terms/Entitlements and no payment method.
+
+The merchant-facing onboarding outcome is therefore:
 
 ```text
-approved initial Owner binding under PD-034
-        + valid business profile
+verified authenticated identity
+        + valid Business Profile
         + accepted registration intent
                     ↓
-Active Tenant + Active initial Owner Membership
+        Active Tenant
+        + Active initial Owner Membership
+        + 30-day Trial Subscription / Trial EntitlementSet
 ```
 
-The Tenant and initial Owner Membership have different owners, but the business must never report onboarding as successful while leaving an Active Tenant with no Active Owner.
+The three resulting facts have different bounded-context owners. No single context may claim ownership of all three. The product must not report onboarding as complete while knowingly leaving one of the required accepted outcomes absent; the technical consistency/recovery mechanism is a Technical Architect concern.
 
-TASK-0091 does **not** silently extend that existing outcome to include a trial or paid subscription. Whether registration also starts a trial, requires explicit plan selection, permits a Tenant to exist without an Active subscription, and when the first EntitlementSet becomes effective are human decision `PD-043`.
-
-This resolves the earlier contradiction in the candidate task graph: TASK-0006 excludes membership, TASK-0007 requires an active membership, and TASK-0008 creates memberships after TASK-0007. The Backlog Planner and Technical Architect must reshape that dependency/consistency boundary; a Builder may not bootstrap authority with a client-provided TenantId or a temporary unowned tenant.
-
-### Tenant commands and facts
-
-Business command candidates:
-
-- `RegisterMerchantTenant`
-- `UpdateBusinessProfile`
-- `SuspendTenant`
-- `ReactivateTenant`
-
-Owned fact candidates:
-
-- `MerchantTenantRegistered`
-- `BusinessProfileChanged`
-- `TenantSuspended`
-- `TenantReactivated`
-
-`TenantCreated` is acceptable only if its contract means the completed merchant-tenant registration fact, not an intermediate persistence action.
-
-Subscription acquisition/activation/end facts are not Tenant Management facts.
-
-## 3. Merchant Access
-
-### Responsibility
-
-Merchant Access answers:
-
-> For this authenticated subject, in this explicitly selected tenant context, is there an active membership and which approved capabilities apply now?
-
-It does not authenticate passwords or tokens. It does not own subscription terms/entitlements or business aggregates in Catalog, Sales, Inventory, Procurement, Payments, or Accounting.
+## 4. Membership model
 
 ### Aggregate: Membership
 
-`Membership` is the aggregate root for a subject's participation in one Tenant.
+`Membership` is the aggregate root for one authenticated subject's participation in one Tenant.
 
 Owned concepts:
 
 - immutable `MembershipId`;
 - immutable owning `TenantId`;
-- immutable external `SubjectId` binding once activated;
-- current `MembershipStatus`;
-- current assigned role identifier(s), with cardinality governed by `PD-003`;
-- activation, disablement, reactivation, and role-change history.
+- immutable external `SubjectId` binding after activation;
+- exactly one current role in MVP;
+- `MembershipStatus`;
+- activation/disable/reactivation/role-change history.
 
-Initial uniqueness invariant:
+Uniqueness invariant:
 
-> There is at most one Membership for the same `(TenantId, SubjectId)` pair.
+> At most one Membership exists for the same `(TenantId, SubjectId)` pair.
 
-The product decision about whether one subject may belong to several tenants is deliberately pending (`PD-001`). Nothing may assume that a subject identifier alone determines one tenant.
+### Multi-tenant membership and tenant selection (`PD-001`)
 
-### Membership states
+One authenticated identity may have Memberships in multiple Tenants.
+
+- If exactly one eligible Tenant exists, CommerceOS may select it automatically.
+- If multiple eligible Tenants exist, the person must intentionally select the active Tenant.
+- Every protected operation resolves trusted server-validated Tenant context from the selected Tenant plus an eligible Membership.
+- `SubjectId` alone does not determine Tenant.
+- A client-supplied `tenantId` is never authority by itself.
+
+### Membership lifecycle
 
 ```text
 Active ──Disable──► Disabled
@@ -153,26 +119,58 @@ Active ──Disable──► Disabled
    └────Reactivate─────┘
 ```
 
-- `Active` is required for ordinary protected tenant work.
-- `Disabled` denies protected work even when the authentication credential remains otherwise valid.
-- Disabling a Membership does not delete the person's authored business history or audit evidence.
-- Reactivation is explicit; authentication alone never reactivates it.
-- Subscription downgrade, cancellation, delinquency, or entitlement removal does not directly transition Memberships to `Disabled`.
+- Active is required for ordinary protected tenant work.
+- Disabled denies ordinary protected work even if authentication remains valid.
+- Reactivation is explicit.
+- Subscription downgrade, cancellation, expiry, or delinquency does not directly disable a Membership.
 
-### Aggregate: Invitation
+## 5. MVP roles and authority (`PD-003`)
 
-`Invitation` is a separate aggregate root because it has identity, expiry, recipient binding, and a lifecycle before a Membership exists.
+A Membership has **exactly one role at a time** in MVP.
 
-Owned concepts:
+Initial roles:
 
-- immutable Invitation identity and Tenant ownership;
-- intended recipient identifier/contact value;
-- proposed initial role assignment, with cardinality governed by `PD-003`;
-- inviter identity;
-- expiry;
-- acceptance/revocation history.
+| Role | Approved MVP meaning |
+|---|---|
+| Owner | Full merchant administration authority. May manage ordinary operations, staff, Catalog, and ownership-sensitive administration, subject to owning-domain invariants. |
+| Admin | May manage ordinary merchant operations, staff, and Catalog. May not grant/revoke Owner authority or remove/demote the last Active Owner. |
+| Staff | May perform ordinary operational work only where the owning domain explicitly allows Staff. May not manage Memberships, roles, or tenant-administration concerns. |
+| Viewer | Read-only. No mutating merchant operation. |
 
-Invitation states:
+Additional rules:
+
+- A Tenant may have multiple Owners.
+- An Active Tenant must retain at least one Active Owner.
+- Catalog administration and publication require Owner or Admin in MVP.
+- A generic role name never bypasses a more specific domain invariant.
+- Future permission-granular/custom RBAC is not part of MVP.
+
+### Last-owner invariants
+
+1. the last Active Owner cannot be disabled, demoted, or removed;
+2. self-disable/self-demotion is subject to the same rule;
+3. a Subscription limit may never automatically disable an Owner or other Membership to force compliance;
+4. a Membership cannot move to another Tenant;
+5. role change never changes authenticated-subject binding.
+
+## 6. Invitations (`PD-036`)
+
+`Invitation` is a separate Merchant Access aggregate root.
+
+Invitation rules:
+
+- Tenant-bound and addressed to one normalized email;
+- acceptance requires an authenticated identity whose **verified email** matches the invitation recipient;
+- at most one active Pending Invitation exists for the same Tenant + normalized recipient email;
+- resend rotates/reissues the invitation credential and invalidates the prior credential rather than creating another independent invitation;
+- invitation credential expires after **7 days** and is single-use;
+- accepting for an already Active member is a harmless already-member result;
+- an existing Disabled Membership is not silently reactivated; authorized reactivation is a separate Membership action;
+- one Invitation may activate at most one Membership;
+- acceptance may not cross Tenant boundaries;
+- delivery mechanics remain a Notification concern.
+
+Invitation lifecycle:
 
 ```text
                  ┌────Accept────► Accepted
@@ -180,167 +178,157 @@ Pending ─────────┼────Revoke────► Revoked
                  └────Expire────► Expired
 ```
 
-`Accepted`, `Revoked`, and `Expired` are terminal for that invitation.
+Accepted, Revoked, and Expired are terminal for that invitation credential/history.
 
-Invitation invariants:
+## 7. Subscription-entitlement interaction
 
-1. Only an authorized Active Membership in the same Tenant may issue or revoke an invitation.
-2. The accepting authenticated subject must satisfy the human-approved recipient-binding rule in `PD-036`; no email/subject matching default is implied.
-3. One invitation can activate at most one Membership.
-4. Acceptance after expiry/revocation/previous acceptance is rejected deterministically and creates no additional Membership.
-5. Invitation acceptance cannot create or modify a Membership in another Tenant.
-6. An invitation to an already Active member is a conflict, not a second Membership.
-7. Reactivating an existing Disabled Membership is a separate privileged decision; accepting a new invitation does not silently bypass disablement.
-8. If a staff-count entitlement applies, invitation acceptance/member activation must still satisfy the approved entitlement policy; denial of the new activation does not invalidate the Invitation or mutate existing Memberships unless the approved domain policy explicitly says so.
+Membership authorization and subscription entitlement are independent eligibility dimensions.
 
-How an invitation is delivered is a Notification concern and may be out-of-band initially. Delivery failure does not change the fact that Merchant Access accepted or rejected the invitation command.
+Conceptually, an ordinary mutation may require:
 
-### Initial role vocabulary
+```text
+verified identity
++ trusted selected Tenant
++ Active Membership with sufficient role/domain authority
++ TenantStatus allows the operation
++ effective Subscription entitlement allows the capability
++ owning domain invariant accepts the change
+```
 
-Roles are named groupings of business capabilities. Whether one Membership initially holds exactly one role or a set of roles, and the complete role-to-capability mapping, are human product decision `PD-003`; the plural product wording and singular candidate-task wording conflict, so neither is treated as approved. Later permission-granular authorization may replace the role mapping without changing Membership identity.
+### Staff-count limits (`PD-048`, `PD-050`)
 
-The following names carry only the directional persona intent already present in the product definition. This table is not an authorization matrix:
+Subscription & Billing may define `MaxActiveStaff` as a hard growth/activation limit, but Merchant Access remains authoritative for Membership identity/status and active-member count.
 
-| Role | Directional persona intent |
-|---|---|
-| Owner | accountable tenant owner and ownership-sensitive actor |
-| Admin | tenant-administration persona whose exact staff/domain authority is pending |
-| Sales | customer/order work subject to explicit capability grants |
-| Warehouse | inventory/receiving/fulfillment work subject to explicit capability grants |
-| Accountant | accounting and financial-report work subject to explicit sensitive-action grants |
-| Viewer | read-only persona; exact readable data still requires explicit policy |
+Rules:
 
-The UI may hide unavailable actions, but the business authorization decision remains authoritative outside the UI.
+- creating/activating another Membership may be rejected when authoritative current count plus the proposed activation would exceed the current trusted hard limit;
+- existing Memberships are never automatically disabled because of a downgrade;
+- if a scheduled downgrade target is below current usage, the downgrade remains `BlockedByUsage/RemediationRequired` until normal Merchant Access actions bring usage into compliance;
+- remediation still must preserve the last-owner invariant;
+- a stale dashboard/Reporting count cannot authorize a Membership write.
 
-`tenant.profile.manage`, staff administration, Catalog management/publication, discounts, refunds, inventory adjustment, journal posting/reversal, and other sensitive capabilities all require the approved `PD-003` matrix plus domain refinements. A role name alone does not authorize an operation, and a generic “Admin can do everything” rule is not part of this baseline.
+Subscription expiry/end may remove ordinary mutation entitlements while authenticated merchant read/history/export/recovery access remains available under `PD-043`/`PD-049`; it does not delete or disable Memberships.
 
-### Ownership and last-owner invariants
+## 8. Trusted tenant authority
 
-1. An Active Tenant must retain at least one Active Owner Membership.
-2. The last Active Owner cannot be disabled, demoted, or removed.
-3. An Owner cannot transfer away the last ownership claim unless another Active Owner exists as part of the accepted business outcome.
-4. A Membership cannot change Tenant.
-5. A role-assignment change never changes the authenticated subject binding.
-6. Self-disable/self-demotion is subject to the same last-owner rule.
-7. Subscription/entitlement policy cannot bypass the last-owner invariant by automatically disabling an excess Owner or other Membership.
+An accepted trusted tenant context contains conceptually:
 
-### Staff-count entitlement interaction
+- authenticated Subject identity;
+- intentionally selected/resolved Tenant identity;
+- Active Membership identity;
+- current single role and resulting approved capability decision;
+- whether an explicitly modeled platform-administration path is being used;
+- correlation identity for auditability.
 
-Subscription & Billing may own a tenant entitlement such as a maximum number of Active staff Memberships, but Merchant Access remains authoritative for Membership identity, status, role, and the current Active-member count.
+Rules:
 
-Business rules:
+1. request body, route, query, or header data may identify a target but never grant tenant authority;
+2. target aggregate Tenant ownership must match trusted Tenant context;
+3. cross-tenant existence is not disclosed merely because an identifier is known;
+4. Membership status/role changes apply on subsequent authorization resolution even if an older authentication credential remains cryptographically valid;
+5. platform administration is a separate explicit path, not an Owner Membership in every Tenant;
+6. client plan/entitlement claims never become subscription authority.
 
-1. a staff-count entitlement is a policy input to a Merchant Access command; it is not Membership state;
-2. a hard limit, if approved by `PD-050`, may reject creation/activation of an additional Membership only after trusted entitlement evaluation and authoritative Merchant Access count/invariants are checked;
-3. a stale dashboard or copied usage number cannot authorize a Membership write;
-4. Subscription & Billing cannot directly disable/deactivate Memberships to make a Tenant fit a lower plan;
-5. if current Active Membership count exceeds a target downgrade limit, the downgrade remains blocked/remediation-required under `PD-048` until an approved policy/remediation path is satisfied;
-6. any merchant remediation that changes Memberships must be accepted by Merchant Access and still preserve the last-owner and other Membership invariants.
+## 9. Privileged Audit relationship (`PD-033`)
 
-### Merchant Access commands and facts
+Audit owns append-oriented evidence, while Tenant Management/Merchant Access own the business action.
 
-Business command candidates:
+MVP Audit covers successful and rejected privileged mutations, including:
+
+- Tenant administration;
+- Membership/role/security administration;
+- security-significant tenant-isolation denials.
+
+Tenant Audit is readable by Owner/Admin only. Tenant-visible denial evidence must never reveal another Tenant/entity's existence or identifiers. More sensitive cross-tenant investigation details, if ever retained, belong to protected platform-security evidence rather than merchant-visible Audit.
+
+Audit acknowledgement/evidence is not a substitute for the underlying business fact.
+
+## 10. Commands, queries, and owned facts
+
+### Tenant Management commands
+
+- `RegisterMerchantTenant`
+- `UpdateBusinessProfile`
+- `SuspendTenant`
+- `ReactivateTenant`
+
+### Tenant Management facts
+
+- `MerchantTenantRegistered`
+- `BusinessProfileChanged`
+- `TenantSuspended`
+- `TenantReactivated`
+
+### Merchant Access commands
 
 - `InviteStaffMember`
+- `ResendStaffInvitation`
 - `AcceptStaffInvitation`
 - `RevokeStaffInvitation`
 - `DisableMembership`
 - `ReactivateMembership`
-- `ChangeMembershipRoleAssignment`
+- `ChangeMembershipRole`
 - `ResolveTenantAuthority`
 
-Owned fact candidates:
+### Merchant Access facts
 
 - `StaffInvitationIssued`
+- `StaffInvitationCredentialRotated`
 - `StaffInvitationAccepted`
 - `StaffInvitationRevoked`
 - `StaffInvitationExpired`
 - `MembershipActivated`
 - `MembershipDisabled`
 - `MembershipReactivated`
-- `MembershipRolesChanged`
+- `MembershipRoleChanged`
 
-`StaffJoined` should mean Membership activation, not merely successful authentication. A Subscription fact never substitutes for `MembershipActivated`/`MembershipDisabled`.
+Fact names describe accepted business meaning, not transport/event schemas.
 
-## 4. Trusted tenant authority
+## 11. Business error semantics
 
-An accepted trusted context contains, conceptually:
-
-- authenticated Subject identity;
-- selected Tenant identity;
-- active Membership identity;
-- current role/capability decision;
-- whether the actor uses an explicitly modeled platform-administration path;
-- correlation information for auditability.
-
-This is a business trust statement, not a token schema or application type.
-
-Rules:
-
-1. Request body, route, query, or header data may identify a target but cannot replace selected trusted tenant authority.
-2. A protected tenant operation requires the target aggregate's TenantId to equal the trusted TenantId.
-3. Missing, expired, invalid, or otherwise unauthenticated identity is different from authenticated identity with no Active Membership; both deny access without exposing tenant data.
-4. Membership status/role changes take effect on subsequent authorization resolution even if an older authentication credential is still cryptographically valid.
-5. Platform-admin access is a separate, explicit, audited path and is not an Owner Membership in every tenant.
-6. Subscription/entitlement decisions consume this trusted Tenant identity; client-supplied plan names, limits, entitlement flags, or token custom claims cannot become subscription authority.
-7. Merchant Access authorization and Subscription entitlement are independent checks: a valid Membership cannot manufacture a missing entitlement, and a valid entitlement cannot manufacture a Membership.
-
-## 5. Business error semantics
-
-| Code | Meaning and required effect |
+| Outcome | Meaning |
 |---|---|
-| `TENANT_REGISTRATION_CONFLICT` | the same uniqueness claim represents a different tenant intent; no second tenant is created |
-| `TENANT_SUSPENDED` | ordinary operation is blocked by tenant status |
-| `MEMBERSHIP_REQUIRED` | authenticated subject has no applicable Membership; tenant existence is not disclosed |
+| `TENANT_REGISTRATION_CONFLICT` | same logical registration identity is reused incompatibly; no second logical Tenant is created |
+| `TENANT_SUSPENDED` | Tenant status blocks ordinary operation |
+| `MEMBERSHIP_REQUIRED` | authenticated subject has no eligible Membership in the selected Tenant context |
 | `MEMBERSHIP_INACTIVE` | applicable Membership exists but is Disabled |
-| `MEMBERSHIP_TENANT_MISMATCH` | target and trusted tenant differ; response remains non-disclosing |
-| `INVITATION_EXPIRED` | acceptance deadline passed; no Membership is created/reactivated |
-| `INVITATION_NOT_ACCEPTABLE` | invitation is accepted/revoked/recipient-mismatched or otherwise terminal |
-| `MEMBERSHIP_ALREADY_EXISTS` | same Tenant and Subject already have a Membership |
-| `LAST_OWNER_REQUIRED` | change would leave an Active Tenant without an Active Owner |
-| `ROLE_ASSIGNMENT_FORBIDDEN` | actor may not assign or target the requested role |
-| `STALE_MEMBERSHIP_REVISION` | concurrent change won; no role/status update is lost |
-| `MEMBERSHIP_ENTITLEMENT_LIMIT_REACHED` | an approved hard staff-count entitlement prevents an additional activation; existing Memberships are unchanged |
+| `MEMBERSHIP_TENANT_MISMATCH` | target and trusted Tenant differ; response remains non-disclosing |
+| `TENANT_SELECTION_REQUIRED` | more than one eligible Tenant exists and the actor has not intentionally selected one |
+| `INVITATION_EXPIRED` | 7-day acceptance window passed |
+| `INVITATION_NOT_ACCEPTABLE` | invitation is terminal, recipient mismatched, or otherwise not eligible |
+| `MEMBERSHIP_ALREADY_EXISTS` | Active Membership already exists for the Tenant/Subject |
+| `LAST_OWNER_REQUIRED` | requested change would leave an Active Tenant without an Active Owner |
+| `ROLE_ASSIGNMENT_FORBIDDEN` | actor may not perform the requested role/ownership change |
+| `MEMBERSHIP_ENTITLEMENT_LIMIT_REACHED` | current trusted hard staff limit rejects growth/activation; existing Memberships remain unchanged |
+| `STALE_MEMBERSHIP_REVISION` | concurrent Membership state won; newer accepted state is preserved |
 
-General Subscription/Entitlement errors are owned/described by the Subscription & Billing domain. Transport status, exception form, and information-disclosure mapping belong to technical architecture.
+Transport mapping belongs to Technical Architecture.
 
-## 6. Audit relationship for privileged access changes
+## 12. Remaining human product decision
 
-Audit owns append-oriented evidence; Tenant Management or Merchant Access still owns the action and result.
+Only this Tenant/Access product-policy area remains intentionally unresolved:
 
-Minimum audit evidence for a covered action contains conceptually:
+- `PD-004` — exact Suspended-tenant read/support behavior plus closure/deletion/retention/recovery/privacy semantics.
 
-- actor Subject and Membership identity, or explicit platform-admin actor path;
-- trusted actor Tenant;
-- action and target type/identity where safe;
-- accepted/rejected outcome and safe reason category;
-- occurrence time and correlation identity;
-- safe before/after summary where needed, excluding invitation secrets and sensitive inputs.
+Its approved interim constraint is already encoded above and must not be expanded by implementation guesswork.
 
-Tenant status/profile changes, invitation issuance/revocation, Membership activation/disablement/reactivation, and role changes are privileged action families. Exact rejected-attempt coverage and tenant-visible readers/details remain `PD-033`.
+## 13. Downstream reconciliation handoff
 
-Audit records are immutable evidence, not domain events. An action designated auditable must not report completed success while silently omitting its required evidence; Technical Architecture decides the consistency/recovery mechanism.
+### Technical Architect
 
-## 7. Planning and architecture handoff
+Reconcile the already-completed technical baseline against these newly approved business semantics, especially:
 
-Technical Architecture must preserve:
+- multi-Tenant Membership selection and trusted Tenant resolution;
+- one-role `Owner/Admin/Staff/Viewer` authority model;
+- invitation verified-email binding, 7-day expiry, single active pending invitation, and resend rotation;
+- onboarding spanning Tenant + initial Owner + automatic 30-day Trial without collapsing bounded-context ownership;
+- fresh-enough Membership/entitlement checks for hard growth limits;
+- non-disclosing tenant-isolation and Audit requirements.
 
-- the separation between external authentication and Membership authority;
-- the onboarding all-or-honestly-incomplete tenancy/access business outcome;
-- fresh-enough Membership status for disablement to deny access;
-- non-disclosing cross-tenant behavior;
-- last-owner and invitation single-acceptance invariants;
-- explicit platform-admin separation;
-- Subscription & Billing as a distinct business authority for commercial entitlements, not a Tenant/Membership state;
-- a trusted entitlement decision path for staff-count enforcement without direct Subscription access to Merchant Access persistence or automatic cross-domain deactivation.
+Do not resolve `PD-004` through API, persistence, or infrastructure convenience.
 
-TASK-0092 must reconcile the technical interaction between Merchant Access/Tenant Management and Subscription & Billing without changing these meanings.
+### Backlog Planner
 
-Backlog Planning must reconcile:
+Reconcile candidate tasks so Builders no longer see obsolete pending assumptions for `PD-001`, `PD-002`, `PD-003`, `PD-034`, or `PD-036`. Keep any closure/privacy/suspension-detail work gated by `PD-004`.
 
-- TASK-0006/0007/0008's circular owner bootstrap;
-- any task that treats a token claim or client TenantId as sufficient authority;
-- any task that converts a role name into authority without the approved capability matrix;
-- any subscription-coupled onboarding work against `PD-043` rather than assuming trial/default-plan behavior;
-- any staff-limit/downgrade task against `PD-048` and `PD-050`, preserving Membership ownership and last-owner rules;
-- task readiness against pending `PD-001` through `PD-004`, `PD-033`, `PD-034`, `PD-036`, and applicable Subscription decisions at their stated gates.
+**Stop condition: DOMAIN BASELINE READY for approved Tenant/Merchant Access MVP semantics; HUMAN PRODUCT DECISION REQUIRED only where `PD-004` is explicitly reached.**
