@@ -89,4 +89,5 @@ task_shards:
   - tasks/backlog-v2/04-hardening-future.yaml
 
 ready_frontier:
+  - TASK-0090
   - TASK-0093
