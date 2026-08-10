@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-08-10
-Last reconciled: 2026-08-10 after product-decision propagation
+Last reconciled: 2026-08-10 after resolved PD-044
 Decision owners: CommerceOS Technical Architecture
 Supersedes: N/A
 Superseded by: N/A
@@ -12,89 +12,67 @@ Superseded by: N/A
 CommerceOS has a distinct Subscription & Billing bounded context that owns the merchant Tenant's commercial relationship with CommerceOS:
 
 - stable Plan identity and immutable accepted PlanVersion terms;
-- Trial/paid Subscription lifecycle;
+- dedicated Trial terms;
+- Subscription lifecycle;
 - immutable effective EntitlementSets;
 - approved UsageMeters;
 - PlatformCharge obligations/evidence;
 - interpretation of the dedicated simulated SaaS billing provider.
 
-It remains separate from merchant-order Payments, Tenancy, Sales, Inventory, Accounting, and Reporting.
+Resolved `PD-044` now defines the initial sellable MVP catalog and Trial terms:
 
-The original ADR was accepted before `PD-043`–`PD-053` were resolved. The product/domain reconciliation now closes those broad gates except the exact sellable `Starter`/`Growth`/`Business` prices and entitlement/limit packages under `PD-044`.
+| Terms | Monthly price | MaxActiveMemberships | MaxWarehouses | ScheduledProductIngestion | OrderVolumeWarningThreshold |
+|---|---:|---:|---:|---|---:|
+| Trial | n/a | 3 | 1 | true | 500 |
+| Starter | 199,000 VND | 3 | 1 | false | 500 |
+| Growth | 499,000 VND | 10 | 3 | true | 2,000 |
+| Business | 999,000 VND | 30 | 10 | true | 10,000 |
 
-Approved business policy now includes:
+All paid Plans include the same core CommerceOS capabilities: Catalog, Storefront, Orders/Sales, Inventory, Procurement, Accounting, and Reporting. Trial also enables all core capabilities. Plan name itself is never authority outside SubscriptionBilling.
 
-- automatic 30-day no-card Trial after merchant registration;
-- monthly paid periods with explicit anchor/month-end behavior;
-- VND whole-đồng SaaS Money, no conversion/tax/statutory-invoice/proration machinery in MVP;
-- upgrade effectivity only after verified successful PlatformCharge and a fresh monthly period;
-- downgrade at renewal, blocked by authoritative excess hard-limit usage with no destructive remediation;
-- definitive renewal failure -> PastDue with seven-day grace; `OutcomeUnknown` does not;
-- Ended disables ordinary merchant mutations, scheduled automation, and public commerce while preserving approved authenticated read/history/export/recovery access and data;
-- distinct hard capability, hard counted-resource, and warning-only order-volume enforcement categories;
-- dedicated simulated SaaS billing provider separate from merchant-order provider;
-- platform-admin Subscription/Billing support is read-only in MVP.
-
-The architecture must encode these semantics without moving entitlement authority into JWTs/Tenancy/UI caches or letting SubscriptionBilling mutate foreign aggregates.
+Architecture must now provide an immutable/versioned catalog storage/bootstrap mechanism and concrete hard-limit/capability enforcement without copying commercial truth into Tenancy, Inventory, ProductDataIngestion, JWTs, frontend constants, or Reporting.
 
 ## Decision
 
-### 1. One `SubscriptionBilling` implementation module initially
+### Module and deployment boundary
+
+Keep one `SubscriptionBilling` implementation module initially:
 
 ```text
 CommerceOS.SubscriptionBilling.Domain
 CommerceOS.SubscriptionBilling.Application
-CommerceOS.SubscriptionBilling.Contracts   # only with a real consumer/delivery need
+CommerceOS.SubscriptionBilling.Contracts
 CommerceOS.SubscriptionBilling.Infrastructure
 ```
 
-Hosted concepts:
+Synchronous application contracts run in the shared `commerce-api` Lambda by default. Separate worker/provider-ingress Lambdas are introduced only for named async/provider use cases. The bounded-context boundary alone does not justify a separate microservice.
 
-```text
-SubscriptionBilling
-  ├── Plan / immutable PlanVersion terms
-  ├── Subscription
-  ├── EntitlementSet
-  ├── UsageMeter
-  └── PlatformCharge
-```
+SubscriptionBilling remains separate from merchant-order Payments, Tenancy, Sales, Inventory, Accounting, Reporting, and ProductDataIngestion.
 
-Rules:
+### Plan catalog persistence and bootstrap
 
-- not a generic licensing/shared-policy helper;
-- separate from merchant-order Payments and Tenancy;
-- Domain has no AWS/HTTP/provider/persistence dependency;
-- foreign modules consume producer-owned application/Contracts boundaries only;
-- no foreign table access/cross-domain DynamoDB transaction;
-- no empty project/resource before a Ready task needs it.
+Plan/PlanVersion and Trial-terms versions are SubscriptionBilling-owned platform-global commercial truth stored in the SubscriptionBilling DynamoDB table when that module's persistence task is Ready.
 
-### 2. Initial deployment remains shared `commerce-api`
+Use a **version-controlled catalog seed artifact plus an idempotent SubscriptionBilling bootstrap/migration command** to create the initial catalog. Do not introduce AppConfig, SSM Parameter Store, a separate configuration database, or frontend hard-coded commercial authority.
 
-Synchronous SubscriptionBilling application contracts initially run inside the shared commerce Lambda.
+Required properties:
 
-Separate worker/provider-ingress Lambdas are allowed for named async/provider use cases. The bounded-context boundary alone does not justify a separate network service.
+- `Plan` has stable identity (`Starter`, `Growth`, `Business` are current business names/identities, not authorization keys);
+- each published `PlanVersion` is immutable once accepted by any Subscription;
+- a PlanVersion can be withdrawn from new sale without deleting it;
+- price/entitlement changes create a new PlanVersion;
+- Trial uses a dedicated immutable Trial-terms version and is not a Starter alias;
+- bootstrap is safe to re-run: equivalent version content is `AlreadyApplied`; incompatible reuse of an immutable version identity is conflict;
+- old accepted versions remain queryable for historical Subscription explanation;
+- no TTL applies to accepted commercial terms/history.
 
-### 3. SubscriptionBilling is the sole entitlement authority
+The initial seed contains exactly the resolved MVP catalog values from the domain baseline. Future changes use new version records rather than mutating accepted records.
 
-For a subscription-governed protected command:
+### EntitlementSet remains runtime authority
 
-```text
-AuthenticatedPrincipal
-      ↓
-Tenancy.ResolveTenantAuthority
-      ↓
-TrustedTenantContext
-      ↓
-domain role policy
-      ↓
-SubscriptionBilling.EvaluateEntitlement
-      ↓
-owner-authoritative usage/state
-      ↓
-owner invariant + commit
-```
+Accepted Trial/PlanVersion terms are materialized into an immutable effective `EntitlementSet` owned by the Subscription aggregate.
 
-Conceptual contract:
+Foreign modules call:
 
 ```text
 EvaluateEntitlement(
@@ -104,7 +82,7 @@ EvaluateEntitlement(
     -> EffectiveEntitlementDecision | Failure
 ```
 
-Decision may expose current meaning/provenance such as:
+The decision may expose:
 
 ```text
 tenantId
@@ -118,327 +96,241 @@ effectiveUntil?
 decisionRevision
 ```
 
-Never entitlement authority:
+Foreign modules never authorize by:
 
-- client-supplied TenantId/plan/entitlement/limit;
-- JWT custom claims;
-- browser/session cache;
-- Reporting/platform-admin projections;
-- provider-private state;
-- copied plan labels in another module.
+- Plan name;
+- frontend pricing table;
+- JWT/custom claim;
+- copied plan/limit field;
+- Reporting projection;
+- provider-private state.
 
 No cross-request entitlement cache is authoritative initially.
 
-### 4. Hard-limit enforcement combines two owners' truths
+### Initial entitlement keys
 
-For a hard counted-resource limit:
-
-1. SubscriptionBilling supplies current trusted entitlement/limit;
-2. owning domain supplies current authoritative count/state;
-3. owning domain conditionally protects its own write.
-
-SubscriptionBilling never reads Tenancy/Inventory persistence or disables/deletes foreign resources to force compliance. Stale Reporting/UI counts cannot authorize writes.
-
-### 5. Restrictive downgrade uses owner assessment/fencing
-
-Approved downgrade is for next renewal and blocks when authoritative current usage exceeds a target hard limit.
-
-Safe protocol:
-
-- SubscriptionBilling persists one durable downgrade transition identity/target terms;
-- each affected hard-limit owner exposes a producer-owned current-usage assessment contract;
-- affected owner commands use an owner-local constraint/fence revision while lower limits are being finalized so a concurrent old-limit write cannot slip through;
-- owner alone writes owner state;
-- duplicate assessment/finalization is idempotent;
-- excess usage -> `BlockedByUsage/RemediationRequired`; current plan continues under approved policy;
-- remediation occurs only through normal owner commands and preserves invariants;
-- lower EntitlementSet becomes effective only after required owner assessments/fences prove safety;
-- interruption remains durable/reconcilable and elapsed time never means completion.
-
-No distributed ACID or destructive automatic remediation.
-
-### 6. Automatic Trial uses ADR-009
-
-`StartTrialSubscription` is an idempotent SubscriptionBilling command invoked by the onboarding coordinator with stable Tenant/onboarding source identity.
-
-SubscriptionBilling atomically creates one:
-
-- 30-day Trial Subscription;
-- Trial EntitlementSet;
-- immutable source/provenance history.
-
-Completed onboarding is not reported until Trial acceptance is proven. Tenancy never stores copied Subscription authority.
-
-### 7. Paid periods are explicit
-
-Paid Subscriptions are monthly in MVP. Accepted period boundaries/anchor are persisted explicitly, including approved month-end behavior.
-
-Trial remains a separate fixed 30-day period. Billing time semantics are not derived from server timezone/provider timestamps.
-
-### 8. PlatformCharge is a separate aggregate
-
-PlatformCharge owns:
-
-- stable charge identity;
-- Tenant/Subscription/period/terms reference;
-- VND whole-đồng Money amount;
-- simulated provider operation/evidence references;
-- known success/definitive no-commit-or-decline/Unknown outcome;
-- traceability to supported Subscription transition/renewal.
-
-It is neither merchant-order Payment nor merchant Accounting Journal.
-
-### 9. Upgrade effectivity follows verified charge success
-
-Approved upgrade flow:
-
-1. persist stable plan-change/PlatformCharge operation identity;
-2. execute required PlatformCharge through provider-neutral billing port;
-3. Declined/NoCommit/Unknown does not make higher EntitlementSet effective;
-4. after verified successful charge, atomically accept new Subscription period/terms + immutable EntitlementSet inside SubscriptionBilling;
-5. new paid period starts at approved boundary with no proration/credit machinery.
-
-Callback receipt alone is evidence, not entitlement effectivity.
-
-### 10. Renewal/PastDue/Ended remain separate from Tenant/Membership
-
-- definitive renewal-charge failure may create PastDue + approved seven-day grace;
-- `OutcomeUnknown` does not create PastDue;
-- after grace expiry without successful renewal, Subscription becomes Ended and operational entitlements end;
-- Tenant/Membership remain intact;
-- approved authenticated read/history/export/recovery paths remain available;
-- reactivation creates new accepted period/history rather than rewriting old history.
-
-### 11. Order-volume UsageMeter is warning-only
-
-Approved source is `OrderConfirmed` from Sales.
-
-- source application idempotent by event/source identity;
-- meter window is current Subscription billing period;
-- threshold crossing creates warning/visibility only;
-- never rejects shopper checkout;
-- never cancels Order;
-- never automatically charges overage.
-
-This is a named ADR-006 consumer and may use Sales outbox -> EventBridge -> SubscriptionBilling SQS/DLQ when implemented.
-
-### 12. Dedicated simulated SaaS provider
-
-Application seam:
+The initial technical entitlement vocabulary is the business vocabulary already approved by `PD-044`:
 
 ```text
-SubscriptionBilling.Application
-      │ IPlatformBillingPort
-      ▼
-SubscriptionBilling.Infrastructure
-      │ provider adapter
-      ▼
-Mock SaaS Billing Provider (external-like app)
+CoreCommerceCapabilities
+MaxActiveMemberships
+MaxWarehouses
+ScheduledProductIngestion
+OrderVolumeWarningThreshold
 ```
 
-This provider is separate from merchant-order Mock Payment Provider and may be deployed separately when its Ready task is introduced.
+`CoreCommerceCapabilities` must be explicit in the accepted EntitlementSet even though all current paid Plans/Trial enable it; missing entitlement never means implicitly enabled.
 
-It must support deterministic:
+`OrderVolumeWarningThreshold` is warning-only and is not a hard capability or billing amount.
 
-- success;
-- definitive decline/no-commit;
-- timeout/Unknown;
-- duplicate delivery;
-- idempotency/retry;
-- query/reconciliation;
-- out-of-order evidence.
+### MaxActiveMemberships enforcement
 
-Rules:
+Merchant Access owns Membership state/count; SubscriptionBilling owns the current limit.
 
-- stable logical PlatformCharge/provider idempotency identity;
-- timeout/network/missing callback never proves no commit;
-- callback/query evidence authenticated/verified before definitive interpretation;
-- duplicate/older evidence cannot duplicate/regress accepted state;
-- unsafe retry waits for reconciliation while Unknown;
-- provider IDs stay SubscriptionBilling evidence only;
-- no real card/CVV/bank secrets or prohibited credentials in Domain/logs/fixtures.
+Before creating or reactivating a Membership:
 
-A real billing provider later requires new product/security/compliance/architecture decisions behind this port.
+1. Tenancy resolves current merchant mutation authority;
+2. Tenancy synchronously evaluates `MaxActiveMemberships` in SubscriptionBilling;
+3. Tenancy uses a module-local authoritative active-membership count/guard updated transactionally with Membership lifecycle changes;
+4. the Tenancy transaction accepts the activation only when `currentActiveCount + delta <= limit` while preserving the last-Active-Owner invariant.
 
-### 13. Platform-admin is read-only support
+All Active Owner/Admin/Staff/Viewer Memberships count. SubscriptionBilling never reads the Tenancy table and never disables Memberships to fit a lower plan.
 
-Separate admin context/application queries may expose safe support visibility/history but cannot:
+### MaxWarehouses enforcement
 
-- comp/assign plan;
-- override plan/entitlement;
-- override charge outcome;
-- cancel/reactivate;
-- bypass limits;
-- directly access table persistence.
+Inventory owns Warehouse lifecycle/count; SubscriptionBilling owns the current limit.
 
-Future mutation requires explicit product/Audit decision.
+Before creating/reactivating a Warehouse:
 
-### 14. Persistence ownership
+1. Inventory receives trusted mutation context;
+2. Inventory synchronously evaluates `MaxWarehouses`;
+3. Inventory conditionally updates a module-local active-Warehouse count/guard with the Warehouse write;
+4. the write rejects if the resulting authoritative count would exceed the current limit.
+
+SubscriptionBilling never reads/writes Inventory persistence.
+
+### ScheduledProductIngestion enforcement
+
+ProductDataIngestion owns source policy, schedule/run state, and source safety. SubscriptionBilling owns whether the Tenant currently has the scheduled-ingestion capability.
+
+- schedule creation/enablement requires `ScheduledProductIngestion=true` plus PDI source-policy approval;
+- dispatch/execution re-evaluates the current entitlement before starting scheduled acquisition so downgrade/Ended takes effect without relying on stale schedule state;
+- loss of entitlement suppresses future scheduled execution but does not silently delete PDI history/configuration;
+- source-policy denial still wins even when the subscription capability is enabled.
+
+Starter therefore cannot execute scheduled product ingestion; Growth, Business, and Trial can, subject to PDI policy.
+
+### Order-volume warning meter
+
+SubscriptionBilling consumes `OrderConfirmed` idempotently for the current billing period.
+
+The meter reads the threshold from the current effective EntitlementSet/period terms:
+
+- Trial/Starter: 500;
+- Growth: 2,000;
+- Business: 10,000.
+
+Threshold crossing produces warning/visibility only. It never rejects shopper checkout, cancels an Order, or creates automatic overage billing.
+
+Upgrade starts a fresh monthly period under approved policy, so the new period uses the new PlanVersion threshold. Downgrade takes effect only at its approved renewal boundary.
+
+### Trial onboarding
+
+`StartTrialSubscription` is idempotent by stable onboarding/Tenant source identity and creates:
+
+- 30-day Trial Subscription;
+- dedicated Trial terms provenance;
+- Trial EntitlementSet with all core capabilities, `MaxActiveMemberships=3`, `MaxWarehouses=1`, `ScheduledProductIngestion=true`, `OrderVolumeWarningThreshold=500`.
+
+ADR-009 owns cross-domain onboarding completion/recovery. Trial expiry does not auto-convert to Starter.
+
+### Upgrade, downgrade, renewal, and Ended
+
+Existing accepted rules remain:
+
+- upgrade effectivity requires verified successful PlatformCharge and starts a fresh monthly period;
+- Declined/NoCommit/OutcomeUnknown does not grant the higher EntitlementSet;
+- downgrade is scheduled for renewal and uses authoritative owner assessment/fencing for hard limits;
+- usage above target keeps downgrade `BlockedByUsage/RemediationRequired` and current terms continue;
+- no destructive auto-remediation;
+- definitive renewal failure may create PastDue with seven-day grace; OutcomeUnknown does not;
+- Ended removes ordinary operational entitlements/scheduled automation/public commerce while approved authenticated read/history/export/recovery remains;
+- reactivation creates new accepted terms/history rather than rewriting old history.
+
+### Dedicated simulated SaaS provider
+
+Keep the dedicated external-like provider seam separate from merchant-order Payments.
+
+It supports deterministic success, definitive no-commit/decline, OutcomeUnknown, duplicate/out-of-order evidence, idempotency, and query/reconciliation.
+
+No real card/bank data is stored. A real billing provider later requires a new product/security/compliance/architecture decision.
+
+### Platform administration
+
+Platform-admin Subscription/Billing remains read-only support visibility. It cannot override PlanVersion, EntitlementSet, charge outcome, cancellation/reactivation, or hard limits.
+
+### Persistence access patterns
 
 SubscriptionBilling owns one DynamoDB table when Ready.
 
-Approved logical access needs:
+| ID | Use case | Protection |
+|---|---|---|
+| `SUB-AP-00` | bootstrap/list sellable PlanVersions + Trial terms | platform-scoped base records; immutable version identities; idempotent seed; no Scan for runtime catalog query |
+| `SUB-AP-01R` | current Subscription | strong/current Tenant base access; expected revision |
+| `SUB-AP-02R` | EvaluateEntitlement | coherent current Subscription + effective EntitlementSet provenance; no GSI authority |
+| `SUB-AP-03` | immutable history | bounded Tenant history; eventual allowed for display |
+| `SUB-AP-04R` | Trial/upgrade/downgrade/renew/reactivate | expected revision + command idempotency + immutable accepted history |
+| `SUB-AP-05R` | Order volume UsageMeter | Tenant + current billing-period meter + `OrderConfirmed` source idempotency |
+| `SUB-AP-06R` | PlatformCharge | separate aggregate/revision + stable logical charge identity |
+| `SUB-AP-07R` | provider evidence | verified/deduplicated/non-regressing evidence |
+| `SUB-AP-08R` | due reconciliation | sparse bounded operational index only when provider execution requires it |
+| `SUB-AP-09R` | platform support read | explicit application query; separate admin context; no direct table access |
+| `SUB-AP-10` | Trial source claim | one logical Trial per stable onboarding/Tenant source |
+| `SUB-AP-11` | restrictive downgrade process | durable transition + per-owner assessment/fence acknowledgements |
 
-| Access | Protection |
-|---|---|
-| Plan/PlanVersion | platform-scoped inside module; accepted versions immutable; exact package values `PD-044` gated |
-| current Subscription | strong/current Tenant read; expected revision |
-| EntitlementSet history/current reference | coherent with Subscription transitions |
-| Trial source claim | idempotent by onboarding/Tenant source identity |
-| plan-change transition | expected revision + idempotency + durable status |
-| UsageMeter | Tenant + meter/window; source-idempotent increment |
-| PlatformCharge | separate aggregate/revision + stable logical charge identity |
-| provider evidence/inbox | verified dedup + non-regression |
-| due reconciliation | sparse bounded/sharded operational index only when provider path needs it; never Tenant authority |
-| integration outbox | atomic with source fact for named consumer |
-| platform-admin read | application query only; read-only separate context |
+Tenancy and Inventory maintain their own authoritative resource-count guard records; those counters do not move into SubscriptionBilling.
 
-No application Scan, foreign table access, or GSI as entitlement authority.
+### AWS/deployment mapping
 
-### 15. Async integration
+No new managed service is needed for resolved `PD-044`.
 
-Use ADR-006 only for named consumers:
+- Plan catalog, Trial terms, Subscription/EntitlementSet/UsageMeter/PlatformCharge use the module DynamoDB table.
+- `commerce-api` hosts synchronous catalog query/entitlement/application commands initially.
+- EventBridge + SubscriptionBilling SQS/DLQ handles the named `OrderConfirmed` meter consumer when Ready.
+- the dedicated simulated SaaS provider uses its already-approved conditional API Gateway/Lambda/DynamoDB external-like stack.
+- EventBridge Scheduler is introduced only if a named due renewal/reconciliation process requires periodic triggering.
 
-- `OrderConfirmed` -> UsageMeter;
-- SubscriptionBilling facts -> Reporting when a defined projection exists;
-- approved privileged SubscriptionBilling action/evidence -> Audit;
-- provider callback/reconciliation work -> dedicated handler/queue as required.
-
-Do not publish generic Subscription/Plan CRUD events.
-
-### 16. AWS/deployment mapping
-
-When corresponding tasks become Ready:
-
-| Need | AWS mapping |
-|---|---|
-| synchronous SubscriptionBilling | existing `commerce-api` Lambda |
-| module state | SubscriptionBilling DynamoDB table |
-| Trial recovery | ADR-009 Tenancy work-outbox/Stream -> SQS worker calling SubscriptionBilling |
-| order meter | EventBridge -> SubscriptionBilling SQS/DLQ + worker |
-| Mock SaaS provider | separate API Gateway/Lambda/DynamoDB app/stack |
-| provider callback ingress | API Gateway/Lambda handler |
-| provider reconciliation | bounded worker; EventBridge Scheduler only if periodic due-work inquiry is required |
-| reliable Subscription facts | module outbox/Stream -> EventBridge -> consumer queue |
-| observability | CloudWatch built-ins/alarms/logs with bounded retention |
-
-No Step Functions is selected merely for ordinary Subscription plan/entitlement CRUD. A later complex billing workflow requires a focused ADR.
-
-No NAT Gateway, ALB, EC2, RDS/Aurora, Redis/ElastiCache, OpenSearch, MSK/Kafka, EKS, always-on service, or provisioned Lambda concurrency.
+Do not add AppConfig/SSM/RDS/Redis or an always-on service merely to store plan prices/limits.
 
 ## Alternatives considered
 
-### Put subscription/plan claims in Tenancy or `TrustedTenantContext`
+### Hard-code plan prices/limits in frontend or consuming modules
 
-Rejected because it creates stale duplicate commercial authority.
+Rejected because it creates duplicated stale commercial authority and makes historical PlanVersion semantics impossible to enforce consistently.
 
-### Let every consuming module copy current plan/limit state and decide locally
+### Use AppConfig/SSM as runtime Plan catalog authority
 
-Rejected as authority because revocation/restrictive transitions can race/stale. Display projections remain allowed but non-authoritative.
+Rejected for MVP because SubscriptionBilling already needs transactional immutable accepted terms/history in DynamoDB. A second runtime configuration authority adds cost and consistency problems without a demonstrated need.
 
-### Reuse merchant-order Payments/Mock Provider
+### Store only Plan name on Subscription and derive current limits from latest catalog
 
-Rejected because shopper-to-merchant and merchant-to-CommerceOS money flows have different ownership/provider semantics.
+Rejected because historical accepted terms would change when the catalog changes.
 
-### Separate SubscriptionBilling microservice now
+### Copy effective limits into Tenancy/Inventory/PDI and authorize locally
 
-Rejected because no measured IAM/runtime/scale pressure justifies network separation. The simulated provider remains external-like by design.
+Rejected as current authority. Owner-local counts/state remain local, but current commercial limit/capability comes from SubscriptionBilling.
 
-### Cross-domain transaction for hard-limit downgrade
+### Cross-domain transaction for resource limit checks
 
-Rejected because resource owners retain state/invariants; use explicit owner assessment/fencing.
+Rejected. The owner conditionally protects its own resource/count after obtaining current commercial limit; no cross-module ACID is used.
+
+### Version-controlled seed + immutable PlanVersion records + EntitlementSet snapshot
+
+Chosen because it provides repeatable bootstrap, historical explanation, no additional AWS service, and clean authority boundaries.
 
 ## Consequences
 
-### Positive
+Positive consequences:
 
-- one authoritative Subscription/entitlement boundary;
-- approved Trial/upgrade/downgrade/renewal/Ended/meter behavior can flow into implementation tasks;
-- hard-limit writes remain owner-local/concurrency-safe;
-- SaaS provider uncertainty isolated from merchant-order Payments;
-- provider simulation teaches external-system behavior without real money/card data;
-- no always-on infrastructure required.
+- the approved 199k/499k/999k catalog is usable without hard-coded authority outside SubscriptionBilling;
+- future pricing experiments create new immutable PlanVersions without rewriting accepted history;
+- hard resource limits remain concurrency-safe in their owning modules;
+- Trial can deliberately expose scheduled ingestion while Starter does not;
+- order-volume warnings remain operational rather than accidental checkout/billing gates;
+- no extra managed configuration service is required.
 
-### Negative / trade-offs
+Trade-offs:
 
-- governed writes add synchronous entitlement dependency/fail-closed behavior;
-- restrictive downgrade finalization requires owner participation/fencing;
-- provider simulation adds distinct app/stack/reconciliation surface;
-- admin support uses explicit queries rather than direct storage;
-- exact package values remain blocked under `PD-044`.
+- deployment/bootstrap must seed catalog versions before plan-selection flows are enabled;
+- synchronous governed writes add an entitlement lookup before owner-local conditional commit;
+- Tenancy/Inventory must maintain authoritative local count guards;
+- restrictive downgrade requires owner assessment/fencing rather than a single local Subscription update.
 
 ## Security and tenant impact
 
-- merchant operations derive Tenant scope only from trusted execution context;
-- known Subscription/PlatformCharge/provider IDs cannot cross Tenant boundaries;
-- provider callback authentication is separate from merchant authentication and resolves to known module-owned charge/Tenant evidence;
-- secrets/raw provider payloads minimized/redacted and never broadly emitted;
-- platform-admin uses separate explicit read-only context.
+- Plan/PlanVersion records are platform-global but never grant tenant authority by caller input.
+- Entitlement evaluation always uses trusted Tenant scope derived from current merchant authority.
+- foreign modules cannot directly read SubscriptionBilling persistence.
+- platform admin cannot mutate commercial truth through support queries.
+- provider evidence and merchant-order Payment state remain isolated.
+- no real payment credentials are stored in plan/provider fixtures.
 
 ## Reliability and operability impact
 
-- Trial, plan change, UsageMeter source, PlatformCharge, and provider evidence use stable logical identities;
-- equivalent replay returns prior logical result; incompatible reuse conflicts;
-- Unknown remains Unknown until verified evidence;
-- out-of-order evidence cannot regress later known state;
-- downgrade transition keeps durable per-owner progress and never finalizes from elapsed time;
-- async consumers follow at-least-once/idempotent ADR-006 rules;
-- observe entitlement failures, Trial recovery, transition age, PlatformCharge Unknown age, callback verification/dedup, reconciliation, queue/DLQ, and outbox lag without treating telemetry as business truth.
+- catalog bootstrap is idempotent and detects incompatible immutable-version reuse;
+- accepted PlanVersions/Trial terms are retained indefinitely for historical Subscription explanation;
+- hard-limit writes fail closed if current entitlement cannot be established;
+- owner-local count guards protect concurrent resource activation/creation;
+- PDI dispatch rechecks capability so stale schedules cannot continue after entitlement loss;
+- `OrderConfirmed` meter consumption is at-least-once/idempotent;
+- provider OutcomeUnknown remains reconciled rather than guessed.
 
 ## Cost impact
 
-This ADR update deploys nothing and changes runtime cost by zero.
+No new AWS managed service is introduced by resolving `PD-044`.
 
-Future conditional cost is limited to:
-
-- one low-volume module DynamoDB table;
-- separate small Mock SaaS provider API/Lambda/DynamoDB when introduced;
-- queues/workers/EventBridge for named meter/Audit/Reporting integrations;
-- optional bounded Scheduler reconciliation if needed.
-
-Every Ready task includes table/index/worker/provider/schedule request/storage/log assumptions. No paid real billing provider is selected.
+Costs are bounded DynamoDB reads/writes/storage for catalog versions/EntitlementSets/count guards and existing EventBridge/SQS/Lambda usage for named meter/provider workflows. The initial catalog is tiny and platform-global, so catalog storage/read cost is negligible relative to the existing serverless baseline.
 
 ## Reversibility / migration
 
-- splitting SubscriptionBilling into a separate service later preserves producer-owned contracts/table ownership and requires network/IAM/latency migration planning;
-- changing DynamoDB persistence requires data migration while retaining application/business contracts;
-- replacing the simulated provider or adding a real provider changes Infrastructure adapter/provider-reference/reconciliation mapping, not Domain ownership;
-- entitlement caching later requires explicit staleness/revocation/restrictive-transition design;
-- Plan/PlanVersion schema evolution must preserve immutable accepted history and explicit migration/versioning;
-- pending downgrade/charge operations require identity-preserving resume/cutover if orchestration implementation changes.
+- future price/limit changes add PlanVersions rather than mutating current accepted versions;
+- frontend plan-selection UI may change without changing authority semantics because it queries SubscriptionBilling;
+- a future external catalog/config service would require migration behind SubscriptionBilling application contracts and a new consistency/availability ADR;
+- removing an entitlement key later requires a versioned commercial/domain migration; absence must never silently mean Unlimited/enabled.
 
 ## Validation
 
-Dependent implementation must prove:
+Dependent implementation must verify:
 
-- no foreign Domain/Infrastructure/table dependency;
-- Tenant A cannot read/evaluate/mutate Tenant B subscription/charge by known IDs/provider refs/cursors;
-- client/JWT plan/entitlement cannot authorize a command;
-- automatic Trial duplicate-safe and onboarding cannot report complete before Trial acceptance;
-- hard-limit owner write + downgrade fence cannot falsely finalize lower limit during concurrent old-limit write;
-- upgrade cannot grant higher entitlement before verified successful charge;
-- definitive renewal failure and Unknown remain distinct;
-- Ended access does not require rewriting Tenant/Membership;
-- `OrderConfirmed` replay increments meter once and never blocks checkout;
-- provider timeout/duplicate/out-of-order evidence preserves Unknown/idempotency/non-regression;
-- merchant-order Payments cannot receive/reuse SaaS provider state;
-- platform-admin has no mutation/direct-table path;
-- CDK creates no speculative queue/event/schedule/provider resource.
-
-## Remaining product gate
-
-Architecture does not define exact `Starter`/`Growth`/`Business` prices or entitlement/limit package values. That exact commercial catalog remains `PD-044` gated.
-
-Structural Plan/PlanVersion history and enforcement mechanisms are approved; Builders must not invent package values merely because the technical seams exist.
-
-## References
-
-- `docs/domains/subscription-billing.md`
-- `docs/domains/product-decisions.md`
-- `docs/architecture/subscription-billing-technical-extension.md`
-- `docs/architecture/product-decision-technical-reconciliation.md`
-- ADR-004 — trusted Tenant authority
-- ADR-005 — DynamoDB module ownership/access patterns
-- ADR-006 — reliable integration
-- ADR-007 — HTTP/idempotency conventions
-- ADR-009 — onboarding completion/recovery
+- initial seed creates exactly Trial terms + Starter/Growth/Business versions with approved values and is safe to re-run;
+- accepted PlanVersion cannot be edited in place;
+- withdrawn version cannot be newly selected but remains readable for existing Subscription history;
+- Trial does not alias Starter and does not auto-convert on expiry;
+- Starter denies scheduled ingestion while Growth/Business/Trial allow it only when PDI source policy also allows it;
+- Membership activation/create counts every Active role and cannot exceed 3/3/10/30 according to effective terms;
+- Warehouse creation/reactivation cannot exceed 1/1/3/10 according to effective terms;
+- concurrent resource creation cannot bypass owner-local count guard;
+- downgrade below current usage remains blocked without destructive remediation;
+- order-volume replay increments once and threshold crossing never blocks checkout or creates overage billing;
+- no consuming module branches on Plan name or reads SubscriptionBilling table directly;
+- no AppConfig/SSM/extra database is introduced solely for the MVP catalog.
