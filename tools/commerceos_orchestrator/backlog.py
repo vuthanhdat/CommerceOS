@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from pathlib import Path
-from typing import Iterable
+from pathlib import Path, PurePosixPath
 
 from .models import BacklogSnapshot, CanonicalTask
 from .yaml_subset import parse_document, render_inline_sequence
@@ -11,6 +10,35 @@ from .yaml_subset import parse_document, render_inline_sequence
 
 class BacklogValidationError(ValueError):
     pass
+
+
+def _resolve_repo_path(
+    root: Path,
+    raw_path: str,
+    *,
+    label: str,
+    allowed_roots: tuple[str, ...],
+) -> Path:
+    """Resolve a canonical Git path without allowing repository escape/traversal."""
+    if not raw_path or "\\" in raw_path:
+        raise BacklogValidationError(f"{label} must be a non-empty repository-relative POSIX path")
+    candidate = PurePosixPath(raw_path)
+    if candidate.is_absolute() or any(part in {"", ".", ".."} for part in candidate.parts):
+        raise BacklogValidationError(f"{label} must not be absolute or contain traversal: {raw_path}")
+
+    relative = Path(*candidate.parts)
+    allowed = tuple(Path(*PurePosixPath(value).parts) for value in allowed_roots)
+    if not any(relative == prefix or prefix in relative.parents for prefix in allowed):
+        raise BacklogValidationError(
+            f"{label} must stay under {', '.join(allowed_roots)}: {raw_path}"
+        )
+
+    resolved = (root / relative).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as exc:
+        raise BacklogValidationError(f"{label} escapes repository root: {raw_path}") from exc
+    return resolved
 
 
 class BacklogReader:
@@ -44,7 +72,12 @@ class BacklogReader:
 
         tasks: dict[str, CanonicalTask] = {}
         for shard_path in shard_paths:
-            path = self.root / shard_path
+            path = _resolve_repo_path(
+                self.root,
+                shard_path,
+                label="backlog shard",
+                allowed_roots=("tasks/backlog-v2",),
+            )
             if not path.is_file():
                 raise BacklogValidationError(f"missing backlog shard: {shard_path}")
             shard = parse_document(path.read_text(encoding="utf-8"))
@@ -130,10 +163,18 @@ class BacklogReader:
                 raise BacklogValidationError(
                     f"{task.id}: unsupported lifecycle state {task.lifecycle_state}"
                 )
+            spec_path = None
+            if task.spec_path:
+                spec_path = _resolve_repo_path(
+                    snapshot.root,
+                    task.spec_path,
+                    label=f"{task.id} spec_path",
+                    allowed_roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+                )
             if task.maturity == "Ready":
-                if not task.spec_path:
+                if spec_path is None:
                     raise BacklogValidationError(f"{task.id}: Ready task has no spec_path")
-                if not (snapshot.root / task.spec_path).is_file():
+                if not spec_path.is_file():
                     raise BacklogValidationError(
                         f"{task.id}: Ready task spec does not exist: {task.spec_path}"
                     )
@@ -226,7 +267,12 @@ class BacklogWriter:
     ) -> str:
         if not task.spec_path:
             raise BacklogValidationError(f"{task.id}: cannot finalize task without spec_path")
-        source = self.root / task.spec_path
+        source = _resolve_repo_path(
+            self.root,
+            task.spec_path,
+            label=f"{task.id} spec_path",
+            allowed_roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+        )
         if not source.is_file():
             raise BacklogValidationError(f"{task.id}: task spec missing at {task.spec_path}")
 
@@ -261,7 +307,12 @@ class BacklogWriter:
         return completed_relative
 
     def _update_shard_spec_path(self, task: CanonicalTask, completed_relative: str) -> None:
-        path = self.root / task.shard_path
+        path = _resolve_repo_path(
+            self.root,
+            task.shard_path,
+            label=f"{task.id} shard_path",
+            allowed_roots=("tasks/backlog-v2",),
+        )
         lines = path.read_text(encoding="utf-8").splitlines()
         updated = False
         for index, line in enumerate(lines):

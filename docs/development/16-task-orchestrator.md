@@ -56,17 +56,16 @@ python3 tools/orchestrator.py ui
 
 ## 4. Codex runner
 
-The real agent runner invokes Codex non-interactively through a single adapter. The executable and model routing are configuration, not task semantics:
+The real agent runner invokes the repository-approved `codex` executable non-interactively through a single adapter. Only model routing is configurable; the executable itself is intentionally fixed so environment input cannot redirect privileged task execution to an arbitrary program:
 
 ```text
-COMMERCEOS_CODEX_EXECUTABLE
 COMMERCEOS_CODEX_MODEL_DEFAULT
 COMMERCEOS_CODEX_MODEL_STRONG
 ```
 
-If model variables are absent, Codex's configured default model is used. Tests use `FakeAgentRunner` and consume no Codex quota.
+If model variables are absent, Codex's configured default model is used. Tests use `FakeAgentRunner` and consume no Codex quota. Deterministic verification also uses the fixed repository-owned `python3 scripts/harness_check.py` entrypoint rather than an environment-supplied command.
 
-The Builder gets a writable task worktree. Reviewer runs read-only and must return an explicit pass/fix marker. Conflict Resolver is writable only in the serialized integration checkout and must return a safe-resolution marker; otherwise the task becomes Human Required.
+The Builder gets a writable task worktree. Reviewer runs read-only and must return an explicit pass/fix marker. Conflict Resolver is writable only in the serialized integration checkout and must return a safe-resolution marker; otherwise the task becomes Human Required. Builder/reviewer/conflict evidence is treated as untrusted data: diffs/conflict contents are inspected from Git rather than interpolated into privileged prompts, and prior verification/review feedback is written to ignored local evidence files that cannot override repository instructions.
 
 ## 5. Mechanical scheduling
 
@@ -188,7 +187,9 @@ The repository harness runs the Orchestrator Python test suite before the applic
 - Builder verification/fix and Reviewer/fix loops using fake agents;
 - cloud fail-closed behavior;
 - real local Git worktree/merge primitives against a temporary bare repository;
-- loopback-only dashboard status/control;
+- loopback-only dashboard status/control and DOM rendering without dynamic `innerHTML`;
+- canonical shard/spec path containment so backlog metadata cannot escape repository-owned planning directories;
+- untrusted agent evidence isolation from privileged prompts;
 - completion bookkeeping.
 
 The real Codex executable is intentionally not required by tests.

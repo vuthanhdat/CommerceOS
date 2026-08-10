@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-import os
 import subprocess
-import shlex
 from pathlib import Path
 
 from .models import CanonicalTask, VerificationResult
 
 
 class VerificationRunner:
+    """Runs the repository-owned deterministic verification entrypoint only."""
+
+    COMMAND = ("python3", "scripts/harness_check.py")
+
     def __init__(self, logs_root: Path):
         self.logs_root = logs_root.resolve()
         self.logs_root.mkdir(parents=True, exist_ok=True)
-        raw = os.environ.get("COMMERCEOS_ORCHESTRATOR_VERIFY_COMMAND", "")
-        self.command = tuple(shlex.split(raw)) if raw.strip() else ("python3", "scripts/harness_check.py")
+        self.command = self.COMMAND
 
     def run(self, task: CanonicalTask, worktree: Path, *, phase: str) -> VerificationResult:
         log_path = self.logs_root / f"{task.id}-verify-{phase}.log"

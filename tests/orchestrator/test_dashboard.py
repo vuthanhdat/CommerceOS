@@ -21,17 +21,19 @@ class DashboardTests(unittest.TestCase):
             server = LocalDashboardServer(root, state, port=0)
             thread = server.serve_in_thread()
             try:
+                with urlopen(server.url, timeout=2) as response:
+                    html = response.read().decode("utf-8")
+                self.assertNotIn("innerHTML", html)
+                self.assertNotIn("onclick=", html)
                 with urlopen(server.url + "api/status", timeout=2) as response:
                     status = json.load(response)
                 self.assertEqual(status["ready_frontier"], ["TASK-0100"])
-
                 logs = state.path.parent / "logs"
                 logs.mkdir(parents=True, exist_ok=True)
                 (logs / "TASK-0100-builder-1.log").write_text("builder log", encoding="utf-8")
                 with urlopen(server.url + "api/tasks/TASK-0100", timeout=2) as response:
                     detail = json.load(response)
                 self.assertEqual(detail["logs"][0]["name"], "TASK-0100-builder-1.log")
-
                 request = Request(server.url + "api/stop", method="POST", data=b"")
                 with urlopen(request, timeout=2) as response:
                     stopped = json.load(response)
