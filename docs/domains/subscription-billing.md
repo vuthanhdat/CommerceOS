@@ -1,6 +1,6 @@
 # Subscription & Billing Domain Baseline
 
-_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved `PD-043`–`PD-053`; only the exact commercial plan catalog/pricing sub-decision in `PD-044` remains intentionally deferred._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved `PD-043`–`PD-053`, including the resolved MVP commercial catalog in `PD-044`._
 
 ## 1. Boundary and business language
 
@@ -42,7 +42,7 @@ No real card/bank data is stored and no real money is charged in the learning/MV
 
 ## 3. Core business model
 
-### 3.1 Plan aggregate (`PD-044` structural policy)
+### 3.1 Plan aggregate and approved MVP catalog (`PD-044`)
 
 `Plan` is the aggregate root for a stable CommerceOS commercial offering identity.
 
@@ -52,9 +52,33 @@ A Plan has immutable/versioned `PlanVersion` terms. Once a PlanVersion has been 
 - later commercial changes require a new PlanVersion;
 - a version may be withdrawn from new purchase without changing existing Subscriptions or history.
 
-`Starter`, `Growth`, and `Business` remain **candidate marketing packages only** until a deliberate commercial-pricing exercise approves exact prices and entitlements. `Enterprise`/custom pricing is out of MVP.
+The approved initial paid MVP catalog is:
 
-The exact sellable plan catalog/prices/entitlement matrix is the only intentionally deferred part of `PD-044` and must not be invented by implementation.
+| Plan | Monthly price | MaxActiveMemberships | MaxWarehouses | Scheduled product ingestion | Order-volume warning threshold |
+|---|---:|---:|---:|---|---:|
+| `Starter` | 199,000 VND | 3 | 1 | No | 500 |
+| `Growth` | 499,000 VND | 10 | 3 | Yes | 2,000 |
+| `Business` | 999,000 VND | 30 | 10 | Yes | 10,000 |
+
+All three paid Plans include the same core CommerceOS capabilities:
+
+- Catalog;
+- Storefront;
+- Orders / Sales;
+- Inventory;
+- Procurement;
+- Accounting;
+- Reporting.
+
+The plans differ primarily by **scale and automation**, not by removing core bounded-context capabilities.
+
+`MaxActiveMemberships` counts all Active Memberships regardless of role: Owner, Admin, Staff, and Viewer.
+
+Order-volume thresholds follow `PD-051`: warning/operational follow-up only, never shopper-checkout denial and never automatic overage billing.
+
+`Enterprise`/custom pricing is out of MVP.
+
+Entitlements not explicitly listed in this approved initial catalog are not implicitly granted or sold. Plan name itself never grants authority outside Subscription & Billing; the current effective immutable EntitlementSet remains authority.
 
 ### 3.2 Subscription aggregate
 
@@ -122,17 +146,29 @@ It owns conceptually:
 
 A PlatformCharge is not a merchant-order Payment and does not become a merchant Accounting Journal by implication.
 
-## 4. Acquisition and automatic Trial (`PD-043`)
+## 4. Acquisition and automatic Trial (`PD-043`, `PD-044`)
 
 Successful merchant registration automatically creates a **30-day Trial Subscription** with a dedicated Trial terms/EntitlementSet.
+
+Trial is not an alias for Starter or Growth. Its approved initial terms are:
+
+| Trial entitlement | Value |
+|---|---:|
+| Core CommerceOS capabilities | Enabled |
+| MaxActiveMemberships | 3 |
+| MaxWarehouses | 1 |
+| Scheduled product ingestion | Enabled |
+| Order-volume warning threshold | 500 |
 
 Rules:
 
 - Trial requires no payment method;
+- Trial intentionally enables scheduled ingestion so a merchant can evaluate automation before purchase;
 - Trial semantics are explicit and are not inferred from a marketing plan name;
 - Tenant/Membership/Trial facts remain owned by their respective bounded contexts;
 - onboarding must not pretend complete success while knowingly omitting the required Trial outcome;
-- technical coordination/recovery is outside this domain document.
+- technical coordination/recovery is outside this domain document;
+- Trial expiry does not automatically convert the Subscription to Starter; merchant must enter an accepted paid-plan activation flow.
 
 At Trial expiry without a paid/subsequent Subscription:
 
@@ -237,7 +273,7 @@ If PlatformCharge is Declined/definitive no-commit or remains `OutcomeUnknown`:
 
 Downgrade is scheduled for the **next renewal boundary**, never immediate in MVP.
 
-Before effectivity, authoritative owning-domain usage/state is revalidated against target hard limits.
+Before effectivity, authoritative owning-domain usage/state is revalidated against target hard limits, including the target PlanVersion's `MaxActiveMemberships` and `MaxWarehouses`.
 
 If current usage exceeds a target hard limit:
 
@@ -282,26 +318,35 @@ If grace ends without successful renewal:
 
 Reactivation starts a **new** Subscription period/accepted terms and does not rewrite ended history.
 
-Data retention/deletion remains governed by the broader future privacy/Tenant-lifecycle decision, not Subscription end.
+Tenant/data retention remains non-destructive under the resolved MVP `PD-004`/`PD-049`; any future destructive privacy/retention capability requires a separate explicit decision.
 
-## 11. Entitlement enforcement categories (`PD-050`)
+## 11. Entitlement enforcement categories (`PD-044`, `PD-050`)
 
 MVP does not use one generic limit rule.
 
+### Core capability policy
+
+Catalog, Storefront, Orders/Sales, Inventory, Procurement, Accounting, and Reporting are enabled across Starter, Growth, and Business. Plan differentiation does not disable those core bounded contexts.
+
 ### Hard capability gates
 
-Examples: scheduled ingestion/API access when present.
+`ScheduledProductIngestion` is the approved initial paid-plan capability differentiator:
 
-- checked at the owning business command boundary;
-- capability absent/disabled rejects the protected operation;
-- read/history/recovery access remains where approved;
-- missing entitlement is never interpreted as Unlimited.
+- Starter: disabled;
+- Growth: enabled;
+- Business: enabled;
+- Trial: enabled.
+
+Capability gates are checked at the owning business command boundary. Read/history/recovery access remains where approved, and missing entitlement is never interpreted as Unlimited.
+
+Other future capabilities such as API access are not implicitly included merely because the entitlement framework can represent them.
 
 ### Hard counted-resource growth/activation limits
 
-Examples: `MaxActiveStaff`, `MaxWarehouses`.
+Approved initial counted limits are `MaxActiveMemberships` and `MaxWarehouses`.
 
 - creation/activation that would exceed current trusted limit is rejected;
+- `MaxActiveMemberships` counts every Active Owner/Admin/Staff/Viewer Membership;
 - existing resources caused to be over a target downgrade limit are not destroyed;
 - existing resources remain readable/manageable for remediation;
 - authoritative current count comes from the owning bounded context;
@@ -309,7 +354,7 @@ Examples: `MaxActiveStaff`, `MaxWarehouses`.
 
 ### Soft usage warning
 
-Order-volume threshold follows `PD-051`: warning only, no shopper checkout rejection and no overage billing.
+Order-volume threshold follows `PD-051` and the current PlanVersion/Trial terms: warning only, no shopper checkout rejection and no overage billing.
 
 Overage billing is out of MVP.
 
@@ -352,16 +397,18 @@ They may **not**:
 - bypass entitlements/limits;
 - create a hidden cross-Tenant override.
 
-Any future platform-admin mutation must be introduced as an explicit Subscription & Billing business command with Product Owner decision, authorization/notice policy, and Audit evidence.
+This does not conflict with Tenant Management's separate platform authority to suspend/reactivate `TenantStatus` under `PD-004`; those are different business commands and do not mutate Subscription truth.
+
+Any future platform-admin Subscription/Billing mutation must be introduced as an explicit Subscription & Billing business command with Product Owner decision, authorization/notice policy, and Audit evidence.
 
 ## 14. Cross-domain interaction rules
 
 | Context | Subscription & Billing provides/owns | Other context remains authoritative for | Approved rule |
 |---|---|---|---|
 | Tenant Management | Subscription commercial eligibility | Tenant identity/Profile/Active-Suspended status | Subscription end/delinquency does not mutate TenantStatus. |
-| Merchant Access | MaxActiveStaff entitlement/target limit | Membership identity/status/role/current count | hard growth gate; no automatic Membership disable; last-owner preserved. |
-| Inventory | MaxWarehouses or other approved capability/limit | Warehouse/stock truth | hard growth/activation gate; downgrade cannot delete Warehouses. |
-| Product Data Ingestion | scheduled-ingestion capability | source policy/run/snapshot/candidate truth | both entitlement and PDI source-policy eligibility must pass. |
+| Merchant Access | `MaxActiveMemberships` entitlement/target limit | Membership identity/status/role/current count | hard growth gate; all Active roles count; no automatic Membership disable; last-owner preserved. |
+| Inventory | `MaxWarehouses` entitlement | Warehouse/stock truth | hard growth/activation gate; downgrade cannot delete Warehouses. |
+| Product Data Ingestion | `ScheduledProductIngestion` capability | source policy/run/snapshot/candidate truth | both entitlement and PDI source-policy eligibility must pass. |
 | Sales | order-volume metering policy | SalesOrder/OrderConfirmed truth | OrderConfirmed may feed duplicate-safe meter; threshold never blocks shopper checkout. |
 | Payments | none for SaaS billing | merchant-order Payment | do not reuse merchant-order Payment as PlatformCharge. |
 | Accounting | no merchant-journal authority | merchant books | PlatformCharge is not automatically a merchant journal. |
@@ -387,6 +434,7 @@ These are business intent names, not API schemas.
 
 ### Query intents
 
+- list currently sellable PlanVersions and approved monthly prices/entitlements;
 - resolve current Subscription and accepted terms for Tenant;
 - resolve current effective EntitlementSet/capability/limit with provenance;
 - explain historical entitlement period;
@@ -430,41 +478,42 @@ A requested plan change/cancellation/charge attempt is never proof of the result
 | `DOWNGRADE_BLOCKED_BY_USAGE` | authoritative current usage exceeds target hard limit |
 | `SUBSCRIPTION_ENDED` | operational entitlements ended; read/history/export/recovery semantics remain as approved |
 | `PLAN_VERSION_NOT_AVAILABLE_FOR_NEW_PURCHASE` | version withdrawn/not currently sellable but historical accepted Subscriptions remain valid |
-| `PLAN_CATALOG_NOT_YET_APPROVED` | requested exact commercial package/price/entitlement definition depends on deferred `PD-044` |
+| `PLAN_SELECTION_NOT_AVAILABLE` | requested plan/version is not a currently sellable approved PlanVersion |
 
 Transport mapping belongs to Technical Architecture.
 
 ## 17. Remaining human product decision
 
-All Subscription & Billing structural/lifecycle/enforcement/provider/admin semantics needed for the current domain model are approved except the exact commercial sellable catalog in `PD-044`:
+There is **no remaining current Subscription & Billing human product-decision gate** in the register.
 
-- exact `Starter`/`Growth`/`Business` prices;
-- exact entitlement/limit matrix for those marketing packages;
-- deliberate availability/launch commercial choices beyond the approved immutable-version structure.
+The initial Starter/Growth/Business catalog, Trial EntitlementSet, monthly prices, scale limits, scheduled-ingestion differentiation, and order-volume warning thresholds are approved under `PD-044`.
 
-**HUMAN PRODUCT DECISION REQUIRED** before a task must expose, sell, seed, or hard-code exact plan prices/entitlement packages. This deferment does not authorize a Builder to invent placeholders as product truth.
+Future commercial experiments are represented by new immutable PlanVersions. A materially different pricing/entitlement strategy, Enterprise/custom pricing, new overage model, or new entitlement semantics requires a future explicit product decision rather than implementation guesswork.
 
 ## 18. Downstream reconciliation handoff
 
 ### Technical Architect
 
-TASK-0092 was completed before this product-decision pass. Reconcile the technical baseline against the now-approved semantics, especially:
+TASK-0092 was completed before this final product-decision pass. Reconcile the technical baseline against the now-approved semantics, especially:
 
-- automatic 30-day Trial as part of merchant onboarding while preserving bounded-context ownership;
+- automatic 30-day Trial with the approved Trial EntitlementSet as part of merchant onboarding while preserving bounded-context ownership;
+- sellable Starter/Growth/Business PlanVersions and VND prices;
+- `MaxActiveMemberships` and `MaxWarehouses` hard growth limits;
+- `ScheduledProductIngestion` capability differentiation;
+- order-volume warning thresholds as soft usage only;
 - monthly billing anchors and explicit periods;
 - charge-success-first immediate upgrade with fresh monthly period;
-- next-renewal downgrade + revalidation/block-by-usage;
+- next-renewal downgrade + authoritative usage revalidation/block-by-usage;
 - PastDue only after definitive renewal failure and 7-day grace;
 - Ended read/history/export/recovery access;
-- hard capability vs hard growth vs soft order-volume semantics;
 - dedicated SaaS billing-provider simulation distinct from merchant-order Mock Payment Provider;
 - explicit `OutcomeUnknown` reconciliation;
-- read-only platform-admin support with no override.
+- read-only platform-admin Subscription support with no subscription override.
 
-Do not resolve exact plan pricing/entitlement packages through persistence, API, seed data, AWS, or provider convenience.
+Do not hard-code plan-name authorization into foreign domains; transport/persistence/seed/configuration mechanisms remain Technical Architecture concerns.
 
 ### Backlog Planner
 
-Remove obsolete `PD-043`, `PD-045`–`PD-053` unresolved gates from affected candidate tasks once technical reconciliation is completed. Keep exact plan-catalog/pricing/entitlement-package work gated by deferred `PD-044`.
+Remove obsolete `PD-043`–`PD-053` unresolved gates from affected candidate tasks once technical reconciliation is completed. Ensure plan-selection, Trial, entitlement enforcement, usage display, upgrade/downgrade, and billing tasks use the approved `PD-044` matrix rather than placeholders.
 
-**Stop condition: DOMAIN BASELINE READY for approved Subscription & Billing MVP semantics; HUMAN PRODUCT DECISION REQUIRED only when exact `PD-044` commercial catalog/pricing is needed.**
+**Stop condition: DOMAIN BASELINE READY for approved Subscription & Billing MVP semantics.**
