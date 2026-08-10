@@ -1,321 +1,354 @@
 # Catalog Domain Baseline
 
-_Deep baseline for the first delivery frontier. Reconciled by TASK-0087._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved decisions `PD-002`, `PD-003`, `PD-005`–`PD-010`, `PD-037`, and `PD-040`._
 
 ## 1. Responsibility
 
-Catalog owns the tenant's canonical description of what the merchant may sell.
+Catalog owns the Tenant's canonical merchant Product and the rules that make it eligible for public presentation.
 
 Catalog answers:
 
-- What is this merchant's Product?
-- Which merchant SKU identifies it?
-- What base selling price and merchandise facts are current?
-- Is the Product eligible for public presentation?
-- Which Category, Brand, media, and external-source references has the merchant associated with it?
+- What Product does this merchant own?
+- Which merchant SKU identifies it operationally?
+- What base selling price is currently configured?
+- Is the Product Draft, Published, Unpublished, or Archived?
+- Which Category, Brand, media assets, specifications, and external-source references has the merchant accepted?
+- What public Product facts may be projected?
 
-Catalog does not answer:
+Catalog does not own:
 
-- how much stock is available;
-- what price a shopper ultimately agreed to;
-- whether a payment succeeded;
-- what inventory cost or accounting value should be recognized;
-- what an external source currently says without merchant acceptance.
+- stock or reservation truth;
+- shopper-agreed Order price snapshots;
+- accounting inventory value/COGS;
+- external source snapshots/candidates before merchant acceptance;
+- subscription-plan pricing;
+- storefront delivery/caching mechanics.
 
-## 2. Aggregate and concept ownership
+## 2. Product aggregate
 
-### Aggregate: Product
-
-`Product` is the aggregate root for the canonical merchant product.
+`Product` is the aggregate root.
 
 Immutable identity:
 
-- system-assigned `ProductId`;
+- `ProductId`;
 - owning `TenantId`.
 
-Owned product facts:
+Owned Product facts include:
 
-- merchant SKU and its normalized comparison value;
-- name and description;
+- optional/current SKU plus normalized comparison value;
+- name and optional description;
 - current Catalog base selling price;
-- optional advisory cost reference;
-- Product lifecycle status;
-- Category and Brand references;
-- Product-owned specifications;
-- ordered Product-to-media associations;
-- Product-to-external-source associations and merchant import provenance;
-- accepted revision/history information needed for concurrency and lifecycle evidence.
+- optional advisory cost reference with no accounting authority;
+- lifecycle status;
+- zero or one Category reference;
+- zero or one Brand reference;
+- ordered Product specifications;
+- ordered merchant-managed media associations;
+- tenant-scoped public slug after publication;
+- approved external-source association/import provenance;
+- revision/history needed to preserve accepted changes and lifecycle meaning.
 
-Product-owned entities/value objects:
+`ProductVariant` remains outside MVP.
 
-- `SKU` — merchant-facing identifier with a normalized uniqueness value;
-- `Money` — amount plus currency;
-- `ProductSpecification` — at minimum a merchant-approved name/value pair owned by Product; duplicate-name, unit, ordering, and public-visibility semantics are `PD-037`;
-- `ProductMediaReference` — ordered association and display/rights metadata, not necessarily a binary asset;
-- `ExternalProductLink` — merchant decision to associate this Product with an ingestion-owned source identity;
-- `ProductStatus` — lifecycle value.
+## 3. Money policy (`PD-002`, `PD-006`)
 
-`ProductVariant` is not part of the initial Product aggregate. It remains a later product capability.
+CommerceOS MVP is VND-only.
 
-### Aggregate: Category
+- Every monetary value is still a `Money(amount, currency)` value.
+- Merchant-facing VND amounts use whole đồng with no fractional minor unit.
+- Catalog performs no currency conversion.
+- A Product price may be **zero**.
+- Publication requires a valid Money value but does not require a positive amount.
 
-Category is a tenant-owned reference aggregate with immutable identity and display name.
+Changing Catalog price never rewrites an existing SalesOrder snapshot.
 
-Baseline rules:
+## 4. SKU policy (`PD-005`)
 
-- a Product may reference only a Category owned by the same Tenant;
-- lifecycle/retirement, hierarchy, name uniqueness, single-versus-multiple categorization, and existing-reference behavior all remain `PD-009`;
-- no delete/archive/retire behavior is approved until that decision is resolved.
+SKU is a merchant-operational identifier, never canonical Product identity.
 
-### Aggregate: Brand
+Rules:
 
-Brand is a tenant-owned reference aggregate with immutable identity and display name.
+1. SKU is optional when the initial Draft is created.
+2. SKU becomes mandatory before first publication.
+3. SKU uniqueness is case-insensitive within one Tenant using a stable normalized representation.
+4. The merchant-visible display form may be preserved while normalized value determines uniqueness.
+5. Once a Product has been published for the first time, its SKU is immutable.
+6. An Archived Product permanently retains its normalized SKU claim; that SKU is not reusable.
+7. Another Tenant may independently use the same SKU.
+8. Cross-domain references use immutable ProductId and may snapshot the displayed SKU; they never depend on SKU remaining editable.
 
-Baseline rules:
+A conflicting SKU assignment is rejected without changing either Product.
 
-- a Product may reference only a Brand owned by the same Tenant;
-- lifecycle/retirement, aliases, name uniqueness, and existing-reference behavior remain `PD-009`;
-- no delete/archive/retire behavior is approved until that decision is resolved; initial ownership remains tenant-local.
-
-## 3. Product lifecycle
+## 5. Product lifecycle (`PD-007`)
 
 Recognized states:
 
-- `Draft` — canonical merchant record that has never been published and may be incomplete;
-- `Published` — Catalog has accepted it as eligible for a public projection;
-- `Unpublished` — retained canonical record that is not currently public-eligible;
-- `Archived` — intentionally retired from ordinary catalog management and never public-eligible.
+- `Draft` — canonical Product that has never been published and may be incomplete;
+- `Published` — public-eligible canonical Product;
+- `Unpublished` — retained canonical Product that is not public-eligible;
+- `Archived` — terminal retired Product, never public-eligible.
 
-Guaranteed transitions:
+Approved transitions:
 
 ```text
-Create ──► Draft ──Publish──► Published ──Unpublish──► Unpublished
-                ▲                                  │          │
-                └────────────────Publish───────────┘          │
-Draft / Unpublished ─────────────────────────Archive────────► Archived
+Create ─► Draft ──Publish──► Published ──Unpublish──► Unpublished
+             │                 │                         │
+             └────Archive──────┼────────Archive─────────┘
+                               │
+                               └────────Archive────────► Archived
+
+Unpublished ──Publish──► Published
 ```
 
 Rules:
 
-1. Creation produces `Draft`; creation alone is not publication.
-2. Publishing requires all approved publication fields and creates public eligibility.
-3. Unpublishing removes public eligibility but preserves the canonical Product and history.
-4. Archived is never public-eligible and cannot be published directly.
-5. Publication is independent of current stock. A Published Product may be out of stock.
-6. A public projection includes only fields approved for public display; advisory cost, private source-review data, and private merchant metadata are excluded.
-7. Editing an historical order is never a consequence of Product change.
+1. editing a Published Product updates the canonical Product and its public projection directly in MVP; no hidden draft-revision/approval workflow exists;
+2. Published may be Archived directly; explicit Unpublish first is not required;
+3. Archived is terminal in MVP and cannot be restored or republished;
+4. publication is independent of current stock availability;
+5. Product change never rewrites historical Orders or accounting evidence.
 
-The following lifecycle choices cannot be safely inferred and remain `PD-007`: whether a Published Product is edited live or through a draft revision, whether a Published Product may be archived without an explicit unpublish action, and whether Archived can ever be restored. Until decided, candidate implementation tasks must not invent those transitions.
+## 6. Publication eligibility (`PD-006`)
 
-## 4. Publication eligibility
+A Product may be Published only when:
 
-The universal baseline is:
+- it belongs to the trusted Tenant;
+- it is not Archived;
+- Name is valid;
+- SKU is present and satisfies Tenant uniqueness;
+- base selling price is valid VND Money;
+- referenced Category, Brand, specifications, and media associations satisfy same-Tenant/policy rules.
 
-- Product belongs to the trusted Tenant;
-- Product is not Archived;
-- name is present and merchant-valid;
-- SKU satisfies the tenant uniqueness policy;
-- base selling price is a valid Money value under the tenant currency policy;
-- every referenced Category, Brand, and media association belongs to the same Tenant or satisfies its explicit external-reference rule;
-- the public projection contains no advisory cost or restricted source content.
+Category, Brand, description, and media are optional for publication.
 
-Whether zero price is sellable, and whether Category, Brand, description, or at least one image is mandatory, remain explicit decision `PD-006`. Product-slug/addressing rules remain `PD-008`.
+A Published Product may still be unavailable for sale because Inventory has no available stock or another independent commerce entitlement/state blocks checkout. Catalog publication itself does not require stock.
 
-`Published` means Catalog eligibility. It does not by itself promise that an anonymous HTTP route, storefront deployment, cache, or search projection is available; those are later Storefront/technical concerns.
+## 7. Public slug/address (`PD-008`)
 
-### Public Product projection
+- `ProductId` remains immutable canonical identity.
+- A Published Product has a Tenant-scoped public slug.
+- CommerceOS may propose a slug from Product name; the merchant may edit it.
+- normalized slug is unique within the Tenant.
+- slug change does not require historical redirects in MVP.
+- slug never grants Tenant authority and is not a cross-Tenant identity key.
 
-The Catalog-owned public projection contains canonical merchant-approved display facts, not a second Product:
+## 8. Category and Brand (`PD-009`)
 
-- immutable ProductId;
-- public Product address only after `PD-008` is resolved;
-- name and, when present, description;
-- current Catalog base selling price with currency (or an explicitly separate Pricing-resolved offer when Pricing is later active);
-- associated Category/Brand display references when present;
-- merchant-approved public specifications under `PD-037`;
-- ordered policy-safe media references when present.
+`Category` and `Brand` are independent Tenant-owned reference aggregates with immutable identity.
 
-It excludes advisory cost, private source-review data, raw snapshots, internal revision/history, and non-public merchant metadata. Whether SKU/source attribution is public, and specification duplicate/unit/order/visibility rules, remain `PD-037`; TASK-0012 cannot finalize `PublicProduct` before that decision.
+### Category
 
-## 5. SKU policy
+- Product may reference zero or one Category;
+- Category is non-hierarchical in MVP;
+- normalized Category name is unique case-insensitively within the Tenant;
+- Category may be retired rather than hard-deleted;
+- retirement preserves existing Product references and history.
 
-SKU is a merchant identifier, not Product identity.
+### Brand
 
-Baseline invariants:
+- Product may reference zero or one Brand;
+- normalized Brand name is unique case-insensitively within the Tenant;
+- Brand may be retired rather than hard-deleted;
+- retirement preserves existing Product references and history.
 
-1. When assigned, SKU is nonblank after trimming.
-2. Comparison uses one human-approved normalization and case-sensitivity rule; the merchant's display form may be preserved.
-3. The normalized value is unique among one Tenant's Products and may be reused by another Tenant.
-4. SKU uniqueness is a Catalog-wide invariant, not a best-effort Product-local check.
-5. Product references across domains use immutable ProductId and may snapshot the displayed SKU; they do not depend on SKU remaining unchanged.
-6. A conflicting SKU change is rejected without changing either Product.
+Retirement never silently cascades destructive Product mutation.
 
-Whether SKU is required at Draft creation or only before publication, its case/normalization rule, when it may be changed, and whether an Archived Product permanently retains its claim are pending `PD-005`.
+## 9. Product specifications and public fields (`PD-037`)
 
-After the human chooses merchant-visible case/normalization semantics, exact Unicode handling, length limit, and allowed characters are refined as validation/contract details and applied consistently.
+Each `ProductSpecification` has:
 
-## 6. Prices and cost references
+- normalized name unique within that Product;
+- one text value;
+- optional unit;
+- merchant-controlled display order.
 
-### Catalog base selling price
+Private specifications are not supported in MVP. When the Product is Published, its specifications are public.
 
-Catalog owns the Product's current base selling price.
+### PublicProduct projection
 
-- It is Money, never an unqualified number.
-- Pricing may consume it and produce a resolved offer; Pricing does not become another owner of the base value.
-- Sales resolves current eligible commercial facts and captures the accepted value in an immutable order snapshot.
-- Updating Catalog price never changes an existing order.
+MVP public projection may expose:
 
-### Advisory cost reference
+- ProductId;
+- slug;
+- name;
+- description when present;
+- VND Money/base price or a separately resolved Pricing offer when that capability exists;
+- SKU;
+- Category when present;
+- Brand when present;
+- approved media;
+- specifications;
+- derived availability supplied from the appropriate commerce projection.
 
-The optional Catalog cost reference is merchant planning data only.
+It must not expose:
 
-It is not:
+- advisory cost;
+- raw ingestion snapshots;
+- source-review/policy evidence;
+- internal change history/revision data;
+- merchant-private metadata.
 
-- Inventory's stock cost basis;
-- an authoritative COGS amount;
-- an Accounting journal amount;
-- proof of supplier cost;
-- a value that may silently revalue stock or historical sales.
+Ingestion source attribution is not public by default and requires a later explicit publication-policy decision if ever introduced.
 
-Inventory valuation and COGS source policy require human accounting decision `PD-021`.
+## 10. Media policy (`PD-010`)
 
-### Currency
+Public Product media in MVP must come from merchant uploads managed through CommerceOS's Files/Media capability.
 
-The supported tenant functional currency, price currency choices, precision, and rounding policy are pending `PD-002`. Until decided, no task may hard-code VND merely because examples use VND, and no task may introduce currency conversion.
+Rules:
 
-## 7. Category and Brand behavior
+- Catalog owns whether a Product associates with a media asset, its order, and display metadata;
+- Files/Media owns reusable merchant-uploaded binary asset identity/safe metadata when introduced;
+- Product Data Ingestion may observe external image references but those observations do not authorize public use;
+- CommerceOS does not copy arbitrary external binaries for public Product media;
+- external-media hotlinking is not supported;
+- merchant remains responsible for rights to uploaded content.
 
-Category and Brand organize the canonical catalog but are not Product aggregate children because they can be independently referenced by multiple Products.
+Storage/CDN mechanics are outside the domain model.
 
-Common invariants:
-
-- immutable identity and immutable Tenant ownership;
-- nonblank display name;
-- only same-tenant references;
-- no lifecycle operation may silently cascade into hidden Product mutation.
-
-Delete/archive/retire semantics are not approved. Candidate tasks must remain blocked on `PD-009` rather than choose one.
-
-## 8. Media ownership
-
-Catalog owns the decision that a Product uses a media reference, its order, public alt/display metadata, and the rights/attribution assertion required by product policy.
-
-Files/Media may later own a reusable merchant-uploaded binary asset. Product Data Ingestion owns an external source image observation/reference. Neither context may attach or publish an asset on a Product without an explicit Catalog decision.
-
-A `ProductMediaReference` distinguishes at least conceptually:
-
-- merchant-owned asset/reference;
-- external content the merchant is permitted to display or reference;
-- source attribution and rights-review evidence where required;
-- display order and public alt text.
-
-A URL being fetchable is not permission to copy or republish its content. Exact external hotlink, license-attestation, and evidence policy is pending `PD-010`.
-
-## 9. Product Data Ingestion relationship
+## 11. Product Data Ingestion relationship (`PD-040`)
 
 ```text
-Ingestion-owned external snapshot
-            ↓ candidate + provenance
-Merchant reviews selected fields
-            ↓ explicit Catalog command
-Catalog creates/updates canonical Product
-            ↓
-Catalog owns resulting values and source link
+Ingestion SourceSnapshot
+        ↓ normalize
+ImportCandidate Ready
+        ↓ merchant review
+Approved
+        ↓ explicit Catalog apply command
+Catalog accepts canonical change
+        ↓
+Applied
+```
+
+Within one Tenant, one external source-product identity may map to zero or one canonical Product in MVP.
+
+ImportCandidate lifecycle:
+
+```text
+Ready ──Approve──► Approved ──Catalog accepted apply──► Applied
+   │                    │
+   ├──Reject───────────► Rejected
+   └──newer candidate──► Superseded
+
+Approved ──newer candidate before apply──► Superseded
 ```
 
 Rules:
 
-1. Ingestion never owns or mutates a canonical Product.
-2. A source change never changes a Product without a new explicit merchant-approved Catalog action or a future explicit pricing/import rule.
-3. Catalog owns the ExternalProductLink from a Product to an ingestion source identity; Ingestion owns the referenced source record/snapshot.
-4. Imported values pass the same Catalog validation and lifecycle rules as manually entered values.
-5. Import provenance identifies the source snapshot and selected fields but does not transfer continuing authority to that source.
-6. `ProductImported` is a Catalog fact only when Catalog actually accepts creation or selected changes. `ImportCandidateCreated` is an Ingestion fact.
+- `Applied`, `Rejected`, and `Superseded` are terminal historical states;
+- there is no time-only Expired transition in MVP;
+- `Approved` means merchant approval only, not that Catalog changed;
+- `Applied` exists only after Catalog confirms the canonical mutation;
+- newer source evidence never updates a Product automatically;
+- imported values pass the same Catalog validation/lifecycle rules as manual edits;
+- source provenance remains traceable without transferring continuing authority to the external source.
 
-Mapping cardinality and candidate application/supersession/expiry remain `PD-040`.
+## 12. Authorization (`PD-003`)
 
-## 10. Authorization baseline
+- Owner and Admin may manage Catalog and publish Products in MVP.
+- Staff does not receive Catalog administration/publishing merely from the Staff role; any narrower read/operational use must follow the owning feature's explicit policy.
+- Viewer is read-only.
+- anonymous shoppers receive only public projections through a resolved Storefront Tenant context.
+- cross-Tenant Product visibility remains non-disclosing.
 
-- `catalog.view`, `catalog.manage`, and `catalog.publish` are distinct business capabilities whose role mapping remains `PD-003`.
-- A role name alone does not grant any of those capabilities.
-- No UI role label such as “catalog manager” creates a new role or permission by implication.
-- Anonymous shoppers receive only the public projection of a Published Product through a resolved storefront Tenant context.
-- Tenant mismatch is non-disclosing and cannot be overridden by a Product or Tenant id in input.
+There is no separate “catalog manager” role in MVP.
 
-Catalog tasks cannot become Ready until the human approves the applicable role/cardinality mapping in `PD-003`.
+## 13. Commands, queries, and facts
 
-## 11. Commands, queries, and business facts
-
-Business command candidates:
+### Command candidates
 
 - `CreateProduct`
 - `ChangeProductDetails`
 - `AssignProductSKU`
 - `SetCatalogBasePrice`
+- `ChangeProductSlug`
 - `AssignProductCategory`
 - `AssignProductBrand`
-- `AttachProductMediaReference`
+- `SetProductSpecifications`
+- `AttachProductMedia`
+- `DetachProductMedia`
 - `PublishProduct`
 - `UnpublishProduct`
 - `ArchiveProduct`
 - `ApplyImportCandidate`
 - `LinkExternalProduct`
+- `CreateCategory` / `RenameCategory` / `RetireCategory`
+- `CreateBrand` / `RenameBrand` / `RetireBrand`
 
-Business query intents:
+### Query intents
 
-- retrieve one tenant-owned Product;
-- list/filter tenant-owned Products by lifecycle, SKU, Category, or Brand;
-- resolve the current published commercial Product facts required for checkout;
-- read the public projection for a Published Product.
+- get/list/filter Tenant-owned Products;
+- resolve one current Product by ProductId/SKU/slug within trusted Tenant scope;
+- resolve current sellable Catalog facts needed for checkout revalidation;
+- read public projection for Published Products;
+- list active/retired Category and Brand references.
 
-Owned fact candidates:
+### Owned fact candidates
 
 - `ProductCreated`
 - `ProductDetailsChanged`
-- `ProductSKUChanged`
+- `ProductSKUAssigned`
 - `ProductBasePriceChanged`
+- `ProductSlugChanged`
 - `ProductPublished`
 - `ProductUnpublished`
 - `ProductArchived`
 - `ProductImported`
 - `ExternalProductLinked`
-- `CategoryCreated` / `CategoryChanged` under the approved `PD-009` lifecycle
-- `BrandCreated` / `BrandChanged` under the approved `PD-009` lifecycle
+- `CategoryCreated` / `CategoryChanged` / `CategoryRetired`
+- `BrandCreated` / `BrandChanged` / `BrandRetired`
 
-These names describe accepted facts. TASK-0088 decides contract shapes and whether/when any need cross-boundary publication.
+These are business meanings, not published event-schema decisions.
 
-## 12. Business error semantics
+## 14. Business error semantics
 
-| Code | Meaning and required effect |
+| Outcome | Meaning |
 |---|---|
-| `PRODUCT_NOT_VISIBLE` | absent or not visible in trusted tenant context; no cross-tenant existence disclosure |
-| `SKU_REQUIRED` | action requires SKU and none is assigned |
-| `SKU_CONFLICT` | normalized SKU is already claimed under the approved lifecycle policy; Product remains unchanged |
-| `PRODUCT_INCOMPLETE_FOR_PUBLICATION` | required publication facts are missing/invalid; state remains unchanged |
-| `PRODUCT_STATE_TRANSITION_INVALID` | requested lifecycle transition is not approved from current state |
-| `PRODUCT_ARCHIVED` | ordinary edit/publish action targets Archived Product and is rejected |
-| `CATALOG_REFERENCE_INVALID` | Category, Brand, media, or external reference is absent, disallowed under its approved lifecycle policy, or from another Tenant |
-| `CATALOG_REVISION_STALE` | attempted edit used an old Product revision; newer accepted state is preserved |
-| `CATALOG_CURRENCY_INVALID` | price/currency violates the approved tenant currency policy |
-| `SOURCE_IMPORT_STALE_OR_INVALID` | candidate/snapshot cannot be applied under approved import policy; canonical Product remains unchanged |
+| `PRODUCT_NOT_VISIBLE` | absent or not visible in trusted Tenant context; no cross-Tenant disclosure |
+| `SKU_REQUIRED` | publication requires SKU and none is assigned |
+| `SKU_CONFLICT` | normalized Tenant-scoped SKU already has a permanent claim |
+| `SKU_IMMUTABLE_AFTER_PUBLICATION` | requested SKU change targets a Product already published at least once |
+| `PRODUCT_INCOMPLETE_FOR_PUBLICATION` | Name/SKU/Money or another required policy fact is invalid |
+| `PRODUCT_STATE_TRANSITION_INVALID` | requested lifecycle transition is not approved |
+| `PRODUCT_ARCHIVED` | ordinary edit/publish targets terminal Archived Product |
+| `SLUG_CONFLICT` | normalized public slug is already used in the Tenant |
+| `CATALOG_REFERENCE_INVALID` | Category/Brand/media/source reference violates Tenant/lifecycle policy |
+| `CATEGORY_NAME_CONFLICT` / `BRAND_NAME_CONFLICT` | normalized reference name already exists in Tenant scope |
+| `SPECIFICATION_NAME_CONFLICT` | duplicate normalized specification name within Product |
+| `CATALOG_CURRENCY_INVALID` | value is not supported VND Money policy |
+| `SOURCE_IMPORT_STALE_OR_INVALID` | candidate cannot be applied under approved candidate/mapping lifecycle |
+| `CATALOG_REVISION_STALE` | concurrent accepted change is newer; no silent overwrite |
 
-Safe UI recovery may reload current state or let the merchant deliberately reapply edits, but must never overwrite a newer revision automatically.
+## 15. Accounting boundary
 
-## 13. Inputs to TASK-0088 and TASK-0089
+Optional Catalog advisory cost remains planning/reference data only. It is never:
 
-Technical Architecture must preserve:
+- Inventory valuation truth;
+- COGS authority;
+- supplier cost evidence;
+- journal amount authority.
 
-- Product aggregate consistency and tenant-wide SKU uniqueness;
-- non-disclosing tenant isolation;
-- immutable Product/Tenant identity and immutable Sales snapshots;
-- lifecycle transition concurrency;
-- Catalog-owned public projection boundary;
-- explicit PDI-to-Catalog review/apply handoff;
-- no path from cost reference to accounting value without approved policy.
+Accounting valuation policy is defined in the Commerce Operations domain baseline.
 
-Backlog Planning must reconcile:
+## 16. Downstream reconciliation handoff
 
-- TASK-0010 omitting SKU while TASK-0011 assumes its lifecycle;
-- TASK-0012's “becomes readable” with Storefront-owned anonymous exposure;
-- TASK-0013's undefined “catalog manager” role;
-- task readiness against `PD-002`, `PD-003`, `PD-005` through `PD-010`, `PD-037`, and `PD-040` at their stated gates.
+### Technical Architect
+
+Reconcile the completed technical baseline against:
+
+- optional-at-Draft but mandatory-before-publish SKU;
+- case-insensitive permanent Tenant SKU claims and post-first-publication immutability;
+- direct live edits to Published Product;
+- direct Published→Archived and terminal Archived behavior;
+- Tenant-scoped slug uniqueness;
+- single flat Category plus single Brand references and non-destructive retirement;
+- managed merchant-upload media only;
+- public specification/public-field policy;
+- one-to-one Tenant source-product mapping and explicit ImportCandidate lifecycle.
+
+Do not choose storage/CDN/schema mechanisms in this domain document.
+
+### Backlog Planner
+
+Candidate tasks must no longer treat `PD-002`, `PD-003`, `PD-005`–`PD-010`, `PD-037`, or `PD-040` as unresolved. Tasks that still assume a catalog-manager role, mutable post-publication SKU, external hotlinking, hierarchical/multi-category catalog, draft-revision CMS workflow, or implicit source application require reconciliation before Ready.
+
+**Stop condition: DOMAIN BASELINE READY for current Catalog MVP semantics.**
