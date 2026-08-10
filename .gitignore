@@ -17,6 +17,7 @@ cdk.out/
 # Local configuration and tooling
 __pycache__/
 *.pyc
+.commerceos/
 .env
 .env.*
 !.env.example
