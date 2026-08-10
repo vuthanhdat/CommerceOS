@@ -17,6 +17,12 @@ Align the executable architecture-test guardrails with the accepted producer-own
 
 This is a structural remediation task. It must not implement a CommerceOS business feature or create a speculative business contract merely to exercise the rule.
 
+## Business context
+
+CommerceOS intentionally uses module-owned implementation boundaries while allowing explicitly approved producer-owned `*.Contracts` as the narrow cross-module application dependency seam. If executable architecture tests remain stricter than that approved rule, future correct module collaboration would be rejected by the harness and Builders would be pushed toward either bypassing tests or inventing a different dependency shape.
+
+This task exists only to make the mechanical guardrail match already-approved architecture before business modules begin publishing contracts.
+
 ## Why this is Ready
 
 The current Phase 0 architecture test requires every `*.Application` project reference to be the module's own Domain project. The approved architecture allows an Application to consume an explicitly approved foreign producer-owned `*.Contracts` project while still forbidding foreign Domain, Application implementation, Infrastructure, and persistence internals.
@@ -92,6 +98,10 @@ No runtime authentication, authorization, Tenant, or data-isolation behavior cha
 ## Reliability and idempotency impact
 
 N/A for runtime business behavior. Tests must be deterministic and local.
+
+## Observability impact
+
+No runtime telemetry is introduced. Architecture-test failures must remain deterministic and produce actionable diagnostics that identify the forbidden dependency shape or Contracts-boundary violation.
 
 ## Cost impact
 
