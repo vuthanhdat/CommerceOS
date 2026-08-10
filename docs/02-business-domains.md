@@ -1,283 +1,493 @@
 # CommerceOS — Business-Domain Baseline
 
-_Baseline reconciled by TASK-0087 on 2026-08-09 and extended for Subscription & Billing by TASK-0091 on 2026-08-10._
+_Canonical business-domain baseline. Originally reconciled by TASK-0087, extended for Subscription & Billing by TASK-0091, and reconciled again on 2026-08-10 after the human product-decision pass._
 
 ## 1. Purpose and authority
 
-CommerceOS is organized around business capabilities first. This document is the canonical map of bounded contexts, fact ownership, and cross-domain invariants. It refines the directional examples in the product, feature, roadmap, and candidate-task documents.
+CommerceOS is organized around business capabilities first. This document is the canonical map of bounded contexts, source-of-truth ownership, and cross-domain invariants.
 
-When documents disagree about business ownership or meaning:
+Authority order for business meaning:
 
-1. an explicit human product decision takes precedence;
-2. this baseline and its linked domain documents take precedence over candidate-task assumptions;
-3. a Technical Architect may choose implementation mechanisms but may not change the business meaning;
-4. a Builder must stop rather than fill a documented product-decision gap.
+1. explicit human product decisions in [`domains/product-decisions.md`](domains/product-decisions.md);
+2. this canonical baseline and its detailed domain documents;
+3. technical architecture for implementation mechanisms only;
+4. candidate task wording last.
 
-This baseline deliberately does not select services, persistence schemas or keys, deployment boundaries, message transports, or synchronous versus asynchronous integration.
+A Technical Architect may choose modules, contracts, persistence/access mechanisms, sync/async integration, AWS mapping, and deployment topology, but may not change the business meaning recorded here. A Builder must stop instead of inventing product behavior.
 
-Detailed baseline documents:
+Detailed domain baselines:
 
-- [Tenant & Merchant Access](domains/tenant-identity.md)
+- [Tenant Management & Merchant Access](domains/tenant-identity.md)
 - [Catalog](domains/catalog.md)
-- [Commerce Operations and Cross-Domain Facts](domains/commerce-operations.md)
+- [Commerce Operations & Cross-Domain Facts](domains/commerce-operations.md)
 - [Subscription & Billing](domains/subscription-billing.md)
 - [Human Product Decisions](domains/product-decisions.md)
+- [Product-Decision → Domain-Baseline Reconciliation](domains/product-decision-reconciliation.md)
 
-## 2. Modeling vocabulary
+This baseline deliberately does **not** select AWS services, databases, table/key/index design, transports, API schemas, deployment units, or orchestration technology.
 
-- A **bounded context** owns a business language, its rules, and the authoritative facts in that language.
-- An **aggregate root** is the consistency boundary through which a business change is accepted or rejected. It is not a table or deployment unit.
-- An **entity** has durable identity inside a bounded context.
-- A **value object** is defined by its value, such as Money, SKU, Quantity, or Address.
-- A **business fact** is a past-tense statement that the owning context has accepted. The names in this baseline are semantic candidates, not published event schemas.
-- A **request** asks another context to attempt work. It is not evidence that the work succeeded.
-- A **projection** is derived for reading. It is never allowed to become an accidental transactional source of truth.
-- An **audit record** describes actor and security/operational context. It is not a substitute for a business fact.
+## 2. Current product-decision state
 
-## 3. Bounded-context map
+The 2026-08-10 decision pass resolved or intentionally deferred the full current register. The register contains no entry currently marked `HUMAN PRODUCT DECISION REQUIRED`.
+
+Only three product-policy areas remain intentionally deferred:
+
+- `PD-004` — exact Suspended-tenant read/support behavior plus Tenant closure/deletion/retention/recovery/privacy semantics;
+- `PD-023` — exact refund/return accounting treatment;
+- `PD-044` — exact sellable `Starter`/`Growth`/`Business` prices and entitlement/limit packages; immutable PlanVersion structure is already approved.
+
+These are not permission to guess. When implementation actually requires one of those deferred meanings, the affected work remains non-Ready and stops with the appropriate human product-decision gate.
+
+## 3. Modeling vocabulary
+
+- **Bounded context** — owns one business language, rules, and authoritative facts.
+- **Aggregate root** — business consistency boundary through which a change is accepted/rejected; not a table or service.
+- **Entity** — durable identity in a bounded context.
+- **Value object** — defined by value, such as Money, SKU, Quantity, Address, or Entitlement value.
+- **Business fact** — past-tense statement accepted by its owning context.
+- **Request/intent** — asks another context to attempt work; never proof of success.
+- **Projection** — derived read model; never accidental transaction/authorization authority.
+- **External/provider evidence** — input interpreted by the owning CommerceOS context; never direct authority for unrelated domains.
+- **Audit evidence** — append-oriented actor/action/outcome evidence; not domain state.
+
+## 4. Bounded-context map
 
 ```text
 PLATFORM GOVERNANCE
   Tenant Management ── Merchant Access ── Audit
           │                    │
-          └──────── trusted tenant authority ────────────────┐
-                                                            │
-PLATFORM COMMERCIAL                                         │
-  Subscription & Billing ── effective entitlements/limits ──┼──────┐
-          │                                                 │      │
-          └── CommerceOS SaaS charge truth                  │      │
-                                                            │      │
-MERCHANT COMMERCE                                           ▼      ▼
-  Product Data Ingestion ──review/import──► Catalog ──► Storefront
-                                                │            │
-                                      Pricing ──┘            │ checkout intent
-                                                             ▼
+          └──── trusted Tenant authority ──────────────────┐
+                                                          │
+PLATFORM COMMERCIAL                                       │
+  Subscription & Billing ── effective entitlements ───────┼─────────┐
+          │                                               │         │
+          └── PlatformCharge / SaaS billing truth         │         │
+                                                          │         │
+MERCHANT COMMERCE                                         ▼         ▼
+  Product Data Ingestion ──review/apply──► Catalog ─────► Storefront
+                                                │             │
+                                      Pricing ──┘             │ checkout intent
+                                                              ▼
   Customer/CRM ───────────────────────────────────────────► Sales
-                                                             │
-OPERATIONS                                                   ├────► Payments ───► Mock Payment Provider
-  Procurement ──goods receipt──► Inventory ◄──allocation────┘
+                                                              │
+OPERATIONS                                                    ├────► Payments ───► merchant-order Mock Provider
+  Procurement ──goods receipt──► Inventory ◄──reservation────┘
         │                            │
-        └──────── business facts ────┴──────────────┐
-                                                    ▼
-                                              Accounting
-                                                    │
-                                                    ▼
-                                                Reporting
+        └──────── owned facts ───────┴──────────────┐
+                                                   ▼
+                                             Accounting
+                                                   │
+                                                   ▼
+                                               Reporting
 
 Supporting contexts: Notification and Files/Media.
 ```
 
-The arrows show knowledge or business dependency, not a call style, service boundary, queue, transaction, or data-store relationship.
+Arrows show business knowledge/dependency only. They do not prescribe synchronous calls, queues, transactions, databases, modules, or deployment topology.
 
-`Subscription & Billing` is one bounded context initially. It owns the merchant's commercial relationship with CommerceOS, including accepted plan/terms, subscription lifecycle, effective entitlements/limits, approved usage-meter truth, and CommerceOS SaaS charge evidence. It is deliberately separate from merchant-order `Payments` and merchant bookkeeping `Accounting`. The internal Plan, Subscription, Entitlement/Usage, and PlatformCharge concepts may split later only when business evolution justifies separate boundaries.
+## 5. Context responsibilities
 
-## 4. Context responsibilities
-
-| Bounded context | Owns | Does not own |
+| Bounded context | Owns | Explicitly does not own |
 |---|---|---|
-| Tenant Management | Tenant identity, lifecycle, and one tenant-owned Business Profile | login credentials, staff membership, subscription/billing lifecycle, merchant transactions |
-| Merchant Access | invitations, tenant memberships, role assignment(s) under the approved cardinality policy, active/disabled access status | authentication credentials, subscription plan/entitlement truth, products, orders, domain-specific transaction approval |
-| Subscription & Billing | CommerceOS plan/version/accepted commercial terms; merchant subscription lifecycle; effective entitlement sets and approved metered usage; CommerceOS SaaS platform charge/provider evidence | TenantStatus, Memberships, Warehouses, merchant Orders, shopper/order Payments, merchant journals, Audit/Reporting truth |
-| Catalog | merchant canonical products, SKU policy, category/brand references, publication eligibility, base selling price, media/source associations | stock, negotiated/final order price, external source snapshots, accounting cost |
-| Pricing & Promotion | rules that turn a catalog base price into an eligible offer | canonical product, captured order price, journal value |
-| Storefront | public experience, tenant-bound transient cart, public projections and checkout intent | products, orders, inventory, payment state |
-| Sales & Order Management | accepted checkout, commercial order, immutable order-line snapshots, cancellation intent, refund request and order history | current product, physical stock, provider payment, subscription truth, journal entries |
-| Customer/CRM | merchant-owned customer profile and contact preferences | authentication, order history source, receivable ledger balance |
-| Inventory | stock by product/location, reservations, movements, adjustments, and receipt/issue/return quantity effects; Warehouse/Location truth | product merchandising, subscription limit policy, Procurement's physical goods-receipt evidence, order lifecycle, monetary ledger |
-| Procurement | suppliers, purchase commitments, goods-receipt documents, supplier-invoice business references and operational settlement status | stock balances, journal entries, payment-provider behavior |
-| Payments | merchant-order payment obligation, attempts, known/unknown outcome, captured/refunded amounts, mapping to order-payment provider references | CommerceOS SaaS subscription charges, provider-internal state, order agreement, revenue recognition |
-| Mock Payment Provider | simulated provider payment intents, operations, refunds, and callback attempts for merchant-order payment learning scenarios | CommerceOS subscription billing, CommerceOS order, internal Payment, accounting policy |
-| Accounting | merchant chart of accounts, posting policy, journal entries/lines, reversals, ledger truth | CommerceOS SaaS platform charge truth, operational order, stock, payment, or purchase state |
-| Reporting | derived operational, financial, usage, and platform projections | any transactional source of truth or entitlement authority |
-| Product Data Ingestion | source policy evidence, acquisition runs, immutable external snapshots, normalization results, import candidates | subscription capability entitlement, canonical merchant product, sell price, publication state |
-| Notification | delivery intent and delivery outcome for non-critical notifications | the business outcome that caused a notification |
-| Audit | append-oriented evidence of actor, action, target, outcome, and correlation | domain state or business-event history |
-| Files/Media | merchant-owned binary asset identity and safe media metadata when such assets are introduced | a Product's decision to associate/order media, external-content rights policy |
+| Tenant Management | Tenant identity, `TenantStatus`, one Business Profile | authentication, Memberships, Subscription lifecycle, merchant transactions |
+| Merchant Access | Invitations, Membership identity/status, one MVP role per Membership, trusted Tenant authority | authentication credentials, Subscription entitlements, Products/Orders/stock |
+| Subscription & Billing | Trial/paid Subscription, Plan/PlanVersion accepted terms, EntitlementSets, approved UsageMeters, PlatformCharge/SaaS billing interpretation | TenantStatus, Memberships, Warehouses/stock, merchant Orders/Payments/Journals |
+| Catalog | canonical Product, SKU, base selling price, lifecycle/public eligibility, slug, Category/Brand, specifications, Product-media/source associations | stock, final Order price, accounting inventory value, SaaS plan pricing |
+| Pricing & Promotion | future authoritative offer/discount rules | canonical Product, immutable Order snapshot, journals |
+| Storefront | public tenant experience, transient tenant-bound cart, public projections, checkout intent | canonical Product, Order, stock, Payment |
+| Sales & Order Management | accepted Order, immutable commercial snapshots, Sales lifecycle, cancellation/refund intent | current Product, physical stock, provider Payment state, journal truth |
+| Customer/CRM | explicit tenant-owned Customer profile/contact preferences | guest Order snapshot, authentication, Sales history source, ledger balance |
+| Inventory | Warehouse/Location, OnHand/Reserved/Available, reservations, movements, physical adjustments/receipts/issues/returns | Product merchandising, Subscription policy, accounting valuation |
+| Procurement | Supplier, PurchaseOrder commitment, GoodsReceipt, SupplierInvoice/SupplierPayment evidence | Inventory balances, journals, bank/payment-provider execution |
+| Payments | merchant-order Payment obligation, attempts, verified/unknown outcome, captures/refunds | CommerceOS SaaS charges, Order agreement, revenue policy |
+| Merchant-order Mock Payment Provider | simulated shopper-order provider intents/operations/evidence | SaaS billing, SalesOrder, Inventory, Accounting |
+| Accounting | merchant chart of accounts, valuation/posting policy, immutable journals/ledger | operational Order/stock/Payment/Procurement state, SaaS charge truth |
+| Reporting | derived operational/financial/usage/platform projections | transactional truth, entitlement authority |
+| Product Data Ingestion | DataSource policy/run/snapshot/candidate truth | canonical Product, subscription capability, sell price/publication |
+| Notification | delivery/read/acknowledgement state per recipient | source business outcome |
+| Audit | append-oriented privileged/security action evidence | domain state/business-event history |
+| Files/Media | merchant-uploaded asset identity/safe media metadata | Product's association/publication decision |
 
-No context may claim authority by reading or writing another context's private representation.
+No bounded context may gain authority by directly reading/writing another context's private representation as an integration shortcut.
 
-## 5. Source-of-truth rules
+## 6. Trusted Tenant authority and roles
 
-| Business question | Authoritative context | Other contexts may hold only |
-|---|---|---|
-| Does this merchant tenant exist and what is its profile/status? | Tenant Management | identity/reference and approved projection |
-| May this authenticated subject act for this tenant now? | Merchant Access | trusted decision/result, never a client assertion |
-| Which CommerceOS subscription/accepted terms govern this Tenant now? | Subscription & Billing | subscription reference/status projection |
-| Which capability or limit is effective for this Tenant now? | Subscription & Billing | trusted entitlement decision/result and provenance |
-| What current staff/Warehouse/order/source usage exists? | the context that owns that business truth; approved cumulative metering may be Subscription & Billing-owned when derived from source facts | usage evidence/projection, never foreign aggregate truth |
-| What CommerceOS SaaS platform charge outcome is currently known? | Subscription & Billing | billing-history projection/reference |
-| What product does the merchant currently offer? | Catalog | public or task-specific snapshot |
-| What base price is currently configured? | Catalog | resolved offer or immutable order snapshot |
-| What price did the shopper agree to? | Sales | copied immutable line/total snapshot |
-| How much stock exists, is held, or was moved? | Inventory | availability projection or movement reference |
-| What did the customer order and what is its commercial state? | Sales | order reference and approved projection |
-| What merchant-order payment outcome does CommerceOS currently know? | Payments | payment reference and business facts |
-| What did the simulated merchant-order provider commit? | Mock Payment Provider | verified provider result/reference |
-| What did the merchant order from a supplier? | Procurement | purchase or receipt reference |
-| What has been posted to the merchant's books? | Accounting | financial projections or journal reference |
-| What did an external source show at a point in time? | Product Data Ingestion | source-snapshot reference and merchant-approved imported values |
-| What is a dashboard/KPI value? | Reporting | a derived value with provenance and freshness, never a command authority |
+### Multi-tenant Membership (`PD-001`)
 
-### Subscription, payment, and accounting vocabulary
+One authenticated identity may hold Memberships in multiple Tenants.
 
-The following terms are intentionally different:
+- exactly one eligible Tenant: CommerceOS may select it automatically;
+- more than one eligible Tenant: the person intentionally selects active Tenant;
+- trusted Tenant context is resolved server-side from selected Tenant + eligible Membership;
+- client-supplied `tenantId` or `SubjectId` alone never grants authority.
 
-- **CommerceOS Subscription** — the merchant Tenant's commercial relationship with the CommerceOS platform.
-- **Effective EntitlementSet** — capabilities/limits currently produced by accepted subscription terms and approved policy.
-- **PlatformCharge** — a CommerceOS SaaS charge/evidence item owed by the merchant to CommerceOS.
-- **Payment** — the merchant's shopper/order payment obligation in the existing Payments bounded context.
-- **Merchant Journal** — an immutable entry in the merchant's own Accounting books.
+### MVP role model (`PD-003`)
 
-A PlatformCharge is not a shopper Payment and does not become a merchant Journal by implication.
+A Membership has exactly one role at a time:
 
-### Price and cost vocabulary
+- `Owner` — full merchant administration, subject to domain invariants;
+- `Admin` — ordinary merchant operations, staff, Catalog; cannot grant/revoke Owner authority or violate last-owner invariant;
+- `Staff` — ordinary operational work only where the owning domain explicitly permits it; no Membership/tenant administration;
+- `Viewer` — read-only.
 
-The following terms are intentionally different:
-
-- **Catalog base selling price** — the merchant's current starting price for a Product.
-- **Resolved offer price** — a price after applicable Pricing rules, when that context is active.
-- **Order price snapshot** — the immutable price accepted by Sales for a particular order line.
-- **Catalog cost reference** — optional merchant planning/reference data only.
-- **Inventory cost basis** — the value assigned to stock according to an approved accounting/valuation policy.
-- **Posted accounting amount** — the amount recorded in an immutable journal.
-- **CommerceOS SaaS plan/charge price** — commercial platform pricing owned by Subscription & Billing and never a Catalog/Product selling price.
-
-Changing one does not silently rewrite another.
-
-## 6. Cross-cutting business invariants
-
-### Tenant authority
-
-- Every tenant-owned aggregate has one immutable owning TenantId.
-- Tenant authority comes from a resolved active Membership or an explicitly modeled platform-administration path, never from request data.
-- Knowing another tenant's identifier or entity identifier confers no visibility.
-- An authentication credential proves identity; it does not by itself prove an active tenant membership.
-- Subscription/entitlement decisions use trusted Tenant context; a client-provided plan, entitlement, limit, or billing claim is never authority.
+An Active Tenant may have multiple Owners but must retain at least one Active Owner.
 
 ### Independent eligibility dimensions
 
-Tenant lifecycle, Membership authority, subscription commercial eligibility, billing outcome, and a domain aggregate's own invariant are separate dimensions.
-
-Conceptually an ordinary protected operation may require:
+A normal protected mutation may conceptually require:
 
 ```text
 verified identity
-    + active Membership/capability
-    + TenantStatus permits operation
-    + effective subscription entitlement permits operation
-    + owning domain invariant accepts operation
++ trusted selected Tenant
++ Active Membership + sufficient role/domain authority
++ TenantStatus allows operation
++ effective Subscription entitlement allows operation
++ owning aggregate invariant accepts operation
 ```
 
-Failure in one dimension never silently changes another. In particular:
+Failure in one dimension never silently rewrites another.
 
-- Tenant suspension does not cancel a Subscription by implication;
-- cancellation/delinquency does not disable Memberships or mutate TenantStatus by implication;
-- payment-provider uncertainty does not become subscription failure;
-- a subscription downgrade never deletes or rewrites another context's business history.
+## 7. Tenant lifecycle and onboarding
 
-### Subscription and entitlement history
+### Tenant lifecycle
 
-- A subscription always preserves enough accepted commercial-term provenance to explain historical entitlement periods.
-- Marketing plan names/prices are not authority outside Subscription & Billing.
-- Plan edits or plan changes never retroactively rewrite historical Orders, Membership history, Inventory, source snapshots, merchant journals, or prior EntitlementSets.
-- A requested plan change is not an effective plan change.
-- A requested cancellation is not proof that the subscription has ended.
-- When target hard limits are below authoritative current usage, the safe interim rule is to block downgrade effectivity and require remediation/product policy; Subscription & Billing never destroys foreign-domain data to force compliance.
-- A hard-limit write must be checked using a current trusted entitlement plus authoritative owning-domain usage/state; a stale Reporting/UI projection cannot authorize it.
-- `Unlimited` must be explicit policy, not a missing entitlement record.
+```text
+Active ──Suspend──► Suspended
+   ▲                    │
+   └────Reactivate──────┘
+```
 
-### Identity and history
+While Suspended, ordinary merchant mutations and public commerce are denied. Suspension does not delete or rewrite Memberships, Subscription, Orders, Accounting, or other business evidence. Exact closure/retention/privacy semantics remain deferred under `PD-004`.
 
-- Internal aggregate identifiers are immutable and are not reused.
-- Mutable merchant labels such as names or SKUs do not replace aggregate identity.
-- Historical business documents retain snapshots or stable references required to preserve their original meaning.
+### MVP onboarding (`PD-034`, `PD-043`)
 
-### Money and quantity
+Open self-service registration requires an authenticated identity with verified email plus Business Profile minimum:
 
-- A monetary value always carries currency; amounts with different currencies are not added or compared as if equivalent.
-- An accepted order uses one currency unless a later approved product decision adds conversion behavior.
-- Quantities are explicit positive values for order, reservation, receipt, and issue operations. Adjustment direction is represented by its reason/type, not an ambiguous signed input.
-- Rounding, functional currency, tax, inventory valuation, and CommerceOS SaaS currency/tax/proration policy remain explicit human decisions where listed in the decision register.
+- merchant display name;
+- explicit IANA business timezone.
 
-### Business facts
+The registering identity becomes initial Active Owner. Retry of the same logical onboarding intent is idempotent.
 
-- Fact names are past tense and state what the owning context accepted.
-- `Requested`, `Scheduled`, `Queued`, `Delivered`, or `Failed` is a business fact only when that occurrence has business meaning; a worker/job state alone is technical telemetry.
-- A request such as `ReserveStock`, `CapturePayment`, or `RequestPlanChange` is not proof of `StockReserved`, `PaymentCaptured`, or `SubscriptionPlanChanged`.
-- Consumers may derive their own state from an owned fact but must not retroactively change the producer's fact.
-- The same source fact must not create the same logical inventory movement, merchant-order payment effect, subscription usage count, PlatformCharge effect, or accounting posting twice.
-- External SaaS billing timeout/missing callback is an unknown observation when commit status cannot be proven; it is not converted into success/failure/delinquency merely because time passes.
+Successful merchant onboarding requires three owned outcomes:
 
-### Projections and public views
+```text
+Tenant Management:  Active Tenant
+Merchant Access:     Active initial Owner Membership
+Subscription/Billing: 30-day no-card Trial + Trial EntitlementSet
+```
 
-- Storefront and Reporting expose projections; neither can authorize a transaction from stale projected data.
-- Checkout revalidates current Catalog eligibility and authoritative commercial inputs.
-- Inventory availability shown publicly is informative until Inventory accepts a reservation.
-- Subscription/billing dashboards expose projections/history; they do not grant entitlements or mutate subscription state.
-- Projection lag is represented honestly rather than treated as a change in transactional truth.
+The business must not knowingly report complete onboarding while leaving one required accepted outcome absent. The three facts remain owned by their separate contexts; technical consistency/recovery is not decided here.
 
-## 7. First delivery frontier
+## 8. Shared Money, quantity, time, and history rules
 
-Tenant Management, Merchant Access, and Catalog remain specified at implementation-refinement depth in the linked documents.
+### Money (`PD-002`)
 
-Important consequences for the current candidate backlog:
+- merchant-commerce MVP is VND-only;
+- Money always carries explicit currency;
+- VND uses whole đồng;
+- no currency conversion exists in MVP.
 
-- registration must produce a usable tenant with an initial active Owner as one business outcome; TASK-0006 through TASK-0008 currently split that outcome circularly and must be reconciled before any becomes Ready;
-- verified authentication and active membership are separate checks;
-- a user-supplied TenantId never selects authority;
-- Product is the Catalog aggregate root; Category and Brand are independent tenant-owned reference aggregates;
-- Catalog owns publication eligibility and base selling price, but not stock, final order price, accounting cost, or SaaS plan pricing;
-- public availability requires `Published`, while stock availability remains an Inventory concern;
-- exact human decisions that still gate a candidate task are listed by decision ID rather than embedded by a Builder;
-- TASK-0091 does **not** silently make Subscription part of the existing Tenant onboarding transaction. Whether registration starts a trial/selects a plan, whether a Tenant may exist without an Active subscription, and when first entitlements become effective are `PD-043` and must be resolved before a subscription-coupled onboarding task can become Ready.
+Subscription SaaS charges are also VND whole đồng under `PD-046`, but remain separate commercial truth.
 
-## 8. Medium-depth runway
+### Quantity (`PD-012`)
 
-Sales, Inventory, Payments, Procurement, Accounting, Reporting, Product Data Ingestion, Customer/CRM, Pricing, Notification, Audit, and Files/Media are refined in [Commerce Operations and Cross-Domain Facts](domains/commerce-operations.md).
+MVP order/reservation/receipt/issue quantities are positive whole units only. No fractional quantity/unit conversion exists.
 
-Subscription & Billing is refined separately in [Subscription & Billing Domain Baseline](domains/subscription-billing.md) because it is a newly explicit platform-commercial capability that cross-cuts multiple tenant-owned domains without taking ownership of them.
+### Tenant business date (`PD-031`, `PD-039`)
 
-The runway is sufficient to establish:
+- Tenant Business Profile IANA timezone defines operational business day;
+- operational corrections are attributed to occurrence business date and reference original facts;
+- Accounting financial reports use Journal `EffectiveDate`;
+- source occurrence, Journal EffectiveDate, and PostingTimestamp remain distinct.
 
-- who owns each source fact;
-- which state dimensions must not be conflated;
-- which business invariant a future integration must preserve;
-- which apparent event names are requests or technical states rather than accepted facts;
-- how effective entitlements remain independent of marketing plan-name checks;
-- how downgrade preserves existing business data when target limits are lower than current usage;
-- where a human product/accounting/subscription policy decision must precede task readiness.
+### Historical truth
 
-It is not intended to finalize detailed behavior for distant unscheduled features.
+- aggregate identities are immutable/non-reused;
+- mutable labels/slug/names never replace canonical identity;
+- accepted Order/PO/receipt/PlanVersion/Entitlement/journal history is not rewritten later;
+- corrections are explicit new facts, not destructive edits.
 
-## 9. Business error semantics
+## 9. Catalog baseline consequences
 
-Domain outcomes are stable business meanings, not HTTP status codes or exception classes.
+Approved Catalog MVP policy includes:
+
+- SKU optional at Draft creation, required before first publication;
+- normalized SKU Tenant-unique case-insensitively;
+- SKU immutable after first publication and never reusable after Product Archive;
+- publish requires Name + SKU + valid Money; zero price allowed;
+- Category, Brand, description, and media optional for publication;
+- stock is not a publication prerequisite;
+- editing Published updates current canonical/public projection directly;
+- Published may Archive directly; Archived is terminal/no restore/republish;
+- ProductId canonical identity plus Tenant-scoped mutable public slug; no historical redirects required;
+- Product has zero/one flat Category and zero/one Brand; references may be retired non-destructively;
+- public media uses merchant uploads managed by CommerceOS only; no arbitrary external copy/hotlink;
+- public Product may expose approved specifications/SKU/Category/Brand/media while excluding advisory cost/raw ingestion/internal history/private metadata;
+- one external source-product identity maps to at most one canonical Product per Tenant; ImportCandidate has explicit Ready/Approved/Applied/Rejected/Superseded lifecycle.
+
+Owner/Admin manage/publish Catalog; there is no separate MVP “catalog manager” role.
+
+## 10. Commerce operations baseline
+
+### Canonical checkout/order sequence (`PD-011`–`PD-018`, `PD-041`, `PD-042`)
+
+```text
+authoritative Catalog/Pricing validation
+        ↓
+price changed? ──yes──► shopper reconfirmation required; no Order placed
+        │ no
+        ▼
+OrderPlaced
+        ↓
+all-line Inventory reservation
+        ↓
+full immediate Payment capture attempt
+      ┌─┴──────────────────────────────┐
+      │                                │
+definitive no-commit              OutcomeUnknown
+attempt may retry             stock remains held
+      │                      reconciliation required
+      └──────────────► verified PaymentCaptured
+                              ↓
+                       OrderConfirmed
+                              ↓
+                       OrderAllocated
+                              ↓
+                  whole-order StockIssued/fulfillment
+                              ↓
+                       OrderFulfilled
+                              ↓
+                    Completed when no exception remains
+```
+
+MVP rules:
+
+- no manual authoritative guest-checkout discount;
+- all-or-nothing allocation/fulfillment;
+- no partial allocation, split shipment, or backorder;
+- one Payment obligation per Order with multiple immutable attempts;
+- definitive decline/no-commit terminates an attempt only;
+- `OutcomeUnknown` blocks a new capture attempt and time alone never releases held stock;
+- Inventory enforces `OnHand >= 0`, `Available >= 0`, `Available = OnHand - Reserved`;
+- downward adjustment cannot consume already Reserved stock;
+- Owner/Admin/Staff may cancel before Fulfilled; cancellation does not itself prove refund/release.
+
+### Guest data (`PD-035`)
+
+Guest checkout creates no shopper/CRM account. Sales keeps immutable per-Order contact/fulfillment snapshot, with name/email required and phone/address only when fulfillment requires them. No automatic profile matching or historical rewrite.
+
+## 11. Procurement and Accounting baseline
+
+### Procurement
+
+- Supplier has Tenant-owned stable identity plus Active/Archived status;
+- Draft or Published Products may be purchased; Archived Product may not enter a new PO;
+- submitted PO is immutable and cancellable only before GoodsReceipt/Invoice/Payment evidence;
+- confirmed GoodsReceipt is immutable; correction uses explicit compensating receipt evidence;
+- exactly one SupplierInvoice and one full SupplierPayment per PO in MVP;
+- invoice follows full receipt; exact match auto-accepts, variance requires explicit merchant approval;
+- SupplierPayment is merchant attestation, not bank execution.
+
+### Accounting learning/MVP policy
+
+Accounting is enabled for each Tenant with platform-defined required control roles including Cash, Customer Deposits, Sales Revenue, Inventory, COGS, AP, GRNI, PPV, Inventory Adjustment Gain/Loss.
+
+Core postings/business triggers:
+
+- `PaymentCaptured` → Cash / Customer Deposits;
+- `OrderFulfilled` → Customer Deposits / Sales Revenue;
+- moving weighted-average inventory valuation lives in Accounting;
+- `StockIssued` is the single COGS trigger → COGS / Inventory;
+- accepted receipt accounting uses Inventory / GRNI;
+- `SupplierInvoiceRecorded` clears GRNI to AP with approved variance to PPV;
+- `SupplierPaymentRecorded` → AP / Cash;
+- physical stock adjustments post explicit gain/loss effects;
+- journals are balanced, immutable, idempotent by source, and corrected through reversal/compensating entries.
+
+`PD-023` remains deferred: refund/return accounting must not be invented from PaymentRefunded/StockReturned/Sales refund state.
+
+## 12. Reporting, Ingestion, Notification, and Audit
+
+### Reporting
+
+Operational KPI sources are explicit:
+
+- Order count = `OrderConfirmed` count;
+- AOV = confirmed OrderTotal sum / confirmed-order count;
+- Top products = confirmed whole-unit quantity by Product snapshot;
+- failed-payment rate excludes `OutcomeUnknown` and uses terminal attempt outcomes;
+- operational Gross Sales = confirmed OrderTotal sum and is never Accounting revenue.
+
+Reporting is projection only, never command/entitlement authority.
+
+### Product Data Ingestion
+
+Base source policy review is platform-owned. Authorized platform admins mark policy Current/global enablement; Tenant Owner/Admin may opt an approved source in/out but cannot override policy. Material source/API/terms/robots/auth policy changes can stale the review; no arbitrary time-only expiry.
+
+PDI snapshots/candidates never directly mutate Catalog.
+
+### Notification
+
+Notification read/acknowledgement state is per recipient. Owner/Admin receive appropriate critical tenant-level security/billing/accounting/operational exceptions; Staff receive permitted operational notifications; Viewer receives no actionable notification in MVP. Acknowledging notification never resolves source business exception.
+
+### Audit
+
+Audit records successful/rejected privileged mutations, security administration, accounting corrections, subscription/admin actions, and security-significant tenant-isolation denials. Tenant Audit is readable by Owner/Admin only and must not leak cross-Tenant existence/identifiers.
+
+## 13. Subscription & Billing baseline
+
+### Plan/terms
+
+Plan has stable identity and immutable accepted PlanVersions. Accepted version is never edited in place and may later be withdrawn from new sale without rewriting history.
+
+Exact `Starter`/`Growth`/`Business` price/entitlement packages remain deferred under `PD-044`; Enterprise/custom pricing is out of MVP.
+
+### Trial/paid periods
+
+- successful registration starts 30-day no-card Trial;
+- paid MVP cycle is monthly only with explicit billing anchor and month-end fallback;
+- SaaS charges are VND whole đồng;
+- no tax calculation, statutory invoice, currency conversion, or proration in learning MVP.
+
+### Upgrade
+
+Upgrade is immediate only after required PlatformCharge has verified successful outcome. Successful mid-period upgrade starts a fresh monthly paid period and a new effective EntitlementSet; unused prior-period value is not credited. Declined/Unknown charge leaves existing terms authoritative.
+
+### Downgrade
+
+Downgrade schedules for next renewal boundary. Authoritative owning-domain usage is revalidated. If current usage exceeds target hard limit, downgrade is `BlockedByUsage/RemediationRequired`; lower entitlements do not become effective and current terms continue. No foreign-domain data/resource is auto-deleted/disabled.
+
+### Cancellation/delinquency/end
+
+- merchant cancellation means cancel renewal at paid period end;
+- definitive renewal failure → `PastDue` with 7-day grace and existing entitlements continue;
+- `OutcomeUnknown` is not PastDue;
+- grace expiry without successful renewal → `Ended`;
+- Ended disables ordinary mutations, scheduled automation, and public commerce, while authenticated read/history/export/recovery remains;
+- ending Subscription does not delete Tenant/data/Memberships;
+- reactivation starts new accepted period/history.
+
+### Entitlement categories
+
+- capability flags: hard command-boundary gates;
+- counted resource limits such as MaxActiveStaff/MaxWarehouses: hard growth/activation gates only; existing resources preserved for remediation;
+- order-volume meter: idempotent `OrderConfirmed` count in current billing period, warning-only and never blocks shopper checkout;
+- overage billing absent;
+- `Unlimited` explicit.
+
+### SaaS billing provider/admin
+
+MVP uses a dedicated simulated SaaS billing-provider seam supporting success, no-commit/decline, `OutcomeUnknown`, duplicates, retry/idempotency, query/reconciliation, and out-of-order evidence. No real money/card/bank data.
+
+Platform-admin Subscription/Billing support is read-only visibility; no plan/charge/entitlement override backdoor exists.
+
+## 14. Source-of-truth questions
+
+| Business question | Authoritative context |
+|---|---|
+| Does Tenant exist and what Profile/status does it have? | Tenant Management |
+| May authenticated subject act for selected Tenant? | Merchant Access |
+| Which Subscription/terms/EntitlementSet govern Tenant now? | Subscription & Billing |
+| How many Active Memberships exist? | Merchant Access |
+| How many Warehouses / what stock exists? | Inventory |
+| What Product/base price/public eligibility exists? | Catalog |
+| What price did shopper agree to? | Sales immutable snapshot |
+| What was ordered/commercial state? | Sales |
+| What merchant-order payment outcome is verified/unknown? | Payments |
+| What physical stock quantity effect occurred? | Inventory |
+| What supplier commitment/receipt/invoice/payment evidence exists? | Procurement |
+| What has been posted to merchant books / inventory valuation? | Accounting |
+| What did external source show? | Product Data Ingestion |
+| What CommerceOS SaaS charge/subscription billing outcome is known? | Subscription & Billing |
+| What is a dashboard/KPI value? | Reporting projection only |
+
+## 15. Cross-cutting invariants
+
+1. tenant-owned aggregate has one immutable owning TenantId;
+2. client identifiers never create authority;
+3. one bounded context never mutates another context's source truth as a shortcut;
+4. requests/intents are not success facts;
+5. projections/UI/cache do not authorize transactional writes;
+6. source replay cannot duplicate logical side effects;
+7. external timeout/unknown outcome is never guessed into success/failure;
+8. historical accepted commercial/accounting evidence is append-oriented/non-destructive;
+9. Subscription/Tenant/Membership/Payment/Order/Inventory/Accounting state dimensions remain independent;
+10. downgrade/suspension/subscription end never silently destroy foreign-domain data;
+11. posted journal balances and immutability are mandatory;
+12. Inventory zero-floor/Reserved invariants are concurrency-critical business requirements;
+13. every hard entitlement write uses current trusted entitlement plus authoritative owning-domain state;
+14. public commerce and ordinary mutations require applicable effective subscription entitlements, while approved read/history/export/recovery remains distinct.
+
+## 16. Business error semantics
+
+Domain errors are stable business outcomes, not HTTP status codes/exceptions.
+
+Common families:
 
 | Outcome family | Meaning |
 |---|---|
-| ValidationRejected | supplied business values are invalid; no change is accepted |
-| NotFoundOrNotVisible | the aggregate is absent or not visible in the trusted tenant context; cross-tenant existence is not disclosed |
-| NotAuthorized | the actor lacks the required business permission in the trusted context |
-| Conflict | a uniqueness or mutually exclusive business claim already exists |
-| StaleRevision | the attempted change was based on an older aggregate revision |
-| InvalidStateTransition | the requested action is not allowed from the aggregate's current state |
-| AlreadyApplied | the same logical intent was already accepted and its prior result is returned or referenced |
-| OutcomeUnknown | the caller cannot yet know whether an external/independent boundary committed; it is not converted into failure |
-| PolicyBlocked | a governing merchant/platform/source/subscription policy prohibits the action |
-| EntitlementDenied | the trusted effective subscription terms do not grant the requested capability |
-| EntitlementLimitReached | an approved hard limit rejects the requested increase using authoritative current usage/state |
-| DowngradeBlockedByUsage | target hard limits are below current authoritative usage and downgrade cannot safely become effective |
+| `ValidationRejected` | supplied business values invalid; no accepted change |
+| `NotFoundOrNotVisible` | absent/not visible in trusted Tenant context; cross-Tenant existence not disclosed |
+| `NotAuthorized` | actor lacks required Membership/role/domain authority |
+| `TenantSelectionRequired` | several eligible Tenants exist and no intentional active Tenant is resolved |
+| `SubscriptionOrEntitlementDenied` | current trusted commercial entitlement does not permit protected operation |
+| `Conflict` | uniqueness/idempotency/business claim conflicts |
+| `StaleRevision` | attempted update based on older accepted aggregate state |
+| `InvalidStateTransition` | requested transition is not approved from current state |
+| `AlreadyApplied` | equivalent logical intent/source already accepted; prior result is referenced |
+| `OutcomeUnknown` | independent external commit outcome cannot currently be proven |
+| `RemediationRequired` | requested downgrade/change cannot become effective until owning-domain usage is remediated |
+| `HumanProductDecisionRequired` | implementation reached one of the intentionally deferred product-policy scopes |
 
-Context-specific error codes are documented in the detailed baselines. Technical transport mappings belong to Technical Architecture.
+Technical Architecture decides transport representation.
 
-## 10. Decision and handoff rule
+## 17. Remaining human product-decision gates
 
-The [Human Product Decisions](domains/product-decisions.md) register is part of this baseline. A pending decision does not authorize a default.
+### `PD-004`
 
-- If a pending decision is marked as a blocker for a candidate task, that task cannot pass the Ready gate.
-- Technical design must preserve the alternatives until the human decision is recorded.
-- Distant decisions may remain deferred when they cannot affect the first implementation frontier.
-- Decisions that change this baseline must update the affected domain document and the register; chat-only conclusions are insufficient.
-- Subscription & Billing decisions `PD-043` through `PD-053` govern trial/acquisition, plan/version policy, billing cycle/currency/tax/proration, upgrade/downgrade, cancellation/delinquency/retention, limit enforcement, order-volume behavior, provider strategy, and platform-admin override authority.
-- TASK-0092 must reconcile module/contracts/persistence/integration/security/reliability architecture against the extended domain baseline without resolving those product decisions through technical convenience.
-- TASK-0089 must then reconcile Backlog V2 and keep every `PD-*`-gated implementation task non-Ready until its decision gate is satisfied.
+**HUMAN PRODUCT DECISION REQUIRED** only when work needs exact Suspended read/support semantics beyond the safe restriction, or Tenant closure/deletion/retention/recovery/privacy behavior.
+
+### `PD-023`
+
+**HUMAN PRODUCT DECISION REQUIRED** before exact refund/return Accounting postings and revenue/COGS/restock correction policy are implemented.
+
+### `PD-044`
+
+**HUMAN PRODUCT DECISION REQUIRED** before exact Starter/Growth/Business prices or entitlement/limit packages are exposed/sold/seeded/hard-coded as product truth.
+
+No other current `PD-*` remains an unresolved Domain Architect product gate.
+
+## 18. Downstream reconciliation required
+
+The final product-decision pass occurred **after** the previous TASK-0092 technical baseline. Therefore the Technical Architect must reconcile technical artifacts against this updated business baseline before affected implementation tasks become Ready.
+
+Priority technical rechecks include:
+
+- multi-Tenant Membership selection and one-role authorization;
+- onboarding consistency across Tenant + Owner + automatic Trial;
+- invitation verified-email/rotation/expiry behavior;
+- Catalog SKU/slug/lifecycle/reference/media/import rules;
+- checkout reconfirmation and reserve→capture→confirm→allocate sequence;
+- PaymentAttempt/OutcomeUnknown/reconciliation and stock hold;
+- Inventory zero-floor/reserved invariants;
+- immutable Procurement evidence;
+- Accounting trigger/valuation/GRNI/date semantics;
+- Subscription monthly periods, upgrade/downgrade/PastDue/end, entitlement categories, SaaS provider simulation, and read-only platform support.
+
+After Technical Architecture reconciliation, Backlog Planner must reconcile candidate tasks and readiness. Resolved product decisions should no longer remain artificial blockers; deferred `PD-004`, `PD-023`, and exact `PD-044` scope must remain explicit gates.
+
+The Domain Architect does not mark implementation tasks Ready.
+
+## 19. Acceptance statement
+
+The current business/domain baseline now:
+
+- represents all approved product decisions in bounded-context ownership and invariants;
+- distinguishes source truth, intent, projection, provider evidence, and Audit evidence;
+- records the approved aggregate/lifecycle semantics needed by the current backlog;
+- preserves cross-domain ownership rather than absorbing responsibility for convenience;
+- explicitly surfaces the three remaining deferred human product-policy areas;
+- gives actionable handoff to Technical Architect and Backlog Planner;
+- introduces no application code, AWS, persistence, API, or deployment choice.
+
+**Stop condition: DOMAIN BASELINE EXTENDED AND RECONCILED.**
