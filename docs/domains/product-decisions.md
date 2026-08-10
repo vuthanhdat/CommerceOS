@@ -69,15 +69,17 @@ Unless an entry says otherwise, resolved decisions below still require **Domain 
 
 ### PD-004 — Tenant suspension, reactivation, and closure behavior
 
-- **Status:** Deferred until platform administration/privacy refinement
+- **Status:** Resolved for MVP
 - **Question:** What can staff, shoppers, and support personnel read or do while a Tenant is Suspended? Is closure supported, and what retention/recovery behavior applies?
-- **Interim human direction:** While Suspended, ordinary merchant mutations and public commerce are denied. Suspension does not delete Tenant data, Memberships, Subscription, Orders, accounting history, or other business evidence. Reactivation restores ordinary eligibility subject to all other independent business constraints. Tenant closure, deletion, retention windows, recovery windows, and privacy/legal erasure semantics remain deferred.
-- **Rationale:** Minimal suspension semantics are needed to keep current authorization deterministic, but closure/retention couples product policy to accounting, billing, audit, privacy, legal, and recovery requirements that are not needed at the current frontier. Deferring them avoids inventing irreversible lifecycle behavior too early.
-- **Decision gate:** before TASK-0068 or any earlier suspension capability becomes Ready.
-- **Affected tasks:** TASK-0068 and later lifecycle/privacy work; TASK-0007 must at least reject ordinary Suspended-tenant work.
-- **Safe interim constraint:** Suspended denies ordinary merchant/public commerce; it does not delete data or silently disable/reactivate Memberships.
-- **Approved by:** CommerceOS human Product Owner for interim direction only
+- **Decision:** MVP Tenant lifecycle contains only `Active` and `Suspended`; Tenant closure, hard deletion, automatic retention expiry, and privacy/legal erasure are not supported in MVP. Suspension and reactivation are explicit platform-administration actions rather than merchant self-service, require a reason, and produce Audit evidence. While Suspended, public storefront/checkout is unavailable and all ordinary merchant mutations are denied. Authenticated Memberships remain intact and may use controlled read-only access according to their existing role visibility: Owner/Admin may inspect tenant history, operational data, billing/support/recovery information and the Audit views they are otherwise authorized to read; Staff/Viewer may read only the data their normal role permits and cannot perform operational mutations. Authorized platform support/administration may use an explicit privileged read-only investigation path; that path never turns the platform actor into a Tenant Membership. Reactivation restores Tenant eligibility only and does not reactivate a Disabled Membership, Ended Subscription, or any other independent lifecycle. Suspended Tenant data is retained indefinitely in the MVP until a future explicit privacy/retention policy supersedes this rule.
+- **Rationale:** A two-state lifecycle gives suspension real administrative meaning while keeping merchant data and independent domain history non-destructive. Platform-only suspend/reactivate prevents a merchant from bypassing a platform safety/administrative restriction. Controlled read-only access supports investigation, export, and recovery without reopening commerce. Excluding closure/deletion/retention timers avoids prematurely coupling Tenant lifecycle to legal/privacy/accounting retention and destructive cleanup workflows.
+- **Decision gate:** Resolved for MVP; any future Tenant closure, destructive deletion, timed retention, or privacy-erasure capability requires a new explicit product/privacy decision.
+- **Affected tasks:** TASK-0007, TASK-0068 and later platform-administration/support/lifecycle work.
+- **Approved policy constraint:** Suspended blocks public commerce and ordinary merchant mutations but does not delete data, disable Memberships, end Subscription, or rewrite business evidence; only explicit authorized platform administration may suspend/reactivate in MVP.
+- **Approved by:** CommerceOS human Product Owner
 - **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** `docs/domains/tenant-identity.md`, `docs/02-business-domains.md`, `docs/domains/product-decision-reconciliation.md` in the same Domain Architect reconciliation pass.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-005 — SKU requiredness, mutability, and reuse
 
@@ -643,15 +645,17 @@ Accounting policies below define the **CommerceOS learning/MVP accounting model*
 
 ### PD-044 — Plan catalog, versioning, accepted terms, and commercial package policy
 
-- **Status:** Deferred for exact commercial catalog/pricing; structural policy approved
+- **Status:** Resolved for MVP
 - **Question:** Which initial plans/prices/terms are offered, how are versions retired, may accepted versions be edited, and is Enterprise/custom pricing in scope?
-- **Interim human direction:** `Starter`, `Growth`, and `Business` remain candidate marketing packages only until a deliberate pricing exercise approves exact prices and entitlements; `Enterprise`/custom pricing is out of MVP. Domain design must use stable Plan identity plus immutable accepted PlanVersion/terms. Once a PlanVersion has been accepted by any Subscription it is never edited in place; changes require a new version. Plan versions may be withdrawn from new purchase without rewriting existing subscriptions/history.
-- **Rationale:** Architecture needs immutable version semantics now, but inventing commercial prices/limits provides no engineering value and would falsely turn hypotheses into product truth. Deferring only the sellable catalog preserves flexibility without blocking the domain model.
-- **Decision gate:** exact plan-selection/pricing/entitlement-definition tasks remain non-Ready until this commercial sub-decision is resolved.
-- **Affected tasks:** future plan/subscription/entitlement UI and pricing tasks.
-- **Safe interim constraint:** marketing plan names/prices are never hard-coded into unrelated domains; accepted terms/history are immutable.
-- **Approved by:** CommerceOS human Product Owner — delegated defer/structural direction
+- **Decision:** MVP offers three monthly paid Plans with VND whole-đồng prices: `Starter` = **199,000 VND/month**, `Growth` = **499,000 VND/month**, and `Business` = **999,000 VND/month**. All three plans include the same core CommerceOS capabilities: Catalog, Storefront, Orders/Sales, Inventory, Procurement, Accounting, and Reporting. They differentiate primarily by scale and automation, not by removing core domains. The initial immutable PlanVersion entitlement matrix is: Starter — `MaxActiveMemberships=3`, `MaxWarehouses=1`, `ScheduledProductIngestion=false`, `OrderVolumeWarningThreshold=500`; Growth — `MaxActiveMemberships=10`, `MaxWarehouses=3`, `ScheduledProductIngestion=true`, `OrderVolumeWarningThreshold=2000`; Business — `MaxActiveMemberships=30`, `MaxWarehouses=10`, `ScheduledProductIngestion=true`, `OrderVolumeWarningThreshold=10000`. `MaxActiveMemberships` counts all Active Memberships regardless of role. Order-volume thresholds remain warning-only under `PD-051`, never checkout gates or overage billing. The 30-day Trial uses its own Trial terms rather than aliasing a paid Plan: all core capabilities enabled, `MaxActiveMemberships=3`, `MaxWarehouses=1`, `ScheduledProductIngestion=true`, and `OrderVolumeWarningThreshold=500`, so merchants can evaluate automation during Trial. Trial expiry does not silently convert to Starter; merchant must enter an accepted paid-plan flow. Plan identity is stable and accepted PlanVersion/terms are immutable; price/entitlement changes require a new PlanVersion, and a version may be withdrawn from new sale without rewriting existing Subscription history. `Enterprise`/custom pricing remains out of MVP. Entitlements not explicitly listed in this approved initial catalog are not implicitly granted or sold.
+- **Rationale:** One shared core product avoids creating three different business topologies that would multiply authorization, testing, accounting, and support complexity. Scale limits plus scheduled automation create understandable upgrade value while preserving one consistent commerce model. The 199k/499k/999k ladder is an MVP commercial baseline for exercising real subscription/billing/versioning semantics, not a claim of market-validated pricing; immutable PlanVersion allows later pricing experiments without rewriting accepted terms. Trial intentionally exposes automation so the merchant can evaluate a meaningful Growth differentiator before purchase.
+- **Decision gate:** Resolved for the initial MVP commercial catalog; future price/limit/package changes use new PlanVersions and do not require rewriting this historical decision unless the product policy itself changes.
+- **Affected tasks:** plan selection/pricing UI, Subscription activation/change flows, EntitlementSet seeding/configuration, usage display, downgrade validation, Trial onboarding, billing statements/PlatformCharge presentation.
+- **Approved policy constraint:** plan name alone never authorizes operations; current immutable EntitlementSet is authority. Core domains are available on all paid plans; resource limits are hard growth/activation limits; order volume is warning-only; Trial is dedicated terms and does not auto-convert to Starter.
+- **Approved by:** CommerceOS human Product Owner
 - **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** `docs/domains/subscription-billing.md`, `docs/domains/tenant-identity.md`, `docs/02-business-domains.md`, `docs/domains/product-decision-reconciliation.md` in the same Domain Architect reconciliation pass.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-045 — Billing-cycle and subscription-period policy
 
