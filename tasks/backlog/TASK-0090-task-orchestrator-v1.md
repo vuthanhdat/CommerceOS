@@ -1,9 +1,9 @@
 # TASK-0090 — Build Task Orchestrator V1
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — requirement revision is in progress; promote to Ready only after final Backlog Planner recheck
-Owner: Engineering / Harness
+Specification maturity: Ready
+Execution permission: YES
+Owner: Builder — Engineering / Harness
 Recommended implementation model: default implementation model; escalate only when implementation exposes a new architecture/security decision
 Created: 2026-08-10
 Updated: 2026-08-10
@@ -56,7 +56,7 @@ Local Dashboard ──read/control──► Orchestrator Core
 
 ## Authority and planning boundary
 
-TASK-0089 is complete and the canonical metadata/DAG contract now exists in:
+TASK-0089 is complete and the canonical metadata/DAG contract exists in:
 
 - `tasks/BACKLOG.v2.yaml`;
 - `tasks/backlog-v2/*.yaml`;
@@ -119,7 +119,7 @@ Local runtime state must never silently override canonical task maturity, depend
 
 ### 1. Deterministic DAG loader and validator
 
-- read the canonical Backlog V2 metadata;
+- read canonical Backlog V2 metadata;
 - validate task IDs, required metadata, dependency references, lifecycle/maturity values, gates, and spec references;
 - reject duplicate canonical task IDs;
 - detect missing dependencies and dependency cycles;
@@ -275,76 +275,47 @@ Provide a local dashboard, served only on the developer machine, for observabili
 
 The dashboard must expose at minimum:
 
-#### Overview
-
 - Orchestrator state: `IDLE`, `RUNNING`, `STOP_REQUESTED`, `STOPPING`, `STOPPED`, `HUMAN_REQUIRED`;
-- canonical backlog totals by maturity/lifecycle;
+- canonical backlog totals and completed/total progress;
 - Ready frontier;
-- completed/total progress;
 - active Builder/Reviewer counts;
-- merge queue length;
-- blocker count;
-- recent activity timeline.
-
-#### Task tracking
-
-For a selected task show at minimum:
-
-- task id/title/spec link;
-- canonical maturity/lifecycle;
-- current execution state/lane;
-- dependencies and gates;
+- merge queue and blockers;
+- recent activity timeline;
+- task id/title/spec, maturity/lifecycle and execution lane;
+- dependencies/gates;
 - branch/worktree;
 - agent role/model class;
 - attempt/fix-loop count;
-- current and previous verification results;
-- review findings/status;
-- merge/integration status;
-- structured blocker reason when present;
-- relevant logs/timeline.
+- verification/review/merge status;
+- structured blocker reason;
+- relevant logs/timeline;
+- a readable DAG/progress visualization distinguishing Outline/Refined, Ready, Active, Reviewing/Merging, Completed, and Blocked/Human Required.
 
-#### DAG/progress view
-
-Provide a readable task graph or equivalent dependency/progress visualization that distinguishes at least:
-
-- Outline/Refined;
-- Ready;
-- Active;
-- Reviewing/merging;
-- Completed;
-- Blocked/Human Required.
-
-#### Thin-client boundary
-
-The UI must not implement readiness calculation, dependency resolution, retry policy, task completion semantics, or merge decisions. Those live in Orchestrator Core and are exposed to the UI through an explicit local read/control boundary.
+The UI must not implement readiness calculation, dependency resolution, retry policy, task completion semantics, or merge decisions. Those live in Orchestrator Core and are exposed through an explicit local read/control boundary.
 
 The UI is local-only. Authentication, internet exposure, multi-user tenancy, and remote orchestration control are out of scope for V1.
 
-### 13. Graceful Stop button — finish current active task(s), then stop
+### 13. Graceful Stop — finish current active task(s), then stop
 
 The dashboard must provide a prominent **Stop** action with graceful-drain semantics.
 
-When the operator clicks **Stop**:
+When the operator clicks **Stop** or invokes the equivalent CLI command:
 
-1. the Orchestrator atomically records a persistent `STOP_REQUESTED` intent;
-2. the scheduler **immediately stops dispatching any new Ready task**;
-3. no new Builder task may be claimed after the stop request is accepted;
-4. every task that was already Active at the moment of the stop request is allowed to continue through its normal bounded lifecycle until it reaches a safe terminal point:
-   - Completed on authoritative `main`, or
-   - Blocked / Human Required when completion cannot safely continue;
-5. required verification, Reviewer/fix-loop work, merge queue processing, and post-integration verification for those already-active tasks continue because they are part of finishing the current task rather than starting new backlog work;
-6. when all tasks that were Active at stop-request time reach a safe terminal point and the merge lane is drained for them, the Orchestrator transitions to `STOPPED`;
-7. tasks that become Ready as a consequence of those completions remain undispatched while stopped;
-8. the Stop request survives process restart so `resume` cannot accidentally start fresh work unless the operator explicitly starts/resumes scheduling again.
+1. atomically persist `STOP_REQUESTED`;
+2. immediately stop dispatching any new Ready task;
+3. claim no new Builder task after the stop request is accepted;
+4. allow every task already Active at stop-request time to continue through its normal bounded lifecycle until it reaches a safe terminal point: Completed on authoritative `main`, Blocked, or Human Required;
+5. continue required verification, Reviewer/fix-loop work, merge processing, and post-integration verification for those already-active tasks because these steps finish current work rather than start new backlog work;
+6. transition to `STOPPED` only after all tasks active at stop-request time reach a safe terminal point and their required merge-lane work is drained;
+7. leave tasks newly unlocked by those completions undispatched;
+8. persist stop intent across process restart so recovery cannot accidentally claim fresh Ready work until explicit operator resume/start.
 
-With the default two-Builder configuration, if two tasks are already Active when Stop is clicked, **both currently active tasks finish**; the Orchestrator does not arbitrarily kill one of them.
-
-Conceptual behavior:
+With the default two-Builder configuration, if two tasks are already Active when Stop is requested, **both currently active tasks finish**. The Orchestrator does not arbitrarily kill one.
 
 ```text
 RUNNING
    │
-   │ operator clicks Stop
+   │ Stop
    ▼
 STOP_REQUESTED
    │
@@ -352,10 +323,10 @@ STOP_REQUESTED
    │
    └── drain tasks already Active
            │
-           ├── Builder/fix if required
+           ├── Builder/fix
            ├── verification
            ├── review
-           ├── integration/merge if safe
+           ├── integration/merge when safe
            └── Completed | Blocked | Human Required
                      │
                      ▼
@@ -364,7 +335,7 @@ STOP_REQUESTED
 
 Stop is **not** an emergency process kill and must not abandon a worktree mid-write, skip verification, or leave a partially integrated `main` merely to stop quickly.
 
-A hard-abort/emergency-kill control is not required for V1. OS/process termination may still occur externally and is handled by normal resume/recovery semantics.
+A hard-abort/emergency-kill control is not required for V1. External process termination is handled by normal resume/recovery semantics.
 
 ### 14. CLI / developer experience
 
@@ -383,14 +354,12 @@ ui           start/open the local monitoring dashboard
 start        start the Orchestrator and local dashboard together
 ```
 
-`run`/`start` should continue advancing the DAG automatically rather than requiring one invocation per task.
-
-The CLI and dashboard must use the same Orchestrator Core semantics; neither is a second scheduler implementation.
+`run`/`start` continue advancing the DAG automatically rather than requiring one invocation per task. CLI and dashboard use the same Orchestrator Core semantics.
 
 ## Out of scope
 
 - changing product/domain/technical architecture;
-- generating or semantically refining the canonical Backlog V2;
+- generating or semantically refining canonical Backlog V2;
 - replacing Backlog Planner reasoning with scheduler logic;
 - using an LLM to decide DAG eligibility/dependency satisfaction;
 - automatically invoking a Planner agent to invent new task semantics in V1;
@@ -409,91 +378,68 @@ The CLI and dashboard must use the same Orchestrator Core semantics; neither is 
 ## Acceptance criteria
 
 ### AC01 — Invalid DAG fails closed
-
 Invalid/missing dependencies, cycles, duplicate task IDs, malformed execution state, or unsupported canonical metadata cause validation failure with actionable diagnostics and no Codex dispatch.
 
 ### AC02 — Ready frontier is mechanical
-
 Only canonical Ready/Backlog tasks whose dependencies/gates/exclusive-resource constraints are satisfied are dispatchable. Numeric ordering and Markdown detail do not grant eligibility.
 
 ### AC03 — Parallel work is bounded
-
 At most two writable Builder tasks and the configured bounded Reviewer count may run concurrently; declared exclusive-resource conflicts prevent unsafe co-scheduling; merge concurrency is exactly one.
 
 ### AC04 — Worktree isolation
-
 Independent writable tasks use isolated branches/worktrees and do not modify feature code from the primary `main` checkout.
 
 ### AC05 — Dry-run is side-effect free
-
 Dry-run reports intended tasks, roles, model classes, worktrees, gates, control state, verification, and merge actions without launching Codex, mutating Git/run state, pushing, or invoking AWS.
 
 ### AC06 — Codex execution is testable without quota
-
 The runner has a fake/test implementation sufficient to exercise scheduler, state transitions, verification/review loops, Stop behavior, and merge orchestration without invoking Codex.
 
 ### AC07 — Verification failures enter bounded repair
-
 A Builder result that fails deterministic verification cannot advance to review/merge; diagnostics are preserved and bounded repair is attempted before Human Required.
 
 ### AC08 — Independent review is mandatory
-
 A Builder-produced change cannot enter the merge queue until required deterministic verification and independent review pass according to policy.
 
 ### AC09 — Integration is serialized and verified on latest main
-
 Only one task integrates at a time, integration uses latest `main`, no force-push occurs, and post-integration verification must pass before authoritative completion.
 
-### AC10 — Completion unlocks the DAG only after authoritative merge
-
+### AC10 — Completion unlocks DAG only after authoritative merge
 An agent claim, local commit, or locally green branch does not count as Completed. Dependents unlock only after the verified result and required completion record are on authoritative `main`.
 
 ### AC11 — Retry exhaustion fails safely
-
-Builder/Reviewer/Conflict-Resolver loop exhaustion produces a persistent, inspectable Human Required/Blocked state instead of infinite retry or silent acceptance.
+Builder/Reviewer/Conflict-Resolver loop exhaustion produces a persistent inspectable Human Required/Blocked state instead of infinite retry or silent acceptance.
 
 ### AC12 — Dashboard shows current system state
-
 The local dashboard reflects Orchestrator Core state for Ready, Active, Reviewing, Merge Queued/Integrating, Completed, and Blocked/Human Required tasks; it exposes progress, lane utilization, task detail, logs/timeline, and blockers without duplicating scheduler logic in the UI.
 
 ### AC13 — Dashboard and CLI share one control model
-
 Starting/stopping/status operations through CLI and UI observe the same persisted Orchestrator state and cannot create contradictory scheduler state.
 
 ### AC14 — Stop rejects new dispatch immediately
-
-Given one or more tasks are Active and additional Ready work exists,
-when the operator clicks Stop or runs the equivalent CLI command,
-then `STOP_REQUESTED` is persisted and no new Ready task is dispatched after that request is accepted.
+Given one or more tasks are Active and additional Ready work exists, when Stop is accepted, `STOP_REQUESTED` is persisted and no new Ready task is dispatched afterward.
 
 ### AC15 — Stop drains already-active tasks safely
-
-Given tasks were already Active when Stop was requested,
-then those tasks may continue through required Builder/fix, verification, review, merge, and post-integration verification until each reaches Completed, Blocked, or Human Required; only then may the Orchestrator become `STOPPED`.
+Tasks already Active when Stop was requested may continue through required Builder/fix, verification, review, merge, and post-integration verification until each reaches Completed, Blocked, or Human Required; only then may the Orchestrator become `STOPPED`.
 
 ### AC16 — Stop does not consume newly unlocked work
-
-If draining an active task completes it and thereby makes dependent tasks Ready, those newly Ready tasks remain undispatched while the Orchestrator is stopping/stopped.
+If draining an active task makes dependent tasks Ready, those newly Ready tasks remain undispatched while stopping/stopped.
 
 ### AC17 — Stop survives restart
-
-If the Orchestrator process restarts after Stop was requested but before draining completes, persisted stop intent is recovered; the process may finish/recover already-active work but must not claim fresh Ready tasks until explicit operator resume/start clears the stop condition.
+If the process restarts after Stop was requested but before draining completes, persisted stop intent is recovered; already-active work may be recovered/finished but fresh Ready work cannot be claimed until explicit operator resume/start.
 
 ### AC18 — UI remains local-only
-
 The dashboard binds to a local developer-machine interface by default and does not introduce internet exposure, cloud hosting, user management, or a remote-control service.
 
 ### AC19 — Cloud execution remains fail-closed
-
-A task requiring AWS/cloud verification cannot be dispatched into real cloud execution unless canonical metadata and the required explicit authorization gates permit it.
+A task requiring AWS/cloud verification cannot be dispatched into real cloud execution unless canonical metadata and required explicit authorization gates permit it.
 
 ### AC20 — Repository harness and Orchestrator tests pass
-
 Unit/integration tests cover DAG validation, scheduler eligibility, exclusive resources, resumability, fake-agent execution, review/fix loops, serialized integration, Stop draining, and UI/control-state behavior; repository harness/architecture checks required by the implementation pass.
 
 ## Required implementation boundaries
 
-The implementation should preserve explicit boundaries equivalent to:
+The implementation must preserve explicit responsibilities equivalent to:
 
 ```text
 BacklogReader / DagValidator
@@ -509,14 +455,18 @@ DashboardReadModel
 LocalDashboard
 ```
 
-Names may differ, but the system must not collapse task semantics, Git mutation, agent execution, UI state, and scheduling into one god object.
+Names may differ, but task semantics, Git mutation, agent execution, UI state, and scheduling must not collapse into one god object. The dashboard depends on stable read/control interfaces rather than direct access to Git worktrees, scheduler internals, or canonical YAML mutation.
 
-The local dashboard must depend on stable read/control interfaces rather than direct access to Git worktrees, scheduler internals, or canonical YAML mutation.
+## Ready-gate result
 
-## Planning readiness after this revision
+Final Backlog Planner recheck completed after the TASK-0089 Backlog V2 contract was frozen and after the local-dashboard/graceful-stop requirement revision was approved.
 
-TASK-0089 and the canonical Backlog V2 metadata contract are complete. Product/domain/technical baselines do not block this engineering tool.
+- TASK-0089 is Completed.
+- Canonical task metadata and execution semantics required by this tool are defined.
+- Product/domain/technical baselines do not block the engineering tool.
+- No cloud execution is required to implement or verify the Orchestrator itself.
+- The Orchestrator consumes, but does not redefine, Backlog Planner authority.
+- Graceful Stop semantics are explicit and testable.
+- Local dashboard responsibility is separated from scheduler/merge semantics.
 
-This task intentionally remains **Refined** while the human maintainer is revising Orchestrator requirements. After requirement review is complete, the Backlog Planner should perform one final consistency check against `tasks/BACKLOG.v2.yaml`, remove the obsolete `planner_recheck_after_v2_merge` gate, and promote TASK-0090 to Ready if no new implementation-level architecture decision remains.
-
-**Current stop condition: REQUIREMENT REVISION IN PROGRESS — NOT YET DISPATCHABLE.**
+**Ready gate: satisfied. TASK READY.**
