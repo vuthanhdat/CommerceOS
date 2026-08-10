@@ -1,9 +1,11 @@
 # TASK-0088 — Reconcile technical architecture baseline
 
-Status: Backlog
-Specification maturity: Ready
+Status: Completed
+Specification maturity: Completed
 Owner: Technical Architect
 Created: 2026-08-09
+Completed: 2026-08-10
+Canonical completed record: `../completed/TASK-0088-technical-architecture-baseline-reconciliation.md`
 Depends on: TASK-0087, current serverless architecture docs, accepted ADRs
 
 ## Goal
@@ -25,8 +27,8 @@ The current serverless architecture is intentionally high-level and the generate
 - Sync/async interaction decision resolved? N/A — output of this task
 - Transaction/consistency boundary resolved? N/A — output of this task
 - Persistence ownership/access patterns resolved? N/A — output of this task
-- Material ADRs accepted? Existing ADRs are inputs; additional ADRs may be outputs
-- Remaining planning blockers: human architecture decisions discovered during reconciliation
+- Material ADRs accepted? Existing ADRs are inputs; additional ADRs are outputs
+- Remaining planning blockers: product/domain decisions explicitly recorded by TASK-0087 or exposed by this reconciliation; they do not authorize Technical Architecture to invent semantics
 
 ## In scope
 
@@ -87,45 +89,97 @@ then it is captured by an ADR or explicit deferred-decision record before depend
 
 ## Security and tenant impact
 
-- Authentication: define trusted identity boundary and Cognito integration responsibilities without implementing them
-- Authorization: define where role/permission checks occur
-- Tenant scoping: define trusted TenantContext propagation and persistence/API constraints
-- Sensitive data/secrets: define configuration/secret boundary where needed
-- Abuse/rate-limit considerations: define API edge/resource guardrails where near-term relevant
+- Authentication: Cognito/API Gateway prove external identity only; current Tenant authority remains Merchant Access-owned
+- Authorization: protected application use cases consume current trusted authority/capabilities rather than role/Tenant claims
+- Tenant scoping: trusted TenantContext is resolved per protected request and repository scope is derived only from that trusted context
+- Sensitive data/secrets: no runtime secrets introduced; secret/configuration service selection remains deferred until a real credential is required
+- Abuse/rate-limit considerations: request/page/idempotency/correlation/retry/concurrency bounds are required in introducing tasks
 
 ## Reliability and idempotency impact
 
-- Retry behavior: define conventions for relevant sync/async boundaries
-- Timeout semantics: define external-call ambiguity rules where relevant
-- Duplicate-delivery behavior: preserve at-least-once assumptions
-- Idempotency key/strategy: define common pattern/ownership for near-term commands
-- DLQ/recovery/reconciliation: define when these mechanisms are required, not implementation
+- Retry behavior: stable command-level retry/idempotency conventions are defined; stale business mutations are not blindly retried
+- Timeout semantics: timeout/transport failure never proves an independent business failure
+- Duplicate-delivery behavior: at-least-once assumptions and producer/relay/consumer idempotency remain mandatory
+- Idempotency key/strategy: externally retryable commands use actor/Tenant-scoped semantic idempotency identities rather than correlation IDs
+- DLQ/recovery/reconciliation: conditional async consumers require durable outbox/inbox, queue/DLQ, identity-preserving redrive, and reconciliation
 
 ## Observability impact
 
-- Logs: define structured logging conventions
-- Metrics: define baseline service/business metric policy
-- Traces/correlation: define correlation/causation propagation
-- Operational states/errors: define stable error/operation-state conventions
+- Logs: structured safe module/operation/outcome/correlation fields; no secrets/tokens/raw sensitive payloads
+- Metrics: built-in AWS metrics first; custom metrics remain low-cardinality
+- Traces/correlation: request, command/idempotency, correlation, event, causation, and aggregate identities remain distinct
+- Operational states/errors: stable HTTP/problem and technical retry classes are separated from business facts
 
 ## Cost impact
 
-- Request/compute impact: none from design task
+- Request/compute impact: none from the design task
 - Storage impact: repository documentation only
 - Network impact: none
 - New AWS resources/services: none deployed
-- Free Tier allowance relevant to this task: all proposed architecture must honor existing guardrails
-- Expected monthly cost change or `negligible` with rationale: negligible for this task
+- Free Tier allowance relevant to this task: all accepted/conditional target services were checked against existing guardrails
+- Expected monthly cost change or `negligible` with rationale: zero runtime cost for TASK-0088; later resources are conditional and use the existing cost model
 - Estimated one-off cloud-test/load-test cost, if any: none
 
 ## Test plan
 
 - Unit: N/A
 - Integration: N/A
-- Architecture: consistency review against domain baseline and architecture rules
-- Contract: review API/event/application contract ownership
-- IaC: verify proposed boundaries align with CDK source-of-truth policy
-- E2E/manual: human review of high-consequence architecture decisions
+- Architecture: consistency review against TASK-0087, architecture rules, accepted ADRs, and no-cross-module-persistence rules
+- Contract: review API/event/application contract ownership, versioning, error, idempotency, concurrency, and tenant-context rules
+- IaC: verify proposed boundaries align with CDK source-of-truth and conditional-resource policy
+- E2E/manual: review high-consequence architecture decisions and explicit domain/product deferrals
 - **Cloud verification required?** No — design-only task
 - AWS environment/stack(s) required: none
 - Preview/staging teardown plan: N/A
+
+## Completion summary
+
+### What changed
+
+- Established the canonical technical baseline in `docs/architecture/technical-baseline.md`, preserving the modular-monolith direction while mapping the TASK-0087 bounded contexts to implementation modules, layers, contracts, runtime, and CDK boundaries.
+- Chose a first-frontier `Tenancy` implementation module that hosts Tenant Management and Merchant Access as distinct model areas so the approved Active Tenant + initial Active Owner onboarding outcome can commit atomically without merging their business ownership.
+- Kept `Catalog` as an independent implementation module and persistence owner; future contexts are created only when a Ready task introduces a real need.
+- Defined trusted execution contexts and current Membership/Tenant authority resolution so Cognito authentication, client selectors, JWT custom claims, and cached role/Tenant values cannot become tenant authority.
+- Defined versioned external HTTP/problem, optimistic-concurrency, idempotency, pagination, correlation, and causation conventions in `docs/architecture/first-frontier-contracts.md` and ADR-007.
+- Defined one DynamoDB table per implementation module, tenant-first repository contracts, mandatory access-pattern ledgers, conditional/transactional invariant protection, and first-frontier Tenancy/Catalog access patterns in `docs/architecture/persistence-access-patterns.md` and ADR-005.
+- Defined the sync/async interaction matrix and reliable cross-domain outbox → DynamoDB Stream → EventBridge → consumer SQS/DLQ pattern, while deferring Step Functions until an approved business sequence demonstrates durable orchestration pressure, in `docs/architecture/integration-and-aws.md` and ADR-006.
+- Reconciled AWS service purpose, introduction trigger, single-region/stack mapping, IAM boundaries, observability, and Free Tier/cost posture without deploying infrastructure.
+- Preserved every TASK-0087 product decision gate and exposed one additional domain decision required for public storefront Tenant addressing instead of inventing its owner/slug/domain semantics.
+
+### Material ADRs
+
+- ADR-003 — first-frontier modular runtime and deployment boundaries.
+- ADR-004 — trusted Tenant authority and authorization boundary.
+- ADR-005 — DynamoDB module ownership and access-pattern strategy.
+- ADR-006 — reliable cross-domain integration and deferred workflow orchestration.
+- ADR-007 — versioned HTTP contract and command-safety conventions.
+
+### Acceptance criteria status
+
+- AC01: PASS — Tenancy/Catalog module ownership, dependency direction, trusted context, application/contract boundaries, persistence ownership/access patterns, and consistency boundaries are explicit enough for Backlog Planner refinement.
+- AC02: PASS — near-term interactions and high-risk later flows have explicit synchronous/conditional asynchronous/product-gated/deferred mechanisms; no unresolved business sequence was guessed.
+- AC03: PASS — every target AWS capability in the integration/service matrix has a named problem, introduction status/trigger, and Free Tier/cost guardrail; TASK-0088 deploys none.
+- AC04: PASS — all material architecture decisions produced by this task are recorded in ADR-003 through ADR-007; remaining choices are tied to explicit product gates or technical trigger/deferred records.
+
+### Verification
+
+- Architecture consistency review against TASK-0087: PASS — no technical artifact changes bounded-context fact ownership or resolves a pending `PD-*` business decision.
+- Tenant/security review: PASS — authentication and current Membership authority are separated; protected repository scope comes only from trusted Tenant context; cross-tenant not-visible behavior remains non-disclosing.
+- Persistence/integration review: PASS — no cross-module table access, application Scan, best-effort dual write, or speculative EventBridge/SQS/Step Functions resource is approved.
+- ADR/link reconciliation: PASS for the previously missing contract ADR — `ADR-007-versioned-http-contract-and-command-safety-conventions.md` now exists and matches the contract baseline.
+- Cloud verification: N/A — documentation/ADR-only task; no AWS resource was created and no teardown is required.
+- `python3 scripts/harness_check.py`: not executable from this connector-only session because no runnable repository checkout is available; the container also cannot resolve GitHub to clone the repository. No GitHub commit-status checks are attached to the connector-created commits. This limitation is recorded rather than represented as a passing harness run.
+
+### Architecture, security, and cost notes
+
+- Architecture: module, deployment, persistence, contract, sync/async, and workflow selection rules are now explicit; the first runtime remains one shared `commerce-api` Lambda, not microservices.
+- Security/tenant: Cognito proves identity only; Merchant Access resolves current tenant authority on each protected request initially; client TenantId/role claims cannot authorize data access.
+- Reliability: first-frontier work stays synchronous/local where immediate truth is required; future independent effects use durable publication, idempotent consumers, and honest recovery states.
+- Cost: this task has zero runtime/monthly AWS cost; accepted target services are pay-per-use/Free-Tier-aligned and created only when a Ready task needs them.
+
+### Follow-up items
+
+- TASK-0089/Backlog Planner must reconcile candidate task dependencies/maturity against this baseline and keep all `PD-*`-gated work non-Ready.
+- Domain Architect/Product Owner must define public Storefront Tenant addressing before public route/cache/index contracts become Ready.
+- Later payment, accounting, Step Functions, multi-region, public-search/cache, and platform-admin decisions remain deferred until their documented business/technical triggers exist.
+- A runnable checkout should execute `python3 scripts/harness_check.py` before the next code-bearing task treats repository-level verification as green.
