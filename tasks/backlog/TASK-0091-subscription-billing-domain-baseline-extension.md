@@ -1,12 +1,14 @@
 # TASK-0091 — Extend domain baseline for Subscription & Billing
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: NO while TASK-0088 is actively being authored; execute after the current TASK-0088 work is completed/merged so the active architecture task is not chasing a moving domain baseline
+Status: Completed
+Specification maturity: Completed
 Owner: Domain Architect
 Recommended model: Strong reasoning model
 Created: 2026-08-10
+Completed: 2026-08-10
+Canonical completed record: `../completed/TASK-0091-subscription-billing-domain-baseline-extension.md`
 Depends on: completed TASK-0087, `docs/08-subscription-billing-product-scope.md`
+Execution gate satisfied: TASK-0088 was completed/merged before TASK-0091 execution.
 
 ## Goal
 
@@ -16,302 +18,179 @@ Determine the correct business ownership and boundaries for merchant plan/subscr
 
 This task updates domain knowledge only. It must not implement code, choose AWS services, choose persistence, or select a real billing/payment provider.
 
-## Why this task exists after TASK-0087
+## Domain conclusion
 
-TASK-0087 was correct for the product scope known at the time, but the product definition previously contained only a vague `plan metadata` placeholder. CommerceOS is itself a SaaS product, so the merchant's relationship with CommerceOS needs explicit domain modeling.
+CommerceOS starts with **one `Subscription & Billing` bounded context** because Plan/commercial terms, the merchant Subscription, effective Entitlements, approved accumulated UsageMeter truth, and CommerceOS PlatformCharge evidence are one coherent merchant-to-platform commercial language today. They are kept as separate internal business concepts/consistency boundaries so a later business-driven split remains possible without creating premature context/microservice boundaries now.
 
-A completed baseline is not immutable when approved product scope grows.
+Source-of-truth ownership is explicit in `docs/02-business-domains.md` and `docs/domains/subscription-billing.md`. Subscription & Billing owns the commercial relationship and entitlement policy/truth but never takes ownership of TenantStatus, Memberships, Warehouses/stock, Orders, merchant-order Payments, merchant Accounting, Ingestion snapshots/runs, Audit evidence, or Reporting projections.
 
-```text
-Product scope addendum
-        ↓
-TASK-0091 Domain Architect
-        ↓
-extended business-domain baseline
-        ↓
-TASK-0092 Technical Architect reconciliation
-        ↓
-TASK-0089 canonical Backlog V2
-```
+## Core business model
 
-## Scheduling constraint
+The refined model uses:
 
-This task is a **business-domain** task and does not depend semantically on TASK-0088.
+- `Plan` aggregate with stable plan identity plus versioned/accepted commercial terms;
+- `Subscription` aggregate for the Tenant's current base CommerceOS commercial relationship;
+- immutable effective `EntitlementSet` snapshots with provenance/effective interval rather than marketing-plan-name checks;
+- optional `UsageMeter` aggregate only for approved accumulated metered limits that require duplicate-safe source counting;
+- separate `PlatformCharge` aggregate because SaaS billing attempts, unknown outcomes, and reconciliation can evolve independently from the commercial Subscription state.
 
-However, TASK-0088 is currently being authored against the pre-Subscription baseline. To avoid changing the source domain baseline underneath an active Technical Architect run:
+These are business consistency concepts only. TASK-0091 does not choose table schemas, databases, keys, module boundaries, transports, or AWS services.
 
-1. finish/merge the currently active TASK-0088 work first;
-2. run TASK-0091 from latest `main`;
-3. then run TASK-0092 to reconcile the new domain capability into the technical architecture.
+## Lifecycle and invariant conclusions
 
-TASK-0091 must not read TASK-0088 as authority for business meaning.
+Stable subscription conditions before unresolved policy is decided are `PendingActivation`, `Active`, and `Ended`. Plan-change intent, cancellation intent, PlatformCharge outcome, TenantStatus, and MembershipStatus are independent dimensions.
 
-## Required reads
+Trial, Grace, PastDue, delinquency suspension, reactivation, proration, and similar business meanings are not invented. They are product-decision gated.
 
-- `AGENTS.md`
-- `docs/agents/domain-architect.md`
-- `docs/00-product-definition.md`
-- `docs/08-subscription-billing-product-scope.md`
-- `docs/02-business-domains.md`
-- `docs/domains/tenant-identity.md`
-- `docs/domains/commerce-operations.md`
-- `docs/domains/product-decisions.md`
-- relevant NFR/security/tenant-isolation requirements
+Key invariants:
 
-Read technical architecture only for impact awareness if useful; do not let it dictate business ownership.
+- `PlanChangeRequested` is not `SubscriptionPlanChanged`;
+- `CancellationRequested` is not `SubscriptionEnded`;
+- a PlatformCharge outcome does not automatically imply a subscription transition;
+- client plan/entitlement/limit claims and stale UI/Reporting projections are never entitlement authority;
+- every effective entitlement decision has trusted Tenant scope and provenance to accepted Subscription/terms;
+- historical EntitlementSets and foreign-domain business history are not rewritten by later plan changes;
+- duplicate logical plan-change, usage, or PlatformCharge effects are prohibited;
+- external billing timeout/missing callback remains unknown when commit cannot be proven and is not converted into failure/delinquency/cancellation by time passage.
 
-## Required domain questions
+### Safe upgrade/downgrade rule
 
-### 1. Bounded-context boundary
+An upgrade request does not grant higher entitlements until the human-approved effective condition occurs.
 
-Determine whether the initial product should model:
-
-- one `Subscription & Billing` bounded context;
-- separate Plan Catalog / Subscription / Billing contexts;
-- or another explicitly justified boundary.
-
-Prefer the smallest coherent business boundary that preserves ownership and can evolve later. Do not split only to imitate microservices.
-
-### 2. Source-of-truth ownership
-
-Explicitly define who owns:
-
-- merchant subscription identity/lifecycle;
-- commercial plan/version accepted by the merchant;
-- effective subscription period;
-- trial state, if approved;
-- upgrade/downgrade/cancellation intent and accepted state;
-- effective entitlements and limits;
-- usage evidence needed for limits;
-- CommerceOS SaaS charge/invoice/payment references;
-- external billing-provider references/evidence if a provider is introduced later.
-
-Explicitly distinguish these truths from:
-
-- Tenant lifecycle;
-- Merchant Access memberships;
-- merchant warehouses/locations;
-- merchant shopper/order Payments;
-- merchant bookkeeping Accounting;
-- Audit records;
-- Reporting projections.
-
-### 3. Aggregates/entities/value objects
-
-Refine enough business model to make Technical Architecture possible. Candidate concepts to analyze include, without assuming they are all separate aggregates:
-
-- Plan / PlanVersion / Offer;
-- Subscription;
-- SubscriptionPeriod;
-- Entitlement / EntitlementSet;
-- UsageCounter / UsageWindow;
-- PlatformCharge / InvoiceReference / BillingAttempt reference;
-- Money/price terms;
-- effective dates and lifecycle reasons.
-
-Choose aggregate boundaries by consistency/invariants, not by nouns or database tables.
-
-### 4. Subscription lifecycle
-
-Model the business states/transitions required by approved scope or explicitly record decisions still required.
-
-Candidate lifecycle concerns include:
+For downgrade, the safe interim rule is:
 
 ```text
-Trial / PendingActivation
-        ↓
-Active
-        ↓
-PendingPlanChange
-        ↓
-Active on new terms
-
-Active
-  ├─ PastDue / Grace?    (only if approved)
-  ├─ PendingCancellation
-  ├─ Cancelled / Expired
-  └─ Reactivated?        (only if approved)
+current authoritative usage > target hard limit
+              ↓
+    downgrade does not become effective
+              ↓
+BlockedByUsage / RemediationRequired
+              ↓
+human-approved policy or merchant remediation
+              ↓
+only then may lower terms become effective
 ```
 
-Do not adopt these exact states without reasoning from product policy.
+Subscription & Billing must never silently delete Products, disable Memberships, remove Warehouses, erase source snapshots, mutate Orders, or rewrite Accounting history to make a tenant fit a lower plan. If remediation requires another domain action, that owning domain must accept it and preserve its own invariants.
 
-State semantics must not conflate:
+## Entitlement semantics
 
-- commercial subscription status;
-- external charge/payment outcome;
-- tenant platform lifecycle/suspension;
-- individual membership authorization.
+Downstream domains consume trusted capability/limit meaning, not plan names. The domain can answer business questions equivalent to:
 
-### 5. Upgrade and downgrade invariants
+- may Tenant X use capability Y now?;
+- what limit applies to resource/usage Z?;
+- which accepted Subscription/plan terms produced that decision?;
+- when did/will the entitlement become effective?;
+- which historical EntitlementSet was effective earlier?
 
-Specify what the domain must know/preserve when plan capability changes.
+A hard-limit write must combine a current trusted entitlement with authoritative owning-domain usage/state. `Unlimited` is explicit policy, never a missing record.
 
-At minimum address the semantic problem:
+## SaaS billing boundary
 
 ```text
-Current usage > target plan limit
-        ↓
-downgrade cannot silently delete/corrupt business state
+Shopper  ── pays merchant order ──► Payments
+Merchant ── pays CommerceOS plan ─► Subscription & Billing / PlatformCharge
 ```
 
-Define whether the domain owns a pending downgrade/remediation state or delegates a request/evidence relationship to affected contexts.
+Existing merchant-order `Payments` and the Mock Payment Provider remain unchanged in business ownership. They do not become CommerceOS subscription-billing owners merely because both domains involve money.
 
-Do not invent the final excess-resource policy if it is a human product decision; add it to the decision register and preserve a safe interim constraint.
+## Cross-domain interaction conclusions
 
-### 6. Entitlement semantics
+- **Tenant Management:** owns Tenant identity/Profile/Active-Suspended status. Subscription state is independent; trial/plan/billing are not Tenant states.
+- **Merchant Access:** owns Membership identity/status/roles and active-member count. A staff-count entitlement is only a policy input; Subscription & Billing cannot disable Memberships. Last-owner invariants still apply.
+- **Inventory:** owns Warehouse/Location and stock truth. A warehouse limit may gate future create/activate behavior under approved policy but cannot delete existing Warehouses during downgrade.
+- **Product Data Ingestion:** owns source policy/run/snapshot/candidate truth. Subscription may govern a capability such as scheduled ingestion but cannot bypass source-policy rules or erase evidence.
+- **Sales:** owns Orders. Approved Sales facts may feed an idempotent usage meter, but until `PD-051` an order-volume threshold must not silently reject otherwise valid shopper checkout.
+- **Payments:** shopper/order payment only; no SaaS billing ownership.
+- **Accounting:** merchant books only; a CommerceOS PlatformCharge does not become a merchant Journal by implication.
+- **Audit:** owns append-oriented action evidence, not subscription state.
+- **Reporting/platform admin:** projections/support visibility do not authorize entitlement or direct state mutation.
 
-Define the business meaning of effective entitlements so other contexts do not scatter plan-name checks.
+## Human product decisions surfaced
 
-Domain design should support questions equivalent to:
+TASK-0091 added these unresolved decisions with explicit safe interim constraints rather than defaults:
 
-- may this tenant use capability X now?;
-- what limit applies to resource/usage Y?;
-- which subscription/plan terms produced this entitlement?;
-- when does a changed entitlement become effective?;
-- how is historical business truth preserved after the plan changes?
+- `PD-043` — subscription acquisition, trial, and Tenant-without-subscription policy;
+- `PD-044` — plan catalog, versioning, accepted terms, commercial packages;
+- `PD-045` — monthly/annual billing-cycle and effective-period policy;
+- `PD-046` — CommerceOS SaaS currency, tax, invoice, and proration policy;
+- `PD-047` — upgrade effective-time and charge-precondition policy;
+- `PD-048` — downgrade timing and excess-resource remediation policy;
+- `PD-049` — cancellation, expiry, grace, delinquency, reactivation, suspension, retention policy;
+- `PD-050` — hard/soft/overage/unlimited limit and enforcement policy;
+- `PD-051` — order-volume meter and shopper-checkout impact;
+- `PD-052` — SaaS billing-provider strategy for learning/MVP versus later real operation;
+- `PD-053` — platform-admin subscription/billing support and override authority.
 
-Do not define HTTP middleware, caching, tokens/claims, database keys, or service calls here.
+No common SaaS convention was treated as human approval.
 
-### 7. Cross-domain interactions
+## Repository outputs
 
-Explicitly analyze at least:
+1. `docs/02-business-domains.md` — canonical map/responsibilities/source-of-truth/invariants extended.
+2. `docs/domains/subscription-billing.md` — detailed Subscription & Billing domain baseline.
+3. `docs/domains/product-decisions.md` — `PD-043` through `PD-053` decision gates and safe interim constraints.
+4. `docs/domains/tenant-identity.md` — Tenant/Membership interaction reconciled with subscription/entitlement semantics, including staff-count/last-owner protection.
+5. `docs/domains/subscription-billing.md` contains an explicit **Technical Architecture handoff** for TASK-0092 and a Backlog Planner handoff for TASK-0089.
 
-- Tenant Management — tenant existence/lifecycle versus subscription commercial eligibility;
-- Merchant Access — membership ownership versus staff-count entitlement;
-- Inventory — warehouse/location ownership versus warehouse-count entitlement;
-- Product Data Ingestion — scheduled/crawler capability entitlement;
-- Accounting — merchant books versus CommerceOS's own SaaS charge/billing truth;
-- Payments — shopper/order payment versus merchant-to-CommerceOS subscription charge;
-- Audit — evidence of privileged subscription/plan actions;
-- Reporting/platform admin — projections/support visibility only.
-
-For each interaction, distinguish request, accepted business fact, projection, and policy decision where relevant.
-
-### 8. Business events/facts
-
-Define semantic candidate facts only after ownership is clear. Examples to evaluate, rename, split, or reject include:
-
-- SubscriptionStarted
-- TrialStarted
-- TrialExpired
-- PlanChangeRequested
-- SubscriptionUpgraded
-- DowngradeScheduled
-- SubscriptionCancelled
-- SubscriptionExpired
-- EntitlementsChanged
-- PlatformChargeRecorded
-- SubscriptionPaymentOutcomeChanged
-
-Do not publish schemas or select transports in this task.
-
-### 9. Human product decisions
-
-Update `docs/domains/product-decisions.md` with every unresolved material policy question discovered.
-
-At minimum assess the ten decision areas listed in `docs/08-subscription-billing-product-scope.md`:
-
-- trial policy;
-- plan/version policy;
-- monthly/annual cycle;
-- SaaS billing currency/tax/invoice/proration policy;
-- upgrade timing;
-- downgrade/excess-resource policy;
-- cancellation/grace/delinquency/reactivation/retention policy;
-- hard versus soft limits/overage;
-- order-volume limit behavior;
-- billing-provider strategy for learning/MVP versus real SaaS.
-
-Do not resolve them by common industry convention.
-
-## Required repository outputs
-
-At minimum:
-
-1. update `docs/02-business-domains.md` so Subscription & Billing is represented in the canonical bounded-context map, responsibility table, source-of-truth rules, invariants/runway, and first/later planning consequences as appropriate;
-2. create `docs/domains/subscription-billing.md` (or an equally explicit domain-local document if the final boundary naming differs);
-3. update `docs/domains/product-decisions.md` with unresolved material Subscription/Billing decisions;
-4. update any existing domain document only where the new capability materially changes its responsibility/interactions;
-5. include a **Technical Architecture handoff** section identifying exactly what TASK-0092 must resolve without prescribing the technical solution.
-
-## Out of scope
-
-- application code;
-- frontend screens;
-- APIs/HTTP contracts;
-- DynamoDB tables/keys/indexes;
-- Lambda/API Gateway/EventBridge/SQS/Step Functions choices;
-- CDK/IaC;
-- choosing Stripe, Paddle, Lemon Squeezy, AWS Marketplace, or another provider;
-- implementing real-money billing;
-- setting final commercial prices for Starter/Growth/Business;
-- changing merchant order-payment semantics owned by the existing Payments context;
-- modifying TASK-0088 output to make it fit the new domain.
+No application code, frontend/API contract, AWS service choice, persistence schema/key/index, CDK/IaC, or real billing provider was introduced.
 
 ## Acceptance criteria
 
-### AC01 — New capability has explicit ownership
+### AC01 — New capability has explicit ownership: PASS
 
-Given `docs/08-subscription-billing-product-scope.md`
-when TASK-0091 completes
-then the canonical domain map explicitly represents where merchant Subscription & Billing business truth is owned and why.
+The canonical domain map represents Subscription & Billing and identifies it as owner of merchant CommerceOS subscription/commercial-term/entitlement/platform-charge truth.
 
-### AC02 — SaaS billing is not confused with shopper Payments
+### AC02 — SaaS billing is not confused with shopper Payments: PASS
 
-Given CommerceOS processes merchant-order payment simulations and also needs merchant subscription billing
-when the domain baseline is extended
-then these are explicitly separate business responsibilities with no accidental shared source of truth.
+PlatformCharge / merchant-to-CommerceOS SaaS billing is explicitly distinct from shopper/order Payment and the Mock Payment Provider.
 
-### AC03 — Entitlements are modeled independently of marketing plan-name checks
+### AC03 — Entitlements are modeled independently of marketing plan-name checks: PASS
 
-Given plans may change names/prices/versions over time
-when entitlement semantics are documented
-then downstream domains can reason about effective capabilities/limits without requiring scattered `if plan == ...` business logic.
+Immutable effective EntitlementSets carry capability/limit values, provenance, and effective intervals; unrelated domains consume trusted entitlement meaning rather than `if plan == ...` logic.
 
-### AC04 — Upgrade/downgrade semantics preserve business data
+### AC04 — Upgrade/downgrade semantics preserve business data: PASS
 
-Given a tenant can request a plan change
-when the target plan has lower limits than current usage
-then the domain baseline explicitly prevents silent destructive handling and identifies the approved rule or human decision needed.
+Plan-change request is not effectivity. Downgrade over a target hard limit is blocked/remediation-required and may not destroy or rewrite another domain's state/history.
 
-### AC05 — Lifecycle dimensions are not conflated
+### AC05 — Lifecycle dimensions are not conflated: PASS
 
-Given subscription, provider billing outcome, tenant lifecycle, and membership access can change independently
-when states/invariants are documented
-then one dimension does not falsely imply another.
+Subscription commercial condition, PlatformCharge/billing outcome, TenantStatus, MembershipStatus, plan-change intent, and cancellation intent are explicitly independent.
 
-### AC06 — Human decisions are explicit
+### AC06 — Human decisions are explicit: PASS
 
-Given product policy is incomplete
-when TASK-0091 completes
-then unresolved material choices are recorded in the product-decision register with safe interim constraints and planning gates rather than being invented.
+`PD-043`–`PD-053` record unresolved material policy with safe interim constraints and planning gates.
 
-### AC07 — Existing contexts remain authoritative for their own truth
+### AC07 — Existing contexts remain authoritative for their own truth: PASS
 
-Given Subscription & Billing introduces limits affecting staff, warehouses, ingestion, accounting, or other areas
-when boundaries are documented
-then it owns subscription/entitlement policy while existing contexts continue to own membership, inventory/location, operational commerce, and bookkeeping truth.
+Membership, Warehouse/stock, Order, Ingestion, shopper Payment, merchant Accounting, Audit, and Reporting ownership remains with the existing contexts while Subscription & Billing owns only commercial subscription/entitlement/approved metering/platform-charge truth.
 
-### AC08 — Technical handoff is actionable
+### AC08 — Technical handoff is actionable: PASS
 
-Given the domain baseline is extended
-when TASK-0091 completes
-then TASK-0092 can identify module/contracts/persistence/integration/security/reliability design work without needing to rediscover basic business semantics.
+The detailed domain document tells TASK-0092 exactly which module/contracts/persistence/integration/security/reliability/provider-seam questions must be resolved technically without prescribing their solutions or rediscovering basic business semantics.
 
-## Test/review plan
+## Documentary/adversarial verification
 
-This is a planning/domain task, so verification is documentary and adversarial:
+- Product-scope trace against `docs/08-subscription-billing-product-scope.md`: PASS — acquisition/trial, plan/version, period, upgrade/downgrade, cancellation/delinquency, entitlement, usage, PlatformCharge, provider uncertainty, and every material decision area are owned or explicitly gated.
+- AWS/persistence/API contamination review: PASS — no cloud service, database/table/key/index, caching/token mechanism, API schema, or billing provider was selected to answer a product-policy question.
+- Historical-truth review: PASS — later plan edits/changes cannot rewrite prior EntitlementSets, Orders, Membership history, Inventory, source snapshots, or merchant Accounting truth.
+- Downgrade destructive-behavior review: PASS — safe interim rule prohibits silent foreign-domain deletion/deactivation.
+- Tenant/security review: PASS — entitlement authority uses trusted Tenant context; client plan/entitlement/limit claims and stale projections are never authority.
+- Merchant Payments separation review: PASS — merchant-order Payments/Mock Payment Provider remain separate business responsibilities.
+- Human-decision coverage review: PASS — `PD-043` through `PD-053` cover all ten product-scope decision areas plus platform-admin override authority.
+- Cloud verification: N/A — documentation/domain task; no AWS resource was created and no teardown is required.
+- `python3 scripts/harness_check.py`: **not executed in this connector-only session** because there is no runnable repository checkout available to the session. Repository-level harness status is not represented as green by TASK-0091; the next runnable checkout should execute the harness before repository verification is treated as passing.
 
-- trace every product requirement in `docs/08-subscription-billing-product-scope.md` to domain ownership or an explicit deferred decision;
-- verify no AWS/persistence/API mechanism is used to resolve a business-policy question;
-- verify plan changes cannot silently rewrite historical commerce/accounting truth;
-- verify cross-tenant entitlement authority cannot come from client input;
-- verify shopper/order Payments and CommerceOS subscription billing remain distinct;
-- verify all unresolved material policy choices appear in `product-decisions.md`.
+## Architecture, security, and cost implications
 
-Cloud verification: No.
+- Architecture: business-domain authority changed; TASK-0092 must perform the technical reconciliation afterward.
+- Security/tenant: trusted Tenant context remains mandatory; Subscription entitlement does not replace authentication/Membership authority or TenantStatus.
+- Reliability: duplicate logical plan-change/usage/PlatformCharge effects are forbidden; external billing uncertainty remains explicit.
+- Cost: zero runtime/cloud cost from TASK-0091; no AWS service or paid billing platform was selected.
 
-## Stop conditions
+## Follow-up handoff
 
-- `DOMAIN BASELINE EXTENDED` — ownership, state/invariants, interactions, unresolved decisions, and Technical Architect handoff are complete;
-- `HUMAN PRODUCT DECISION REQUIRED` — a decision is required before even a safe domain boundary/invariant can be established; record it and identify whether the remaining safe domain work can still proceed.
+1. **TASK-0092 — Technical Architect**: reconcile this extended domain baseline into module/contracts/persistence/integration/security/reliability/AWS architecture while preserving `PD-043`–`PD-053` as product gates.
+2. **TASK-0089 — Backlog Planner**: after TASK-0092, reconcile canonical Backlog V2 and keep Subscription/Billing implementation work non-Ready wherever a required PD remains unresolved.
+3. **Human Product Owner**: resolve `PD-043`–`PD-053` selectively before dependent implementation tasks can pass the Ready gate.
+
+**Stop condition: DOMAIN BASELINE EXTENDED.**
