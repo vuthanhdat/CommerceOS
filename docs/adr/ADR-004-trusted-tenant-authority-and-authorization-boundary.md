@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-08-09
-Last reconciled: 2026-08-10
+Last reconciled: 2026-08-10 after resolved PD-004
 Decision owners: CommerceOS Technical Architecture
 Supersedes: N/A
 Superseded by: N/A
@@ -11,29 +11,30 @@ Superseded by: N/A
 
 CommerceOS must deny cross-Tenant access even when a caller knows another Tenant or aggregate identifier. Cognito proves external identity, but identity alone does not prove current authority for any Tenant.
 
-The original ADR intentionally left Tenant membership cardinality/selection (`PD-001`) and role cardinality/mapping (`PD-003`) open. Those product decisions are now resolved:
+Approved product/domain policy now establishes:
 
 - one authenticated identity may hold Memberships in multiple Tenants;
-- when exactly one eligible Tenant exists CommerceOS may auto-select it;
-- when more than one eligible Tenant exists the user must intentionally select the active Tenant;
 - Membership has exactly one current MVP role: Owner, Admin, Staff, or Viewer;
-- current Membership/Tenant state remains server-authoritative;
-- Subscription entitlements remain a separate authority from Membership/Tenant authorization.
+- Tenant lifecycle is `Active` or `Suspended` only in MVP;
+- suspension/reactivation is platform-administration only, requires a reason, and is auditable;
+- Suspended blocks public storefront/checkout and all ordinary merchant mutations;
+- Active Memberships remain intact while a Tenant is Suspended and retain controlled read-only access according to normal role visibility;
+- authorized platform support may investigate through a separate privileged read-only path and never becomes a Tenant Membership;
+- Subscription entitlement remains a separate authority from Tenant/Membership authorization.
 
-The trust boundary must therefore support safe tenant discovery/selection without turning a selector, JWT claim, browser cache, or eventual index into authority.
+The previous version of this ADR treated a Suspended Tenant as a generic final authority failure. That is now too coarse: merchant mutation authority must fail, but approved merchant read-only recovery/history access must remain possible.
 
 ## Decision
 
 ### Authentication
 
 - Use API Gateway HTTP API's Cognito JWT authorizer on protected merchant routes.
-- Validate issuer, audience/client, signature, lifetime, and required access-token scopes at the edge.
 - Treat the stable Cognito subject identifier as external identity evidence only.
-- Do not treat email, Tenant, Membership, role, capability, plan, entitlement, or limit token claims as current business authority.
+- Never treat email, Tenant, Membership, role, plan, entitlement, or limit token/client claims as current business authority.
 
 ### Subject membership discovery
 
-Merchant Access owns a module-private, strongly consistent subject-to-Membership discovery representation in the Tenancy DynamoDB table.
+Merchant Access owns a module-private strongly consistent subject-to-Membership discovery representation in the Tenancy DynamoDB table.
 
 Conceptual shape:
 
@@ -42,199 +43,211 @@ PK = SUBJECT#<SubjectId>
 SK = MEMBERSHIP#<MembershipId>#TENANT#<TenantId>
 ```
 
-It is a technical authorization lookup, not a second Membership aggregate. It contains only the minimum references/current Membership status/revision needed for discovery and is updated atomically with the owning Membership change.
-
 Rules:
 
-- no Subject GSI is authorization authority;
-- discovery uses a strongly consistent base-table Query;
-- a discovered Tenant/Membership reference is only a candidate until current Tenant + Membership validation succeeds;
-- if no selector is supplied and discovery yields one candidate, CommerceOS may auto-select only after current validation;
-- if discovery is multiple/ambiguous, return `TENANT_SELECTION_REQUIRED` and require intentional Tenant selection;
-- requiring explicit selection in an ambiguous case is always safer than inferring Tenant from SubjectId;
-- suspended Tenant/inactive Membership is rejected by final current authority resolution.
+- discovery uses a strongly consistent base-table `Query`;
+- no Subject GSI/JWT/browser cache is authorization authority;
+- a discovered Tenant/Membership is only a candidate until current Tenant + Membership validation succeeds;
+- one candidate may be auto-selected only after current validation;
+- multiple/ambiguous candidates require intentional Tenant selection;
+- Suspended Tenants are not discarded merely because mutation is unavailable: they may still be selected for approved authenticated read-only access;
+- Disabled Memberships do not gain ordinary merchant read/mutation authority from discovery.
 
-### Authority resolution
+### Split read authority from mutation authority
 
-Treat any Tenant identifier/reference from route, header, query, body, browser state, or selection UI as `RequestedTenantSelection`, an untrusted target.
+The Tenancy application boundary exposes separate resolved authority results so a Suspended read context cannot accidentally be reused for a mutation.
 
-For every protected request:
-
-1. establish the authenticated Subject;
-2. discover/select a target Tenant under the rules above;
-3. call the Tenancy/Merchant Access `ResolveTenantAuthority` application contract;
-4. transactionally/currently read the selected Tenant and `(TenantId, SubjectId)` Membership authority representation from the authoritative base-table paths;
-5. require Active Tenant for ordinary merchant work and Active Membership bound to that Tenant/Subject;
-6. return an immutable trusted context populated from authoritative records, not caller data;
-7. fail closed when current authority cannot be established; never fall back to request/JWT/cache data.
-
-Conceptual result:
+Conceptually:
 
 ```text
-TrustedTenantContext
+ResolveTenantReadAuthority(
+  AuthenticatedPrincipal,
+  RequestedTenantSelection?,
+  RequestMetadata)
+    -> TrustedTenantReadContext | AuthorityFailure
+
+ResolveTenantMutationAuthority(
+  AuthenticatedPrincipal,
+  RequestedTenantSelection?,
+  RequestMetadata)
+    -> TrustedTenantMutationContext | AuthorityFailure
+```
+
+Both validate the current selected Tenant and `(TenantId, SubjectId)` Membership using authoritative Tenancy records.
+
+`TrustedTenantReadContext` requires:
+
+- an Active Membership bound to the authenticated Subject and selected Tenant;
+- Tenant status of `Active` or `Suspended`;
+- current role from authoritative Membership state.
+
+`TrustedTenantMutationContext` requires:
+
+- everything required for read authority;
+- Tenant status `Active`;
+- the owning domain's role/capability rule;
+- Subscription entitlement when the operation is subscription-governed.
+
+Conceptual fields remain transport-neutral:
+
+```text
+TrustedTenantReadContext
   tenantId
   subjectId
   membershipId
-  role                 # Owner | Admin | Staff | Viewer
+  role
+  tenantStatus          # Active | Suspended
+  tenantRevision?
+  membershipRevision?
+  correlationId
+
+TrustedTenantMutationContext
+  tenantId
+  subjectId
+  membershipId
+  role
   tenantRevision?
   membershipRevision?
   correlationId
 ```
 
-The owning domain application applies the approved role policy for its operation. This ADR does not create a global mutable permission engine or let the client name an authoritative capability.
+The mutation context intentionally does not carry cached Subscription entitlement authority.
+
+### Suspended-Tenant behavior
+
+Delivery/application composition must make the access class explicit.
+
+- ordinary merchant commands always require `TrustedTenantMutationContext` and therefore fail while Suspended;
+- merchant queries use `TrustedTenantReadContext` and then apply the normal role-specific read visibility of the owning domain;
+- Owner/Admin may reach the approved history/operations/billing/support/recovery/Audit views they are otherwise authorized to read;
+- Staff/Viewer remain limited to normal-role read visibility;
+- no query path may smuggle a state-changing side effect into a Suspended read-only request;
+- Reactivate restores Tenant eligibility only; it does not rewrite Membership or Subscription lifecycle.
+
+### Platform administration and support
+
+Platform actors use separate trust types established by platform authentication/authorization, never merchant Memberships or a `bypassTenant` flag.
+
+Conceptually:
+
+```text
+TrustedPlatformAdminContext
+TrustedPlatformSupportReadContext
+```
+
+- `SuspendTenant` and `ReactivateTenant` are Tenancy-owned platform-administration commands requiring explicit reason, expected Tenant revision, and durable Audit intent/evidence.
+- platform support investigation uses producer-owned read-only application queries in each module, scoped to an explicit target Tenant and privileged reason/correlation metadata;
+- platform support never reads foreign module tables directly and never receives merchant mutation authority by implication.
+
+### Public storefront
+
+Public storefront uses a separate `PublicTenantContext`. Once Storefront Tenant addressing is defined, resolving a public Tenant must also verify current Tenant status. `Suspended` returns storefront/checkout unavailable and cannot be bypassed by cached public Product data.
 
 ### Subscription entitlement remains separate
 
-`TrustedTenantContext` intentionally does not contain cached plan/entitlement/limit authority.
+A subscription-governed merchant mutation asks `SubscriptionBilling.EvaluateEntitlement` only after active-Tenant Membership authority has been established.
 
-A subscription-governed mutation separately calls the authoritative `SubscriptionBilling.EvaluateEntitlement` contract after Tenant/Membership authorization. Missing/unavailable entitlement authority fails the governed mutation closed; it never becomes `Unlimited` and does not rewrite Tenant/Membership state.
+Missing/unavailable entitlement authority fails the governed mutation closed. Entitlement failure does not become Tenant suspension or Membership disablement.
 
-### Enforcement and non-disclosure
+### Freshness and non-disclosure
 
-- Protected use cases receive trusted context, apply their approved role/domain policy, and derive repository Tenant scope only from that context.
-- Target aggregate IDs remain untrusted and cannot change the context Tenant.
-- Tenant-owned repository contracts have no unscoped overload and include TenantId in the base key/query.
-- A missing/cross-Tenant aggregate uses the same safe not-visible behavior.
-- Authentication failure, inactive Membership, suspended Tenant, role denial, entitlement denial, target not visible, and dependency unavailable remain internally distinguishable without revealing another Tenant's data.
-
-### Freshness
-
-Initial architecture performs current authority resolution for every protected request.
-
-- no cross-request Membership/Tenant authorization cache is authoritative;
-- no eventual GSI is the sole current-authority path;
-- Membership disablement/role change and Tenant suspension affect the next coherent resolution;
-- an already-started command still relies on its own aggregate revision/transaction conditions for concurrency safety.
-
-A later cache requires an explicit staleness/revocation/outage contract and architecture decision.
-
-### Separate trust paths
-
-- Onboarding uses `TrustedOnboardingContext` from authenticated verified identity and has no caller-selected Tenant authority. Cross-domain completion/recovery is defined by ADR-009.
-- Public storefront uses a separate `PublicTenantContext` only after Storefront Tenant-address business semantics are approved; it cannot invoke merchant-protected commands.
-- Queue/event/workflow handlers use validated service/message execution context, not merchant actor context.
-- Platform administrators use a separate authenticated/authorized/audited path; there is no `bypassTenant` flag and no Owner Membership in every Tenant.
+- current Tenant/Membership authority is resolved per protected request initially;
+- no cross-request authorization cache is authoritative;
+- Tenant suspension/reactivation, Membership disable/reactivation, and role change affect the next resolution;
+- target aggregate IDs remain untrusted and repository Tenant scope comes only from trusted context;
+- missing/cross-Tenant targets use safe non-disclosing not-visible behavior;
+- dependency failures never fall back to JWT/client/cache authority.
 
 ## Alternatives considered
 
-### Option A — Put Tenant and role/entitlement authority in Cognito custom claims
+### One generic `TrustedTenantContext` with a boolean `isSuspended`
 
-Benefits:
-- fewer data reads.
+Rejected. Every consumer would need to remember whether its operation is read or mutation, making accidental suspended mutations easier to introduce.
 
-Costs/risks:
-- stale disablement/role/tenant/subscription state;
-- revocation complexity;
-- multi-Tenant ambiguity;
-- identity provider becomes accidental business authority.
+### Treat Suspended as no merchant authority at all
 
-Rejected.
+Rejected because resolved `PD-004` explicitly preserves controlled authenticated read-only access.
 
-### Option B — Trust client-selected TenantId after token validation
+### Put Tenant status/role in Cognito claims
 
-Benefits:
-- minimal implementation.
+Rejected because suspension/role changes must affect the next authority decision without waiting for token refresh/revocation.
 
-Costs/risks:
-- direct confused-deputy/cross-Tenant vulnerability.
+### Give platform support an Owner Membership in every Tenant or a bypass flag
 
-Rejected.
+Rejected because it collapses platform and merchant trust boundaries and creates cross-Tenant confused-deputy risk.
 
-### Option C — Use an eventually consistent Subject GSI as authority
+### Separate read and mutation authority contexts with explicit platform trust paths
 
-Benefits:
-- convenient cross-Tenant discovery.
-
-Costs/risks:
-- stale membership cardinality can defeat intentional selection semantics;
-- stale disablement can appear active;
-- an index becomes authorization authority.
-
-Rejected as authority.
-
-### Option D — Strong subject discovery + current selected-Tenant validation + tenant-scoped repositories
-
-Benefits:
-- supports many-to-many Membership cleanly;
-- explicit user selection when ambiguous;
-- next-resolution status/role freshness;
-- defense in depth at application and persistence boundaries;
-- preserves future module extraction.
-
-Costs/risks:
-- additional DynamoDB reads/transactions per protected request;
-- authority-store outage fails protected work closed;
-- subject discovery representation must be transactionally maintained with Membership.
-
-Chosen.
+Chosen because it makes the resolved lifecycle semantics mechanically visible at application boundaries while preserving current authority checks.
 
 ## Consequences
 
-### Positive
+Positive consequences:
 
-- Token + known TenantId cannot create Tenant authority.
-- Multi-Tenant users have an explicit safe selection model.
-- Current role/status changes affect the next request without token regeneration.
-- SubscriptionBilling remains the only entitlement authority.
-- All merchant modules consume one transport-neutral tenant context.
-- Public/onboarding/background/admin paths cannot silently acquire merchant permissions.
+- Suspended merchant read-only access is possible without weakening mutation denial.
+- A Builder cannot accidentally treat `TenantStatus` as a single allow/deny bit for all protected requests.
+- Platform support stays explicit, privileged, read-only, and non-membership-based.
+- Subscription entitlement remains independently authoritative.
+- Current suspension/reactivation applies on the next authority resolution without token changes.
 
-### Negative / trade-offs
+Trade-offs:
 
-- Protected requests pay current-read latency/capacity cost.
-- Membership changes require maintaining both tenant authority lookup and subject discovery representation transactionally inside Tenancy.
-- Authority-store incidents deny protected work even while Cognito tokens remain valid.
-- Storefront public Tenant addressing remains a separate unresolved domain contract.
+- delivery/application composition must classify protected operations as read or mutation;
+- Tenancy exposes two resolved authority contracts instead of one broad result;
+- protected requests continue to incur current Tenancy reads;
+- Storefront public Tenant addressing remains a separate domain contract before final public route/index keys are hardened.
 
 ## Security and tenant impact
 
-- Tenant isolation uses both authorization and tenant-key persistence; neither substitutes for the other.
-- Route/body/query/header/cursor/JWT/browser values may identify a target but never grant authority.
-- Subject discovery is accessible only for the authenticated subject/application authorization path and contains minimal data.
-- Tenant-visible failures and Audit records remain non-disclosing about foreign Tenant/entity identity.
-- Tokens, full claims, invitation credentials, and raw selectors are not logged/persisted as authority evidence.
+- Tenant isolation still requires both current authorization and tenant-scoped persistence.
+- Route/header/query/body/JWT/browser Tenant references never grant authority.
+- Suspended read contexts cannot be passed to mutation use cases by type/contract design.
+- Platform support/admin contexts are independently authenticated/authorized/audited and never become Tenant Memberships.
+- Privileged support queries stay producer-owned and cannot directly access another module's table.
+- Tenant-visible failures/logs/Audit output remain non-disclosing about foreign Tenant/entity identity.
 
 ## Reliability and operability impact
 
-- Authority read failures return a safe dependency-unavailable result rather than no-Membership or stale fallback.
-- SDK retries are bounded and technical only.
-- Current authority resolution and aggregate optimistic concurrency remain separate mechanisms.
-- Logs preserve safe module/outcome/correlation data with no token/email/cross-Tenant target detail.
-- High-cardinality SubjectId/TenantId are not custom metric dimensions.
+- authority-store failure returns a dependency-unavailable result; there is no stale fallback.
+- platform suspend/reactivate commands use expected Tenant revision and idempotent command/Audit delivery identity.
+- a failed Audit consumer does not roll back the accepted Tenancy transition; durable source-owned Audit intent supports recovery.
+- cached storefront/catalog data cannot override current Tenant suspension at the public request/checkout gate.
+- logs preserve safe operation class, outcome, and correlation identifiers without tokens or cross-Tenant target details.
 
 ## Cost impact
 
-This ADR/reconciliation deploys nothing. Later protected requests add bounded strong/transactional DynamoDB reads and a subject-discovery query. At the learning volume this remains within the existing DynamoDB cost envelope but must be measured before considering caching.
-
 No new managed service is introduced.
+
+The resolved design adds only bounded current DynamoDB reads already within the Tenancy authority model. Platform support/admin queries reuse module application surfaces and existing serverless runtimes. Audit delivery uses the already-approved durable integration pattern when its implementation task is Ready.
 
 ## Reversibility / migration
 
-- A later authority cache requires a revocation/staleness/outage ADR and cannot silently supersede current validation.
-- Changing Tenant selection UX changes delivery contracts but not the rule that selection is untrusted until Membership/Tenant validation.
-- Moving authority resolution into a separate deployment preserves the application contract and requires internal authentication/IAM/latency/cost analysis.
-- Changing identity provider changes authentication adaptation, not Merchant Access ownership.
+- Existing generic authority call sites can migrate by classifying each route/use case as read or mutation and adapting to the corresponding trusted context.
+- No stored business data requires destructive migration; Tenant already owns status/revision.
+- A future Tenant closure/privacy lifecycle requires a new product/privacy decision and architecture reconciliation; it must not be inferred from Suspended records.
+- A future authority cache requires a separate staleness/revocation/outage architecture decision.
 
 ## Validation
 
 Dependent implementation must verify:
 
-- one subject with Tenant A + Tenant B Memberships requires intentional selection when ambiguous;
-- one candidate may be auto-selected only after current validation;
-- route/header/query/body/JWT/cursor attempts cannot override trusted Tenant scope;
-- still-valid tokens lose authority on the next resolution after Membership disable/role change or Tenant suspension;
-- Subject discovery cannot authorize without final Tenant/Membership validation;
-- Tenant A cannot read/mutate Tenant B by known aggregate/Membership IDs;
-- Subscription entitlement never falls back to JWT/client/cache values;
-- authority-store failure fails closed;
-- architecture tests enforce trusted context/repository scope and prohibit foreign table access;
-- logs/problems contain safe codes/correlation only.
+- Suspended Tenant + Active Owner/Admin can use approved read-only queries but cannot execute ordinary merchant mutations;
+- Suspended Tenant + Active Staff/Viewer cannot exceed their normal role read visibility;
+- Reactivate restores Tenant eligibility but does not reactivate Disabled Membership or Ended Subscription;
+- only a trusted platform-admin path may suspend/reactivate and reason is mandatory;
+- platform support read does not create a Tenant Membership and cannot mutate business state;
+- public storefront/checkout is unavailable for Suspended Tenant even when public Product data is cached;
+- one subject with multiple Memberships still requires intentional Tenant selection when ambiguous;
+- known foreign Tenant/aggregate identifiers cannot override trusted Tenant scope;
+- authority dependency failure fails closed;
+- architecture tests prevent mutation handlers from accepting read-only authority context and prohibit foreign-table access.
 
 ## References
 
-- domain baseline: `docs/domains/tenant-identity.md`
-- technical baseline: `docs/architecture/technical-baseline.md`
-- product-decision technical reconciliation: `docs/architecture/product-decision-technical-reconciliation.md`
-- ADR-005: DynamoDB module ownership/access patterns
-- ADR-008: SubscriptionBilling authority boundary
-- ADR-009: onboarding completion/recovery
+- `docs/domains/tenant-identity.md`
+- `docs/domains/product-decisions.md` (`PD-004`)
+- `docs/architecture/technical-baseline.md`
+- `docs/architecture/product-decision-technical-reconciliation.md`
+- ADR-005 — DynamoDB module ownership/access patterns
+- ADR-006 — reliable integration/Audit delivery
+- ADR-008 — SubscriptionBilling entitlement boundary
