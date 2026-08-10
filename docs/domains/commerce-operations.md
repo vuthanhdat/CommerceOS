@@ -1,513 +1,721 @@
 # Commerce Operations & Cross-Domain Fact Baseline
 
-_Medium-depth runway for Sales, Inventory, Payments, Procurement, Accounting, Reporting, Product Data Ingestion, and supporting contexts. Reconciled by TASK-0087._
+_Reconciled after the 2026-08-10 human product-decision pass. This document incorporates approved operational/accounting decisions `PD-011`–`PD-042` where applicable. `PD-023` remains intentionally deferred._
 
 ## 1. Purpose
 
-This document defines source-of-truth ownership, aggregate/state meaning, and business-fact vocabulary far enough to support dependency planning. It does not finalize distant feature detail or choose interaction, deployment, storage, or cloud mechanisms.
+This document defines business ownership, aggregate/state meaning, cross-domain facts, and MVP invariants for Sales, Inventory, Payments, Procurement, Accounting, Reporting, Product Data Ingestion, Notification, Audit, Customer/CRM, and related supporting concerns.
 
-A future contract may use a different versioned event name, but it must preserve the owner and meaning recorded here.
+It does **not** choose databases, AWS services, transports, sync/async mechanisms, deployment boundaries, or API schemas.
 
 ## 2. Cross-domain fact rule
 
-For every cross-domain effect, distinguish:
+For every cross-domain effect:
 
 ```text
-Request to attempt work
-          ↓
-owning context accepts or rejects
-          ↓
-past-tense owned business fact
-          ↓
-another context decides its own effect
+request to attempt work
+        ↓
+owning context accepts/rejects
+        ↓
+owned past-tense business fact
+        ↓
+consumer decides its own effect
 ```
 
 Examples:
 
-- `ReserveStock` is a request; `StockReserved` is Inventory's fact.
-- `CapturePayment` is a request; `PaymentCaptured` is Payments' fact after verified provider evidence.
-- a provider callback is evidence; it is not an Order fact.
-- `GeneratePosting` is a request; `JournalPosted` is Accounting's fact.
-- a queue retry or projection rebuild is an operational signal; it is not a sale, receipt, or payment.
+- `ReserveStock` is not `StockReserved`.
+- provider evidence is not `PaymentCaptured` until Payments verifies/accepts it.
+- `GoodsReceiptRecorded` is not `StockReceived`.
+- `PaymentCaptured` is not revenue recognition.
+- `StockIssued` is not `OrderFulfilled`.
+- `JournalPosted` never changes the source operational fact.
 
-## 3. Authoritative business-fact catalog
+Replay of the same logical source must not create the same inventory, payment, usage, or accounting effect twice.
 
-| Fact | Owner | Meaning | Explicitly does not mean |
+## 3. Shared MVP value rules
+
+### Money (`PD-002`)
+
+- CommerceOS merchant-commerce MVP is VND-only.
+- Money always includes explicit currency.
+- Merchant-facing VND amounts use whole đồng.
+- No currency conversion exists in MVP.
+
+### Quantity (`PD-012`)
+
+- Product/order/reservation/receipt/issue quantities are positive whole units only.
+- Fractional quantities, variable units of measure, conversions, and fractional rounding are out of scope.
+
+## 4. Authoritative fact catalog
+
+| Fact | Owner | Accepted business meaning | Does not imply |
 |---|---|---|---|
-| `MerchantTenantRegistered` | Tenant Management | a usable merchant tenant and initial ownership outcome was accepted | authentication alone succeeded |
-| `MembershipActivated` / `MembershipDisabled` | Merchant Access | subject gained/lost active authority in one Tenant | token was created/revoked by an identity provider |
-| `ProductPublished` / `ProductUnpublished` | Catalog | canonical Product became/became no longer public-eligible | product is in stock or publicly deployed everywhere |
-| `ProductImported` | Catalog | merchant-approved source fields were applied to a canonical Product | source obtained continuing update authority |
-| `OrderPlaced` | Sales | one commercial order with immutable lines/prices/totals was accepted | stock reserved, payment captured, or revenue recognized |
-| `OrderConfirmed` | Sales | the order met the approved commercial confirmation rule | an unverified provider callback arrived |
-| `OrderAllocated` | Sales | Sales accepted evidence that every required line has an active Inventory reservation | stock was physically issued |
-| `OrderFulfilled` | Sales | all required fulfillment effects were accepted | COGS was posted automatically |
-| `OrderCancelled` | Sales | Sales accepted cancellation under the approved policy | any required stock release/refund already succeeded unless stated separately |
-| `RefundRequested` | Sales | merchant/customer refund intent passed Sales eligibility | money was refunded or goods returned |
-| `StockReserved` | Inventory | exact quantities were held under an active Reservation | Sales order is confirmed or paid |
-| `StockReleased` | Inventory | an active Reservation was ended without issue for the stated quantity | Sales order was cancelled |
-| `StockIssued` | Inventory | reserved physical stock left on-hand and reservation balances exactly once | customer order status or COGS changed |
-| `StockReceived` | Inventory | on-hand stock increased for an accepted source | Procurement receipt or AP posting necessarily exists |
-| `StockReturned` / `StockAdjusted` | Inventory | exact physical quantity effect and reason were recorded | refund/accounting consequence was accepted |
-| `PaymentAuthorized` | Payments | provider evidence shows funds are authorized under the mock-provider semantics | money was captured or order confirmed |
-| `PaymentCaptured` | Payments | provider evidence shows the stated amount/currency captured once | revenue recognition policy has been selected |
-| `PaymentDeclined` | Payments | provider gave a definitive business decline for an attempt | every future attempt for the order is forbidden |
-| `PaymentOutcomeBecameUnknown` | Payments | CommerceOS cannot yet determine whether the independent provider committed | provider failed, declined, or timed out as a durable provider state |
-| `PaymentRefunded` | Payments | provider evidence shows the stated refund amount accepted once | returned inventory or accounting correction occurred |
-| `PurchaseOrderSubmitted` | Procurement | merchant committed the submitted supplier/line/commercial snapshot | supplier accepted, goods arrived, or AP exists |
-| `GoodsReceiptRecorded` | Procurement | authorized staff recorded immutable physical-receipt evidence against a PO | Inventory has applied StockReceived or Accounting has recognized AP |
-| `SupplierInvoiceRecorded` | Procurement | merchant recorded immutable supplier-invoice evidence | invoice was paid or journal posted |
-| `SupplierPaymentRecorded` | Procurement | merchant attested an external supplier-payment occurrence | CommerceOS executed bank payment or Accounting cash/AP changed |
-| `JournalPosted` | Accounting | balanced immutable journal became ledger truth | source operational context changed |
-| `JournalReversed` | Accounting | a new linked reversal journal was posted | original journal was edited/deleted |
-| `SourceSnapshotCaptured` | Product Data Ingestion | one external observation was captured with provenance | canonical Product changed |
-| `ImportCandidateCreated` | Product Data Ingestion | normalized source facts are ready for merchant review | candidate was accepted or published |
+| `OrderPlaced` | Sales | immutable commercial order snapshot accepted | stock held, payment captured, revenue recognized |
+| `OrderConfirmed` | Sales | verified full capture condition for MVP order confirmation has been met | stock issued or revenue journal already posted |
+| `OrderAllocated` | Sales | confirmed Order is backed by all required active Inventory reservations | physical fulfillment |
+| `OrderFulfilled` | Sales | all required whole-order fulfillment/issue evidence accepted | refund/correction history disappears |
+| `OrderCancelled` | Sales | merchant cancellation accepted before fulfillment | reservation release/refund succeeded |
+| `RefundRequested` | Sales | refund intent accepted as eligible | money refunded, stock returned, accounting corrected |
+| `StockReserved` | Inventory | required quantity held | Order confirmed/paid |
+| `StockReleased` | Inventory | reservation ended without issue | Order cancelled |
+| `StockIssued` | Inventory | physical quantity left OnHand and reservation effect applied exactly once | Sales completed or COGS already posted |
+| `StockReceived` | Inventory | OnHand increased for accepted source evidence | PO receipt/invoice/accounting all succeeded |
+| `StockReturned` | Inventory | accepted physical return increased OnHand | refund/revenue/COGS correction accepted |
+| `StockAdjusted` | Inventory | accepted physical adjustment changed quantity for explicit reason | reservation/payment/sale changed |
+| `PaymentCaptured` | Payments | verified provider evidence proves full Order amount captured | Sales revenue recognized |
+| `PaymentDeclined` | Payments | one PaymentAttempt definitively declined/no-commit under provider semantics | Payment obligation/order is terminal |
+| `PaymentOutcomeBecameUnknown` | Payments | commit outcome cannot yet be proven | provider failed or declined |
+| `PaymentRefunded` | Payments | verified refund amount accepted | Inventory or Accounting correction occurred |
+| `PurchaseOrderSubmitted` | Procurement | immutable supplier/line/commercial commitment snapshot submitted | supplier acceptance, receipt, AP |
+| `GoodsReceiptRecorded` | Procurement | confirmed immutable physical receipt evidence | Inventory application or journal succeeded |
+| `SupplierInvoiceRecorded` | Procurement | supplier invoice evidence accepted | payment/journal succeeded |
+| `SupplierPaymentRecorded` | Procurement | merchant attested external supplier payment | CommerceOS executed a bank payment |
+| `JournalPosted` | Accounting | balanced immutable journal became ledger truth | source domain changed |
+| `JournalReversed` | Accounting | linked compensating/reversal journal posted | original journal edited/deleted |
+| `SourceSnapshotCaptured` | Product Data Ingestion | external observation captured with provenance | Catalog changed |
+| `ImportCandidateCreated` | Product Data Ingestion | normalized external evidence ready for review | candidate approved/applied |
 
-`CartCheckedOut` is not an integration fact in this baseline. If retained later, it must mean a distinct analytics fact rather than duplicate `OrderPlaced`.
+## 5. Sales & Order Management
 
-## 4. Sales & Order Management
+### 5.1 Responsibility and aggregate
 
-### Responsibility and aggregate
+`SalesOrder` is the aggregate root for the accepted commercial agreement between one Tenant and shopper/customer.
 
-Sales owns the accepted commercial agreement between a Tenant and a customer/shopper.
+It owns:
 
-`SalesOrder` is the aggregate root. It owns:
+- immutable Tenant/Order identity;
+- immutable checkout intent identity;
+- immutable order-line ProductId, displayed SKU/name, whole-unit quantity, accepted unit price, currency, and line totals;
+- authoritative Order total;
+- immutable guest contact/fulfillment snapshot when supplied;
+- commercial lifecycle;
+- Sales-owned view of allocation/fulfillment evidence;
+- cancellation/refund-request intent/history.
 
-- immutable Tenant and Order identity;
-- customer reference plus immutable checkout contact/address snapshot when collected;
-- one or more OrderLines;
-- immutable ProductId, displayed SKU/name, quantity, unit-price, discount, currency, and line-total snapshots;
-- order-level totals and one currency;
-- Sales-owned lifecycle/history;
-- cancellation and refund-request eligibility/history;
-- stable accepted checkout-intent identity.
+Sales does not own current Product, current stock, provider state, or journal truth.
 
-Sales does not own current Product, current Customer profile, stock, payment-provider state, or journals.
+### 5.2 Guest checkout and customer data (`PD-035`)
 
-### Cart and checkout
+Guest checkout does not require or create a shopper account or CRM Customer.
 
-The Storefront cart is tenant-bound, transient, and untrusted. Displayed price is an estimate until Sales accepts checkout.
+Per Order snapshot:
 
-Checkout invariants:
+- recipient/display name: required;
+- email: required;
+- phone: required only when selected fulfillment method needs it;
+- shipping address: required only when selected fulfillment method needs it.
 
-1. trusted storefront context determines Tenant; cart/request TenantId cannot grant or redirect authority;
-2. every Product is re-resolved as currently sellable by Catalog;
-3. quantity is positive and within approved limits;
-4. all lines use one approved currency;
-5. totals are calculated from authoritative resolved values, not browser totals;
-6. all lines succeed or no SalesOrder is placed;
-7. the same tenant + checkout intent + equivalent request creates at most one logical SalesOrder;
-8. reuse of the same intent identity for materially different input is a conflict;
-9. Catalog changes after placement never rewrite the Order;
-10. Customer/CRM changes after placement never rewrite the Order's contact/address snapshot.
+MVP performs no automatic guest-to-Customer matching or profile creation. Any future link must be explicit/verified and never rewrite historical Order snapshots.
 
-Price-change confirmation, quantity units, manual discounts, and guest policy remain `PD-011`, `PD-012`, and `PD-013`.
+No automatic anonymization/deletion of historical commercial/accounting evidence exists in MVP; future privacy/retention policy must supersede this explicitly.
 
-### State dimensions
+### 5.3 Checkout repricing (`PD-011`)
 
-The earlier single flat status mixes commercial, payment, fulfillment, and refund meaning. The baseline therefore defines meanings by dimension; `PD-014` selects the approved initial combined presentation and reserve/pay sequence, while `PD-042` selects cancellation eligibility/effects and the completion trigger.
+Displayed cart price is an estimate until final authoritative checkout validation.
 
-Sales-owned commercial states/facts:
+If **any** authoritative current price differs from the shopper-confirmed estimate:
 
-- `Draft` — optional merchant-created order not yet placed; guest checkout may skip it;
-- `Placed` — immutable commercial snapshot accepted;
-- `Confirmed` — commercial confirmation condition selected by `PD-014` was met;
-- `Cancelled` — cancellation was accepted under the stage/effect policy selected by `PD-042`;
-- `Completed` — terminal business completion trigger selected by `PD-042` was met.
+1. no Order is finally placed for that attempt;
+2. refreshed authoritative price is returned/presented;
+3. shopper must explicitly reconfirm;
+4. a new placement attempt may then proceed.
 
-Sales-owned fulfillment view, based on Inventory evidence:
+No tolerance band and no silent acceptance of either lower or higher changed price exists in MVP.
 
-- `Unallocated` — required reservation evidence is not complete;
-- `Allocated` — all required lines have active reservations;
-- `Fulfilled` — all required lines have accepted stock issue evidence.
+### 5.4 Discounts (`PD-013`)
 
-Payment view, based on Payments evidence:
+Manual discounts are not supported in MVP public/guest checkout.
 
-- `NotRequested`, `Pending`, `OutcomeUnknown`, `Authorized`, `Captured`, `DefinitiveNoCommitObserved`, `PartiallyRefunded`, `Refunded`; whether a no-commit observation closes the Order path is `PD-017`.
+- untrusted clients never submit an authoritative discount;
+- initial order pricing uses authoritative Catalog/Pricing results only;
+- future manual discount/promotion capability belongs to Pricing product policy and must not be smuggled into Sales.
 
-Refund state is not allowed to erase fulfillment history. `PartiallyRefunded` and `Refunded` are financial/refund dimensions, not replacements for `Fulfilled`.
+### 5.5 Canonical order dimensions and happy path (`PD-014`, `PD-015`)
 
-Meaning constraints:
+Commercial, payment, allocation, fulfillment, and refund dimensions remain separate.
 
-- `PaymentOutcomeBecameUnknown` is nonterminal and cannot be converted to decline/failure because time passed.
-- `OrderAllocated` exists only after all required Reservation evidence is accepted.
-- `OrderFulfilled` exists only after all required issue evidence is accepted.
-- `PaymentDeclined` may end one attempt without deciding whether the SalesOrder may accept another attempt; see `PD-017`.
-- cancellation after capture may require a separate refund; cancellation after allocation may require separate stock release. Sales must not report those independent effects as complete merely because cancellation was accepted.
-
-### Sales errors
-
-- `ORDER_LINE_NOT_SELLABLE` — Catalog says a Product is not currently eligible; distinct from insufficient stock.
-- `ORDER_PRICE_CHANGED` — authoritative resolved price differs under the approved shopper-confirmation policy.
-- `CHECKOUT_INTENT_CONFLICT` — same intent identity used for non-equivalent input.
-- `ORDER_STATE_TRANSITION_INVALID` — requested Sales transition is not permitted.
-- `ORDER_PAYMENT_OUTCOME_UNKNOWN` — order cannot take an unsafe terminal payment-dependent transition.
-- `ORDER_ALLOCATION_INCOMPLETE` — all required line reservations are not accepted.
-- `ORDER_CANCELLATION_NOT_ALLOWED` / `ORDER_REFUND_NOT_ALLOWED` — approved eligibility rule failed.
-
-## 5. Inventory
-
-### Responsibility and aggregates
-
-Inventory owns physical stock truth.
-
-- `StockItem` is the balance-consistency aggregate root for one Tenant, Warehouse/Location, and Catalog Product reference.
-- `StockReservation` has stable identity/source and its own lifecycle; it may be modeled within the StockItem consistency boundary without changing business ownership.
-- `StockMovement` is immutable evidence of one accepted quantity effect.
-- `InventoryAdjustment` records authorized adjustment reason/evidence and results in a movement when accepted.
-- `Warehouse` is a tenant-owned reference aggregate. One active warehouse is the initial operating scope; multi-warehouse allocation is later.
-
-### Quantity invariants
-
-The universally accepted quantity relationship is:
+Approved happy path:
 
 ```text
-Reserved >= 0
-Available = OnHand - Reserved
+authoritative checkout validation
+        ↓
+OrderPlaced
+        ↓
+all-line Inventory reservation/hold accepted
+        ↓
+full immediate Payment capture attempt
+        ↓
+verified PaymentCaptured
+        ↓
+OrderConfirmed
+        ↓
+OrderAllocated (all required reservations active)
+        ↓
+whole-order fulfillment / all required StockIssued evidence
+        ↓
+OrderFulfilled
+        ↓
+Completed when no cancellation/refund exception remains
 ```
 
-`PD-041` must select whether OnHand/Available may be negative, whether backorder exists, the reservation floor, and how adjustment decreases interact with reserved quantity. Until then, TASK-0028–0031 cannot implement an assumed zero floor or an assumed negative-stock policy.
+MVP has:
 
-Every non-zero accepted stock effect creates exactly one StockMovement. Initialization at zero is not a movement. A replay of the same logical source creates no additional movement or balance change; incompatible reuse is a conflict.
+- all-or-nothing allocation across all order lines/quantities;
+- no backorder;
+- no partial allocation;
+- no split shipment;
+- no partial fulfillment.
+
+`OrderAllocated` is not asserted before Order confirmation even if a reservation exists.
+
+### 5.6 Commercial states
+
+```text
+Placed ──verified capture──► Confirmed ──whole fulfillment──► Fulfilled ──► Completed
+  │                              │
+  └────────cancel before Fulfilled──────────────────────────► Cancelled
+```
+
+`Completed` is terminal for normal commerce operations.
+
+### 5.7 Cancellation (`PD-042`)
+
+Owner/Admin/Staff may cancel an Order any time before it is Fulfilled. Shopper self-service cancellation is out of scope.
+
+Cancellation is only a Sales commercial fact:
+
+- if stock is reserved, Inventory release is separately required;
+- if payment is captured, Payments refund is separately required;
+- outcomes remain independently visible;
+- Sales must not report foreign-domain effects as complete merely because cancellation was accepted.
+
+A Fulfilled Order is not cancellable under MVP normal cancellation semantics.
+
+### 5.8 Sales invariants
+
+- trusted storefront Tenant context determines Tenant; cart/request TenantId never grants authority;
+- every Product is revalidated as currently sellable;
+- all lines use whole-unit quantities and VND Money;
+- totals are server-authoritative business values, never browser totals;
+- one logical checkout intent produces at most one logical Order for equivalent input;
+- incompatible reuse of the same intent is a conflict;
+- later Catalog/Customer changes never rewrite Order snapshots;
+- `OutcomeUnknown` blocks unsafe payment-dependent terminal transitions.
+
+## 6. Inventory
+
+### 6.1 Responsibility
+
+Inventory owns physical quantity truth by Tenant + Product + Warehouse/Location.
+
+Core concepts:
+
+- `Warehouse` — Tenant-owned reference aggregate;
+- `StockItem` — quantity consistency boundary;
+- `StockReservation` — stable source-bound reservation lifecycle;
+- `StockMovement` — immutable accepted quantity effect;
+- `InventoryAdjustment` — reasoned physical correction request/evidence.
+
+### 6.2 Quantity invariants (`PD-041`)
+
+```text
+OnHand >= 0
+Reserved >= 0
+Available = OnHand - Reserved
+Available >= 0
+```
+
+MVP does not support negative OnHand, negative Available, or backorder.
+
+Reservation requires current authoritative `Available >= requested quantity` and must preserve the invariant under concurrency.
+
+A downward adjustment may not reduce `OnHand` below `Reserved`. Existing reservations must first be explicitly changed/released through their owning workflow, or the adjustment is rejected/handled as an exception.
+
+### 6.3 Stock movements
 
 | Movement | OnHand effect | Reserved effect |
 |---|---:|---:|
-| Receive | +quantity | 0 |
-| Reserve | 0 | +quantity |
-| Release | 0 | -quantity |
-| Issue | -quantity | -quantity |
-| Return | +quantity | 0 |
-| AdjustmentIncrease | +quantity | 0 |
-| AdjustmentDecrease | -quantity | 0 |
+| Receive | +q | 0 |
+| Reserve | 0 | +q |
+| Release | 0 | -q |
+| Issue | -q | -q |
+| Return | +q | 0 |
+| AdjustmentIncrease | +q | 0 |
+| AdjustmentDecrease | -q | 0 |
 
-### Reservation lifecycle
+Every accepted non-zero physical quantity effect produces exactly one immutable movement/effect. Replay must not duplicate it.
 
-```text
-Active ──Release──► Released
-   └────Issue─────► Issued
-```
+### 6.4 Reservation and ambiguous payment (`PD-018`)
 
-An already released quantity cannot later be issued, and an already issued quantity cannot be released/issued again. Whether a Reservation is whole-quantity only or remains Active with partially released/issued quantities is `PD-015`; expiry/hold policy is `PD-018`.
+For an Order whose Payment is `OutcomeUnknown`:
 
-An ambiguous Payment outcome never by itself authorizes release; see `PD-018`.
+- reserved stock remains held until reconciliation proves Captured or definitive NoCommit/Declined;
+- time passage alone never expires/releases the hold;
+- if automated/provider inquiry cannot resolve it, the case becomes `NeedsAttention` for merchant/platform support visibility;
+- neither merchant nor support may manually declare financial success/failure without provider evidence in MVP.
 
-### Low stock
+This conservative rule prevents releasing stock for a payment that may actually have committed.
 
-Low stock is an Inventory-owned derived condition, not a balance. `LowStockDetected` may represent a threshold crossing, but Reporting/Notification cannot treat it as stock truth. Threshold basis/scope and reset behavior remain `PD-019`.
+### 6.5 Low stock (`PD-019`)
 
-### Inventory errors
+Low stock is derived operational state based on `Available`, evaluated per Product + Warehouse.
 
-- `INSUFFICIENT_AVAILABLE_STOCK`
-- `RESERVATION_ALREADY_TERMINAL`
-- `RESERVATION_SOURCE_CONFLICT`
-- `STOCK_ADJUSTMENT_REJECTED_BY_POLICY` — applicable when the approved `PD-041` floor/reservation interaction rejects the change
-- `STOCK_MOVEMENT_ALREADY_APPLIED`
-- `WAREHOUSE_OR_PRODUCT_REFERENCE_INVALID`
+- threshold is optional; absent means low-stock detection disabled;
+- condition becomes active when Available crosses from above threshold to `<= threshold`;
+- condition clears when Available rises above threshold;
+- it is not stock truth and does not alter balances.
 
-## 6. Payments and the Mock Payment Provider
+## 7. Payments and Mock Payment Provider
 
-### Two bounded contexts
+### 7.1 Payment model (`PD-016`)
 
-The two contexts must not be conflated:
+MVP has **one Payment obligation per Order** with multiple immutable `PaymentAttempt`s.
 
-```text
-Sales amount due
-      ↓
-CommerceOS Payments ──provider request/evidence──► Mock Payment Provider
-      │                                                │
-      └──merchant-side known state                     └──provider committed state
-```
+- full accepted Order amount is captured immediately;
+- authorize-only/capture-later is out of scope;
+- split tender, multiple tenders, partial capture, and over-capture are out of scope;
+- cumulative verified refunds may not exceed captured amount.
 
-### CommerceOS Payments
+### 7.2 Attempt outcomes and retry (`PD-017`)
 
-`Payment` is the named merchant-side aggregate concept for an Order's payment obligation. Whether one aggregate represents the Order obligation with several attempts or each accepted payment instruction is separate remains `PD-016`. Regardless of cardinality, Payments owns:
+A provider-verifiable Declined/Rejected/NoCommit result terminates only that PaymentAttempt.
 
-- immutable Tenant/Payment identity and SalesOrder reference;
-- amount and currency requested;
-- provider intent/reference mapping;
-- PaymentAttempts and observations;
-- current verified known outcome and ambiguity status;
-- captured and refunded cumulative amounts;
-- Refund entities/operations and their source intent.
+- Payment obligation remains open for another attempt unless Order is separately cancelled;
+- prior attempt history remains immutable;
+- transport error, timeout, missing callback, or ambiguous provider response is `OutcomeUnknown`, not failure;
+- no new capture attempt may start while the previous attempt remains unknown;
+- reconciliation/provider inquiry must establish the terminal outcome first.
 
-Baseline invariants:
+### 7.3 Payment invariants
 
-1. amount/currency originate from the accepted Sales obligation, not browser/provider callbacks alone;
-2. equivalent repeated operations have one logical effect;
-3. the same operation identity with different amount/currency is a conflict;
-4. total verified captured amount applied to the Order cannot exceed the accepted Sales obligation;
-5. cumulative successful refund cannot exceed captured amount;
-6. only verified provider evidence may create capture/refund facts or definitive attempt decline/no-commit outcomes;
-7. timeout, network error, missing callback, and caller cancellation do not prove provider failure;
-8. while outcome is unknown, unsafe capture retry, Sales failure, stock release, and accounting posting are prohibited until reconciliation establishes a fact;
-9. duplicate/out-of-order evidence cannot regress terminal known state or duplicate a fact.
+- amount/currency originate from accepted Sales obligation;
+- equivalent operation retry has one logical effect;
+- operation identity reused with different amount/currency is conflict;
+- verified captured amount cannot exceed Order obligation;
+- only verified provider evidence creates capture/refund/definitive no-commit facts;
+- duplicate/out-of-order evidence cannot regress known state or duplicate effects.
 
-Payment aggregate/attempt cardinality, immediate capture versus authorize/capture, retry after decline, and ambiguous hold/escalation remain `PD-016` through `PD-018`.
+Mock Payment Provider remains a separate bounded context that simulates merchant-order payment behavior. It does not own SalesOrder, Inventory, Accounting, or CommerceOS SaaS subscription billing.
 
-### Payment aggregate conditions and attempt outcomes
+## 8. Procurement
 
-Merchant-side aggregate conditions that do not depend on the unresolved cardinality choice:
+### 8.1 Supplier and PO eligibility (`PD-027`)
 
-- `Initiated/Open` — payment obligation/instruction was accepted and may have attempt activity;
-- `Authorized` — provider authorization was verified when the approved flow uses authorization;
-- `Captured` — verified captured amount satisfies the approved aggregate condition;
-- `OutcomeUnknown` — nonterminal overlay stating CommerceOS cannot determine whether the provider committed;
-- `PartiallyRefunded` / `Refunded` — cumulative verified refund condition.
+`Supplier` has stable Tenant-owned identity, display name, and `Active/Archived` status.
 
-Attempt outcomes are separate:
+- Supplier name is not a legal uniqueness key.
+- New PurchaseOrders require Active Supplier.
+- Draft or Published Catalog Products may be purchased.
+- Archived Products cannot be added to new POs.
+- procurement tax, freight, and PO discount calculations are excluded from MVP.
 
-- `Pending`;
-- `Authorized` or `Captured` with verified evidence;
-- `Declined` — definitive business decline for that attempt;
-- `DefinitiveNoCommit` — verified provider outcome proving that attempt did not commit;
-- `TransientFailure` — retryability depends on approved policy and never proves a business decline;
-- `TimedOut/UnknownObservation` — caller observation requiring inquiry/reconciliation.
+### 8.2 PurchaseOrder (`PD-025`)
 
-Whether a definitive decline/no-commit closes only an attempt, permits a new attempt, or closes the Order payment path remains `PD-017`. `TimedOut` is never a durable Mock Payment Provider business state.
+`PurchaseOrder` is the aggregate root for supplier commitment.
 
-### Mock Payment Provider
+`Submitted` freezes supplier, Product lines, quantities, and commercial terms as immutable snapshot.
 
-The provider owns its `PaymentIntent`, provider operations, `Refund`, and callback-delivery attempts. It supports deterministic scenarios but does not know or mutate SalesOrder, Inventory, or Accounting.
+Submitted PO:
 
-Provider facts/callback messages are external evidence. CommerceOS Payments verifies and translates them into its own owned facts; Sales and Accounting do not consume provider-private state as authority.
+- is never edited in place;
+- may be cancelled only while no confirmed GoodsReceipt, SupplierInvoice, or SupplierPayment evidence exists;
+- after downstream evidence exists, amendment/cancellation is not supported in MVP; later correction/return workflow or replacement PO is required as applicable.
 
-### Payment errors/outcomes
+### 8.3 GoodsReceipt (`PD-028`)
 
-- `PAYMENT_DECLINED` — definitive attempt outcome.
-- `PAYMENT_OUTCOME_UNKNOWN` — not a failure and requires inquiry/reconciliation.
-- `PAYMENT_OPERATION_CONFLICT` — operation identity reused incompatibly.
-- `PAYMENT_AMOUNT_MISMATCH` — evidence does not match merchant obligation.
-- `PAYMENT_REFUND_EXCEEDS_CAPTURED`
-- `PAYMENT_ALREADY_CAPTURED` / `PAYMENT_ALREADY_REFUNDED` — prior accepted result is returned/referenced when equivalent.
+Confirmed physical GoodsReceipt evidence is immutable.
 
-## 7. Procurement
+- PO received quantity follows confirmed physical GoodsReceipt evidence, not downstream Inventory-application success;
+- Inventory application is separately tracked as `Pending/Applied/NeedsAttention` conceptually;
+- erroneous confirmed receipt is corrected by a new explicit compensating/correction record referencing the original;
+- derived received quantity uses net accepted receipt/correction evidence;
+- original receipt is never destructively edited.
 
-### Responsibility and aggregates
+### 8.4 Supplier invoice/payment (`PD-029`)
 
-Procurement owns merchant purchasing evidence:
+MVP supports exactly one SupplierInvoice and one full SupplierPayment per PO.
 
-- `Supplier` — tenant-owned supplier identity/profile/status;
-- `PurchaseOrder` — supplier commitment and lines;
-- `GoodsReceipt` — immutable physical-receipt document/evidence;
-- `SupplierInvoiceRecord` — immutable external invoice evidence/reference;
-- `SupplierPaymentRecord` — merchant-attested external payment evidence.
+SupplierInvoice:
 
-`PurchaseOrder` is the aggregate root for commitment/lifecycle. A submitted PO preserves its supplier, product, quantity, unit-cost, currency, and total snapshot. Whether/how submitted orders may be amended or cancelled is `PD-025`.
+- only after PO is fully received under MVP receipt policy;
+- records supplier invoice reference/date, Money amount/currency, and related PO;
+- exact match is required for automatic acceptance;
+- variance requires explicit merchant approval and remains preserved as Accounting variance evidence.
 
-`GoodsReceipt` has its own stable identity even when the initial scope allows one complete receipt. A retry cannot create a second receipt for the same logical occurrence. A wrongly confirmed physical receipt is corrected with explicit corrective evidence; it is not silently edited away.
+SupplierPayment:
 
-### State dimensions
+- only after invoice exists;
+- full-payment evidence only in MVP;
+- records payment date, Money amount, and external/reference text;
+- is merchant attestation, not bank execution.
 
-The documented happy path remains:
+## 9. Accounting
 
-```text
-Draft → Submitted → Goods received → Invoice recorded → Payment recorded → Closed
-```
+CommerceOS accounting is a **learning/MVP bookkeeping model**, not a claim of statutory/tax/GAAP/IFRS/Vietnam-accounting compliance.
 
-These are not assumed to be one inseparable enum. Procurement needs honest independent dimensions because receipt, Inventory application, invoice, and payment evidence can temporarily differ:
+### 9.1 Core invariants
 
-- PO commitment: `Draft`, `Submitted`, `Closed`, and any future approved cancellation/correction state;
-- receipt: `NotReceived`, `Received` (partial/over-receipt later);
-- Inventory application: `Pending`, `Applied`, `NeedsAttention`;
-- invoice: `NotRecorded`, `Recorded`;
-- supplier settlement: `Unpaid`, `Paid` for the initial full-payment scope.
+- posted journals are immutable;
+- every journal balances debit == credit;
+- corrections use new reversal/compensating entries;
+- source fact identity is retained for idempotency/traceability;
+- source replay cannot create a second logical posting.
 
-Recording physical receipt remains true even if Inventory application fails; Procurement exposes recovery state instead of erasing the receipt. Inventory owns the resulting `StockReceived` effect.
+### 9.2 Chart of accounts (`PD-038`)
 
-Invoice cardinality/timing/matching, receipt correction, Supplier rules, PO line eligibility, and payment attestation semantics remain `PD-025` and `PD-027` through `PD-029`.
+Accounting is enabled automatically for every MVP Tenant with a minimal platform-defined learning chart including at least:
 
-### Procurement errors
-
-- `SUPPLIER_NOT_ELIGIBLE`
-- `PURCHASE_ORDER_NOT_EDITABLE`
-- `GOODS_RECEIPT_QUANTITY_NOT_ALLOWED`
-- `GOODS_RECEIPT_SOURCE_CONFLICT`
-- `INVENTORY_APPLICATION_PENDING_OR_FAILED`
-- `SUPPLIER_INVOICE_CONFLICT_OR_MISMATCH`
-- `SUPPLIER_PAYMENT_EVIDENCE_INVALID`
-- `PURCHASE_ORDER_NOT_CLOSABLE`
-
-## 8. Accounting
-
-### Responsibility and aggregates
-
-Accounting owns ledger representation, not operational truth.
-
-- `ChartOfAccounts` owns the Tenant's account definitions and policy-valid account lifecycle under `PD-038`.
-- `JournalEntry` is the aggregate root containing JournalLines, source references, posting status, and reversal links.
-- `PostingPolicy` describes the approved mapping from one authoritative operational fact to one logical accounting effect.
-- General Ledger and Trial Balance are Accounting-owned derivations from posted journals, not separate sources of truth.
-
-`ChartOfAccounts` is tenant-owned. Account stable identity, code/name/type, control-account designation, and lifecycle are Accounting facts, but template/customization, enablement, code reuse, required controls, and deactivation rules remain `PD-038`. A Builder may not infer a statutory chart or allow a referenced/control account to disappear merely because CRUD would be convenient.
-
-### Journal states and invariants
-
-```text
-Draft ──Post valid balanced entry──► Posted
-Posted ──Reverse──► original remains immutable Posted
-                   + new linked Posted reversal journal
-```
-
-- A rejected `PostJournal` attempt leaves the Journal Draft and produces a rejection outcome/evidence; `Rejected` is not a Journal state in this baseline.
-- Posted JournalEntry identity, lines, amounts, accounts, dates, source, and narrative are immutable.
-- Every Posted Journal balances total debit and credit in one currency.
-- A source logical effect can create at most one posting; replay returns/references the prior result.
-- Correction uses a linked reversal plus, when needed, a new corrected journal.
-- Reversal does not delete or mutate the original and cannot be applied repeatedly to create duplicate reversals.
-- Every system-generated posting identifies the operational fact and policy version that justified it.
-- A journal preserves source occurrence time, accounting/effective date, and posting time as distinct concepts; `PD-039` selects which date drives the ledger and any backdating/period rule.
-
-### Accounting-trigger decision matrix
-
-Exactly one authoritative source fact/logical source key must be selected for each effect. Candidate tasks may not consume both alternatives and rely on timing to avoid duplication.
-
-| Economic effect | Operational owner | Decision required before posting task is Ready |
-|---|---|---|
-| sale/revenue and Cash versus AR | Sales/Payments provide candidate facts; Accounting owns posting | `PD-020` chooses recognition fact and account treatment |
-| COGS and Inventory reduction | Inventory/Sales provide candidate facts | `PD-021` chooses one trigger, valuation method, and immutable cost-snapshot owner |
-| received inventory and AP/interim liability | Procurement/Inventory provide candidate facts | `PD-022` chooses receipt/invoice timing and variance treatment |
-| supplier payment Cash/AP | Procurement supplies evidence approved under `PD-029` | `PD-022` chooses only the Accounting recognition/posting policy |
-| customer refund/return | Payments/Sales/Inventory provide distinct facts | `PD-023` chooses contra/reversal timing and restock/COGS treatment |
-| stock adjustment gain/expense | Inventory supplies reasoned adjustment fact | `PD-024` chooses financially postable reasons/accounts |
-
-`PaymentCaptured` versus `OrderConfirmed`, `StockIssued` versus `OrderFulfilled`, and `GoodsReceiptRecorded` versus `StockReceived` are not interchangeable aliases. Human accounting policy must select one logical trigger per effect.
-
-### Accounting errors
-
-- `JOURNAL_NOT_BALANCED`
-- `JOURNAL_ACCOUNT_NOT_POSTABLE`
-- `JOURNAL_ALREADY_POSTED`
-- `POSTING_SOURCE_ALREADY_APPLIED`
-- `POSTING_POLICY_UNDEFINED`
-- `JOURNAL_NOT_REVERSIBLE` / `JOURNAL_ALREADY_REVERSED`
-- `ACCOUNTING_PERIOD_NOT_OPEN` only after period policy is explicitly introduced
-
-## 9. Reporting & Analytics
-
-Reporting owns rebuildable projections, projection progress/freshness, and metric definitions once approved. It never owns or repairs the source transaction.
+- Cash;
+- Customer Deposits / Unearned Revenue;
+- Sales Revenue;
+- Inventory;
+- COGS;
+- Accounts Payable;
+- GRNI;
+- Purchase Price Variance;
+- Inventory Adjustment Gain;
+- Inventory Adjustment Loss/Expense.
 
 Rules:
 
-1. operational KPIs derive from facts owned by operational contexts;
-2. financial reports derive from Accounting journal/ledger facts and reconcile to them;
-3. a projection exposes its `as-of` time/freshness where lag matters;
-4. rebuild/replay does not duplicate totals;
-5. late correction/reversal updates projections without rewriting the source fact;
-6. reporting failure never fails or reverses a committed transaction.
+- required control-account semantic roles are platform-defined;
+- merchants may add non-control accounts and edit display names where allowed;
+- account identity/code is Tenant-unique;
+- once referenced by posted journal, account identity/code is not reused;
+- posted references remain immutable;
+- non-required accounts may be deactivated, not hard-deleted;
+- required control accounts cannot be deactivated while corresponding capability remains enabled.
 
-Operational order count, AOV, top-product, and failed-payment definitions remain `PD-030`; business date/timezone and correction attribution remain `PD-031`. Financial revenue/gross profit inherit Accounting decisions `PD-020`, `PD-021`, `PD-038`, and `PD-039` rather than selecting independent Reporting source facts. A task may not present a metric label before its numerator, denominator, eligibility, date basis, source facts, and financial account grouping where relevant are approved.
+### 9.3 Sale/revenue recognition (`PD-020`)
 
-Low-stock is an Inventory projection. General Ledger and Trial Balance are Accounting derivations. Reporting may compose them for dashboards but cannot become their source.
+MVP is prepaid/cash commerce with no Accounts Receivable.
 
-## 10. Product Data Ingestion
+`PaymentCaptured` posts:
 
-### Responsibility and aggregates
+```text
+Dr Cash
+Cr Customer Deposits / Unearned Revenue
+```
 
-Product Data Ingestion owns policy-governed external observations and merchant import proposals.
+Whole-order `OrderFulfilled` is the single revenue-recognition trigger:
 
-- `DataSource` — source identity with separate policy-review validity and operating status. Operating states may include Active/Paused/Disabled, but Active is eligible to acquire only while a current approved policy review exists. Authority/scope is `PD-026`.
-- `AcquisitionRequest` / `AcquisitionRun` — business-visible attempt to obtain one allowed external observation; technical worker states are not business states.
-- `SourceSnapshot` — immutable external observation with source identity, URL/reference, captured time, and acquisition provenance; it exists even if parsing/normalization later fails.
-- `NormalizedSourceProduct` — accepted or rejected structured interpretation linked to one SourceSnapshot, with parser/schema provenance and distinct absent/unknown/failure semantics.
-- `ImportCandidate` — tenant-bound proposal created only from an accepted NormalizedSourceProduct, including exact proposed fields and candidate lifecycle.
+```text
+Dr Customer Deposits / Unearned Revenue
+Cr Sales Revenue
+```
 
-Baseline rules:
+`OrderConfirmed` does not post revenue.
 
-1. source policy must permit acquisition before an attempt is accepted;
-2. a policy block, CAPTCHA/access restriction, or unsupported authentication is not permission to bypass controls;
-3. the same logical capture identity creates at most one observation; a genuinely new retrieval at a new captured time may create another immutable snapshot;
-4. absent source value, parsing failure, and explicit source “unknown/unavailable” remain distinct; normalization failure does not erase the captured SourceSnapshot;
-5. raw/normalized external data is never the canonical Product;
-6. only explicitly selected merchant-approved fields are proposed/applied;
-7. Catalog owns the resulting canonical value and external link;
-8. a newer snapshot never silently overwrites an older candidate or Product;
-9. source-specific technical queue/retry/DLQ states are operational signals, not commerce facts.
+### 9.4 Inventory valuation and COGS (`PD-021`)
 
-ImportCandidate recognizes conceptually `ReadyForReview`, `ApprovedForApplication`, `ApplicationPending`, `Applied`, `NeedsAttention`, `Rejected`, `Superseded`, and `Expired`; exact transitions, mapping cardinality, and expiry/supersession are `PD-040`. `ApprovedForApplication` means the merchant selected exact proposed fields; it does not mean Catalog changed. `Applied` is true only after Catalog accepts the canonical change represented by `ProductImported`/the applicable Catalog fact.
+MVP uses moving weighted-average inventory cost as Accounting valuation truth, based on accepted Procurement receipt cost evidence.
 
-Business fact candidates:
+Inventory owns quantity, not accounting value.
 
-- `DataSourcePolicyReviewApproved`, `DataSourcePolicyReviewRequired`, `DataSourceActivated`, `DataSourcePaused`, `DataSourceDisabled`
-- `SourceAcquisitionPolicyBlocked`
-- `SourceSnapshotCaptured`
-- `SourceProductNormalized`, `SourceNormalizationRejected`
-- `ImportCandidateCreated`, `ImportCandidateApprovedForApplication`, `ImportCandidateApplied`, `ImportCandidateApplicationNeedsAttention`, `ImportCandidateRejected`, `ImportCandidateSuperseded`
+`StockIssued` is the single COGS trigger:
 
-`CrawlQueued`, `CrawlStarted`, retry count, callback delivery, and DLQ placement are operational facts/telemetry unless a later product decision gives them merchant business meaning.
+```text
+Dr COGS
+Cr Inventory
+```
 
-## 11. Customer/CRM, Pricing, Storefront, Notification, Audit, Files/Media
+using immutable issued quantity + applicable Accounting weighted-average cost snapshot. `OrderFulfilled` must not create a second COGS posting for the same issue.
 
-### Customer/CRM
+### 9.5 Procurement accounting (`PD-022`)
 
-- owns editable tenant customer profile/contact preferences;
-- Sales owns immutable order contact/address snapshots;
-- the initial merchant customer order-history/total-spend query is a Sales-owned projection; later Reporting KPIs are separately owned projections;
-- Accounting owns receivable ledger truth;
-- guest-to-profile matching, minimum order/customer data, erasure/anonymization, and sensitive-data policy remain `PD-035` before the applicable Customer tasks become Ready.
+MVP uses GRNI:
 
-### Pricing & Promotion
+Confirmed physical receipt/accounting acceptance:
 
-- Catalog owns base selling price;
-- Pricing owns eligibility and calculation rules that transform it into an offer;
-- Sales owns the accepted snapshot;
-- manual discount authority/limits and future promotions cannot be invented inside Sales (`PD-013`).
+```text
+Dr Inventory
+Cr GRNI
+```
 
-### Storefront
+SupplierInvoiceRecorded:
 
-- owns customer interaction and transient tenant-bound cart;
-- public Product/order/availability views are projections;
-- checkout request is untrusted intent until Sales accepts it;
-- storefront route/slug/custom-domain choices do not change Tenant or Product ownership.
+```text
+Dr GRNI
+Cr Accounts Payable
+```
 
-### Notification
+Any approved invoice-versus-receipt difference is posted to Purchase Price Variance rather than rewriting receipt history.
 
-- owns notification delivery intent, recipient/audience, delivery attempt/outcome, and read/acknowledgement state;
-- never owns the order/payment/stock/crawl/accounting exception it describes;
-- notification failure cannot roll back a business transaction;
-- acknowledgement cannot imply source exception resolution;
-- audience/routing, per-user versus shared state, and Read/Acknowledged lifecycle semantics are pending `PD-032`.
+SupplierPaymentRecorded:
 
-### Audit
+```text
+Dr Accounts Payable
+Cr Cash
+```
 
-- owns append-oriented actor/action/target/outcome/correlation evidence;
-- business context still owns the action/result;
-- cross-tenant denial evidence must not leak target existence to tenant-visible readers;
-- exact coverage/readers are pending `PD-033`.
+Each source fact is independently idempotent.
 
-### Files/Media
+### 9.6 Stock-adjustment accounting (`PD-024`)
 
-- may later own reusable merchant-uploaded binary assets and their lifecycle;
-- Catalog owns Product association/order/public metadata;
-- Product Data Ingestion owns source media observation/reference;
-- rights to copy/display external content remain policy decisions, not technical reachability assumptions.
+Every physical adjustment has an explicit reason.
 
-## 12. Inputs to TASK-0088 and TASK-0089
+Adjustment decrease:
 
-Technical Architecture must preserve:
+```text
+Dr Inventory Adjustment Loss/Expense
+Cr Inventory
+```
 
-- one authoritative owner per fact;
-- provider evidence versus CommerceOS Payment truth;
-- nonterminal unknown payment outcome and inquiry/reconciliation requirement;
-- atomic Inventory invariants within its business consistency boundary;
-- truthful cross-domain partial/recovery states without shared persistence;
-- one logical accounting source key per economic effect;
-- rebuildable projections that never authorize source transactions.
+using applicable weighted-average cost.
 
-Backlog Planning must reconcile candidate tasks that currently:
+Adjustment increase:
 
-- require Confirmed before allocation while also reserving before payment confirmation;
-- omit Payment OutcomeUnknown from the order/payment model;
-- treat provider `Failed` or a declined attempt as automatically terminal for the Order without `PD-017`;
-- conflate flat Order status dimensions;
-- leave cancellation eligibility and completion trigger undefined;
-- let Sales invent Pricing discount policy;
-- leave multi-line allocation/partial effects undefined;
-- assume a negative-stock/reservation floor without `PD-041`;
-- treat Catalog cost reference as possible COGS authority;
-- allow two alternative accounting triggers for one effect;
-- equate Procurement goods receipt with Inventory stock receipt;
-- call merchant-attested external supplier payment `SupplierPaid` without clarifying evidence;
-- conflate DataSource policy approval with operating activation or candidate approval with Catalog application;
-- name KPIs without formulas.
+```text
+Dr Inventory
+Cr Inventory Adjustment Gain
+```
 
-Tasks affected by pending decisions in `product-decisions.md` remain Outline/Refined, not Ready.
+using the approved valuation basis recorded/accepted for that adjustment. Catalog advisory cost is never implicit authority for this value.
+
+Reservation changes are not physical adjustments and create no accounting posting. Administrative metadata correction creates no quantity/value posting.
+
+### 9.7 Journal dates (`PD-039`)
+
+- General Ledger and Trial Balance use `Journal EffectiveDate`.
+- Automated journal EffectiveDate is the approved source business date interpreted in Tenant Business Profile IANA timezone.
+- `PostingTimestamp` separately records when journal was actually committed.
+- source occurrence timestamp, EffectiveDate, and PostingTimestamp remain distinct.
+- manual journals in MVP use current Tenant business date only;
+- user-selected past/future EffectiveDate and formal backdating are not supported until later period-control policy exists.
+
+### 9.8 Refund/return accounting — deferred (`PD-023`)
+
+No specific refund/return posting model is approved yet.
+
+Mandatory interim rules:
+
+- `PaymentRefunded`, Sales refund/cancellation, `StockReturned`, and `JournalPosted` remain separate facts;
+- no refund event automatically implies stock, revenue, COGS, or journal effects not confirmed by owning domain;
+- posted history remains immutable;
+- future correction uses explicit compensating/reversal journals.
+
+**HUMAN PRODUCT DECISION REQUIRED** before refund/return accounting implementation (`TASK-0050` refund portion / `TASK-0063`–`TASK-0066` or equivalent) becomes Ready.
+
+## 10. Reporting
+
+Reporting owns projections only; it is never transaction or entitlement authority.
+
+### 10.1 Operational KPI definitions (`PD-030`)
+
+For selected Tenant business-date window:
+
+- **Order count** = count of `OrderConfirmed` facts;
+- **AOV** = sum of authoritative OrderTotal snapshots for confirmed Orders / confirmed-order count;
+- **Top products** = rank by sum of confirmed ordered whole-unit quantity by Product snapshot;
+- **Failed-payment rate** = terminal definitive failed PaymentAttempts / all terminal PaymentAttempts; `OutcomeUnknown` excluded;
+- **Operational Gross Sales** = sum of confirmed OrderTotal snapshots, explicitly labeled operational gross sales and never accounting revenue.
+
+Cancellation/refund amounts are shown separately and do not rewrite original operational event counts.
+
+### 10.2 Business date/corrections (`PD-031`)
+
+Tenant Business Profile IANA timezone defines operational business-day boundaries.
+
+Operational corrections/cancellations/refunds are attributed to the business date on which the correcting fact occurs and retain reference to original transaction. They do not rewrite original event date.
+
+Financial reports use Accounting `Journal EffectiveDate`, not operational occurrence date.
+
+## 11. Product Data Ingestion
+
+### 11.1 Source governance (`PD-026`)
+
+Base DataSource policy and policy-review approval are platform-owned.
+
+- only authorized platform administrators may mark source policy review Current and globally enable/disable source operation;
+- Tenant Owner/Admin may opt a globally approved/enabled source in/out for that Tenant;
+- Tenant cannot override platform policy;
+- review becomes stale on material source/API/terms/robots/authentication-policy change or explicit platform-reviewer action;
+- no arbitrary time-based review expiry exists in MVP;
+- acquisition requires both Current platform approval and Tenant enablement;
+- subscription entitlement remains an independent additional gate where scheduled/automated ingestion is plan-controlled.
+
+### 11.2 Source/candidate ownership
+
+PDI owns:
+
+- source identity/policy evidence;
+- acquisition run history;
+- immutable source snapshots;
+- normalized candidate evidence;
+- ImportCandidate lifecycle until Catalog accepts application.
+
+Catalog owns canonical Product. Source changes never directly mutate Product.
+
+`PD-040` one-to-one Tenant source-product mapping and candidate lifecycle are detailed in `catalog.md` and remain authoritative here as well.
+
+## 12. Notification (`PD-032`)
+
+Notification state is per recipient, never one shared Tenant flag.
+
+```text
+Unread ──Read──► Read
+   └──Acknowledge──► Acknowledged
+Read ──Acknowledge──► Acknowledged
+```
+
+- acknowledgement implies Read and is terminal only for notification acknowledgement;
+- one recipient's action never changes another recipient's state;
+- Owner/Admin receive Tenant-level critical security, billing, accounting, and operational exceptions;
+- Staff receive operational notifications for capabilities they are allowed to act on;
+- Viewer receives no actionable notifications in MVP;
+- acknowledging a notification never resolves the source-domain exception.
+
+Delivery success/failure remains Notification truth, not source-business outcome.
+
+## 13. Audit (`PD-033`)
+
+Audit stores append-oriented evidence for:
+
+- successful and rejected privileged mutations;
+- Membership/role/security administration;
+- Accounting posting/correction actions;
+- Subscription/platform-admin actions;
+- security-significant Tenant-isolation denials.
+
+Evidence includes actor, trusted Tenant, action, safe target identity where permitted, outcome, timestamp, correlation, and safe reason metadata.
+
+Tenant Audit is readable by Owner/Admin only in MVP.
+
+Tenant-visible denial evidence must not reveal another Tenant/entity's existence or identifiers. Protected platform-security evidence may retain additional investigation detail only where genuinely required.
+
+Audit never becomes source domain state.
+
+## 14. Customer/CRM
+
+Customer/CRM owns explicit Tenant customer profiles/contact preferences when such profile is deliberately created/linked.
+
+It does not own:
+
+- guest Order snapshots;
+- Sales order history truth;
+- authentication identity;
+- receivable ledger balances.
+
+MVP guest checkout does not automatically create/match CRM Customer (`PD-035`).
+
+## 15. Cross-domain operational sequence
+
+Approved MVP commerce flow:
+
+```text
+Catalog sellable facts + authoritative price
+            ↓
+shopper reconfirms if price changed
+            ↓
+Sales OrderPlaced
+            ↓
+Inventory all-line reservation
+            ↓
+Payments full capture attempt
+      ┌─────┴──────────────┐
+      │                    │
+ definitive no-commit   OutcomeUnknown
+      │                    │
+ retry allowed        stock remains held
+      │              reconciliation required
+      └──────► verified PaymentCaptured
+                         ↓
+                  Sales OrderConfirmed
+                         ↓
+                  Sales OrderAllocated
+                         ↓
+                 Inventory StockIssued
+                         ↓
+                  Sales OrderFulfilled
+                         ↓
+       Accounting revenue + COGS use distinct facts
+                         ↓
+                    Order Completed
+```
+
+The sequence expresses business dependencies only, not orchestration technology.
+
+## 16. Business error families
+
+### Sales
+
+- `ORDER_LINE_NOT_SELLABLE`
+- `ORDER_PRICE_CHANGED_RECONFIRM_REQUIRED`
+- `CHECKOUT_INTENT_CONFLICT`
+- `ORDER_ALLOCATION_INCOMPLETE`
+- `ORDER_PAYMENT_OUTCOME_UNKNOWN`
+- `ORDER_CANCELLATION_NOT_ALLOWED`
+- `ORDER_STATE_TRANSITION_INVALID`
+
+### Inventory
+
+- `INSUFFICIENT_AVAILABLE_STOCK`
+- `NEGATIVE_STOCK_NOT_ALLOWED`
+- `ADJUSTMENT_WOULD_CONSUME_RESERVED_STOCK`
+- `RESERVATION_ALREADY_TERMINAL`
+- `RESERVATION_SOURCE_CONFLICT`
+- `STOCK_MOVEMENT_ALREADY_APPLIED`
+- `WAREHOUSE_OR_PRODUCT_REFERENCE_INVALID`
+
+### Payments
+
+- `PAYMENT_DECLINED`
+- `PAYMENT_OUTCOME_UNKNOWN`
+- `PAYMENT_OPERATION_CONFLICT`
+- `PAYMENT_AMOUNT_MISMATCH`
+- `PAYMENT_REFUND_EXCEEDS_CAPTURED`
+
+### Procurement
+
+- `SUPPLIER_NOT_ACTIVE`
+- `PO_PRODUCT_NOT_PURCHASABLE`
+- `PO_ALREADY_SUBMITTED_IMMUTABLE`
+- `PO_CANCELLATION_NOT_ALLOWED`
+- `GOODS_RECEIPT_CORRECTION_REQUIRED`
+- `SUPPLIER_INVOICE_NOT_ELIGIBLE`
+- `SUPPLIER_INVOICE_VARIANCE_APPROVAL_REQUIRED`
+
+### Accounting
+
+- `JOURNAL_UNBALANCED`
+- `JOURNAL_ALREADY_POSTED`
+- `SOURCE_POSTING_ALREADY_APPLIED`
+- `CONTROL_ACCOUNT_CHANGE_FORBIDDEN`
+- `MANUAL_EFFECTIVE_DATE_NOT_ALLOWED`
+- `REFUND_ACCOUNTING_POLICY_UNRESOLVED`
+
+Transport/status-code mapping remains a Technical Architecture concern.
+
+## 17. Remaining human product decision
+
+For the contexts in this document, all listed MVP policy decisions are resolved **except**:
+
+- `PD-023` — refund/return accounting treatment.
+
+Its safe interim constraints are encoded in section 9.8. Builders must not invent contra-revenue/restock/COGS reversal rules.
+
+## 18. Downstream reconciliation handoff
+
+### Technical Architect
+
+The technical baseline was completed before these decisions were approved and must be reconciled where contracts/state/access patterns previously preserved alternatives. Preserve especially:
+
+- price-reconfirmation round trip before placement;
+- all-line reservation before full immediate capture;
+- one Payment obligation with multiple attempts;
+- `OutcomeUnknown` reconciliation with indefinite stock hold until evidence;
+- zero-floor Inventory invariants and non-destructive adjustments;
+- immutable submitted PO / receipt-correction evidence;
+- GRNI + weighted-average valuation + distinct revenue/COGS triggers;
+- Tenant-local business date versus journal posting timestamp;
+- source-governance authority split;
+- per-recipient Notification state and non-disclosing Audit.
+
+No AWS/persistence/transport choice is made here.
+
+### Backlog Planner
+
+Reconcile candidate tasks to remove obsolete `PD-011`–`PD-022`, `PD-024`–`PD-042` planning gates where their product behavior is now approved. Keep refund/return accounting work gated by `PD-023`.
+
+**Stop condition: DOMAIN BASELINE READY for approved Commerce Operations MVP semantics; HUMAN PRODUCT DECISION REQUIRED only for `PD-023` scope.**
