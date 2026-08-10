@@ -1,522 +1,494 @@
 # CommerceOS — Product-Decision Technical Reconciliation
 
-_Reconciled by the Technical Architect on 2026-08-10 after the human product-decision pass and the Domain Architect reconciliation._
+_Reconciled by the Technical Architect on 2026-08-10 after the final Domain Architect propagation of resolved `PD-004`, `PD-023`, and `PD-044`._
 
 ## 1. Authority and purpose
 
-This document is the authoritative technical-architecture delta over the TASK-0088/TASK-0092 baseline for product decisions reconciled on 2026-08-10.
+This document is the authoritative Technical Architect delta over the TASK-0088/TASK-0092 architecture baseline after the final 2026-08-10 product/domain reconciliation.
 
 Business meaning remains authoritative in:
 
 1. `docs/domains/product-decisions.md`;
-2. `docs/02-business-domains.md` and the detailed domain baselines;
+2. `docs/02-business-domains.md` and detailed domain baselines;
 3. this document and accepted ADRs for implementation mechanisms only.
 
-Where an older architecture document still labels a now-resolved `PD-*` item as product-gated, this reconciliation supersedes that stale gate. The older architectural mechanism remains valid unless this document explicitly changes it.
+The current product-decision register contains **no unresolved/deferred `PD-*` gate for the approved MVP scope**. Any older architecture text saying `PD-004`, `PD-023`, or `PD-044` is still deferred is superseded by this reconciliation.
 
-The only intentionally deferred product-policy areas in the current domain baseline are:
+This pass changes architecture documentation only. It implements no business feature and deploys no AWS resource.
 
-- `PD-004` — exact Suspended-Tenant read/support behavior and closure/deletion/retention/recovery/privacy semantics;
-- `PD-023` — exact refund/return accounting treatment;
-- `PD-044` — exact sellable `Starter`/`Growth`/`Business` prices and entitlement/limit packages.
+## 2. Final architecture consequences of the resolved decisions
 
-This pass introduces no business feature implementation and deploys no AWS resource.
+### `PD-004` — Tenant suspension/reactivation
 
-## 2. Architectural changes caused by the decision pass
+Resolved business meaning requires Architecture to distinguish authenticated read authority from merchant mutation authority:
 
-The previous baseline preserved alternatives that are now closed by approved business policy. The material technical consequences are:
+- Suspended Tenant remains selectable for approved authenticated read-only access when the Membership is still Active;
+- ordinary merchant mutation requires Tenant `Active`;
+- public storefront/checkout must fail for Suspended Tenant even if public Catalog data is cached;
+- platform suspend/reactivate is a separate privileged Tenancy command requiring reason + Audit evidence;
+- platform support investigation is a separate read-only trust path and never a Tenant Membership;
+- Suspended data has no MVP TTL/deletion lifecycle.
 
-1. Merchant identity is many-to-many with Tenant Membership, so current tenant discovery/selection needs an authoritative Merchant Access lookup that cannot rely on JWT claims or an eventually consistent GSI.
-2. Successful onboarding now requires three accepted outcomes owned by two implementation modules: Active Tenant, Active initial Owner Membership, and a 30-day Trial Subscription/EntitlementSet. It can no longer be described as one Tenancy-only ACID transaction.
-3. Catalog lifecycle, SKU, slug, Category/Brand, media, public-field, and import-candidate rules are sufficiently concrete to finalize their near-term access-pattern requirements.
-4. The order/payment/allocation business sequence is now approved through `OrderAllocated`; payment `OutcomeUnknown` may require durable waiting/reconciliation while stock remains held. A durable workflow mechanism is now justified for that process.
-5. Accounting source triggers are now explicit for capture, fulfillment, stock issue/adjustment, goods receipt, supplier invoice, and supplier payment. Refund/return posting remains blocked by `PD-023`.
-6. Subscription/Billing Trial, period, upgrade/downgrade, grace, entitlement categories, order-volume warning, simulated-provider seam, and read-only platform-admin semantics are approved. Only exact commercial packages/prices remain gated by `PD-044`.
+ADR-004 is updated accordingly.
+
+### `PD-023` — Refund approval/return/accounting
+
+Resolved business meaning establishes the authoritative fact chain:
+
+```text
+Sales RefundRequested
+   -> merchant review
+   -> RefundApproved | RefundRejected
+
+RefundApproved
+   -> Inventory StockReturned
+   -> Accounting revenue compensation
+   -> Payments provider refund operation
+
+StockReturned
+   -> Accounting COGS/inventory reversal
+
+verified PaymentRefunded
+   -> Accounting Customer Deposits/Cash clearing
+```
+
+Technical Architecture selects reliable event choreography after `RefundApproved`, not a global refund Step Functions workflow. Owner-local source idempotency makes every effect duplicate-safe. Payments retains provider ambiguity/reconciliation authority.
+
+ADR-011 records this decision.
+
+### `PD-044` — initial Plan catalog and Trial terms
+
+The initial immutable commercial terms are now implementation inputs:
+
+| Terms | Price/month | MaxActiveMemberships | MaxWarehouses | ScheduledProductIngestion | OrderVolumeWarningThreshold |
+|---|---:|---:|---:|---|---:|
+| Trial | n/a | 3 | 1 | true | 500 |
+| Starter | 199,000 VND | 3 | 1 | false | 500 |
+| Growth | 499,000 VND | 10 | 3 | true | 2,000 |
+| Business | 999,000 VND | 30 | 10 | true | 10,000 |
+
+All current paid Plans and Trial enable the approved core CommerceOS capabilities. Architecture stores Plan/PlanVersion and dedicated Trial terms in SubscriptionBilling DynamoDB using a version-controlled idempotent catalog bootstrap. Accepted EntitlementSet, not Plan name, is runtime authority.
+
+ADR-008 is updated accordingly.
 
 ## 3. Implementation module boundaries
 
-CommerceOS remains a modular monolith by default. A bounded context is not automatically a deployment unit.
+CommerceOS remains a modular serverless monolith by default. A bounded context is not automatically a deployment unit.
 
 | Implementation module | Business ownership hosted | Initial runtime/deployment decision |
 |---|---|---|
 | `Platform` | no merchant business truth | shared composition/readiness only |
-| `Tenancy` | Tenant Management + Merchant Access | shared `commerce-api`; one module-owned DynamoDB table |
-| `Catalog` | Catalog | shared `commerce-api`; one module-owned DynamoDB table |
-| `SubscriptionBilling` | Subscription & Billing | shared `commerce-api` for synchronous application surface; worker/provider ingress only when introduced |
-| `Storefront` | public tenant experience/address binding/cart composition | shared public API composition when its missing Tenant-address domain decision is resolved |
-| `Sales` | Sales & Order Management | shared API plus order workflow task handler composition when introduced |
-| `Inventory` | Inventory | shared application module; workflow/task handlers may invoke its application contracts |
-| `Payments` | merchant-order Payment | shared application module plus provider adapter/callback/reconciliation handlers |
-| `Procurement` | Procurement | shared application module; async consumers/producers as required |
-| `Accounting` | merchant Accounting | module-owned table; side-effecting event consumer worker when posting starts |
+| `Tenancy` | Tenant Management + Merchant Access | shared `commerce-api`; module-owned DynamoDB table |
+| `Catalog` | Catalog | shared `commerce-api`; module-owned table |
+| `SubscriptionBilling` | Plan/PlanVersion, Trial terms, Subscription, EntitlementSet, UsageMeter, PlatformCharge | shared API/application surface; named workers/provider ingress only when required |
+| `Sales` | SalesOrder, cancellation/refund-review truth | shared API plus order workflow task composition |
+| `Inventory` | Warehouse, StockItem, Reservation, StockMovement | shared application module; async refund/procurement consumers when Ready |
+| `Payments` | merchant-order Payment, attempts, provider capture/refund evidence | shared application module + provider adapter/callback/reconciliation handlers |
+| `Procurement` | Supplier/PO/receipt/invoice/payment evidence | shared application module + named consumers/producers |
+| `Accounting` | chart, valuation state, immutable journals/ledger | module table + side-effecting fact consumers |
 | `Reporting` | rebuildable projections | async worker when named projections exist |
-| `ProductDataIngestion` | source policy/run/snapshot/candidate truth | crawler dispatcher/workers according to source runtime profile |
-| `Notification` | delivery/read/acknowledgement truth | async worker and module-owned persistence when introduced |
-| `Audit` | append-oriented audit evidence | async append worker plus query surface when introduced |
-| `FilesMedia` | merchant-uploaded asset identity/safe metadata | shared API for metadata/upload authorization; S3 object boundary when introduced |
-| `Customer`, `Pricing` | their approved bounded contexts | introduced only by a Ready task |
-| merchant-order Mock Provider | simulated shopper payment provider | separate external-like application/deployment |
-| SaaS Billing Mock Provider | dedicated simulated CommerceOS billing provider | separate external-like application/deployment; never reuse merchant-order Mock Provider |
+| `ProductDataIngestion` | source policy/run/snapshot/candidate/schedule | crawler dispatcher/workers according to source runtime profile |
+| `Notification` | delivery/read/acknowledgement truth | async worker + module persistence when introduced |
+| `Audit` | append-only privileged/security evidence | async append + query surface when introduced |
+| `FilesMedia` | merchant-uploaded asset identity/metadata | shared API + S3 object boundary when introduced |
+| `Storefront`, `Customer`, `Pricing` | matching approved contexts | introduced only by Ready work |
+| merchant-order Mock Provider | shopper payment simulation | separate external-like application/deployment |
+| SaaS Billing Mock Provider | CommerceOS billing simulation | separate external-like application/deployment |
 
-No module may read/write another module's table, item model, index, stream, key codec, or repository. Cross-module collaboration uses producer-owned application/contracts or versioned integration facts.
+No module reads/writes another module's table, repository, private index, stream, key codec, or domain type. Collaboration uses producer-owned application/contracts or versioned integration facts.
 
-## 4. Trusted tenant context after `PD-001` and `PD-003`
+## 4. Trusted execution contexts after `PD-004`
 
-### 4.1 Authentication remains identity evidence only
+### Authentication remains identity evidence
 
-Cognito/API Gateway proves the authenticated subject. Tenant, Membership, role, capability, Subscription, entitlement, and limit claims in a token/client/session are never current business authority.
+Cognito/API Gateway proves authenticated subject only. Tenant, Membership, role, plan, entitlement, and limit claims in token/client/session state are not current business authority.
 
-### 4.2 Tenant discovery and selection
+### Merchant discovery/selection
 
-One subject may hold Memberships in multiple Tenants.
-
-Merchant Access owns a strongly consistent subject-to-membership discovery representation in the Tenancy table. It is a module-private authorization lookup, not a second Membership aggregate and not tenant business data.
-
-Conceptual access shape:
+Merchant Access retains the strongly consistent subject-membership discovery representation:
 
 ```text
 PK = SUBJECT#<SubjectId>
 SK = MEMBERSHIP#<MembershipId>#TENANT#<TenantId>
 ```
 
-The record contains only the minimum membership/Tenant references and current Membership-status/revision data needed for discovery. It is updated atomically with the owning Membership change.
+- discovery is candidate selection only;
+- one candidate may be auto-selected only after current validation;
+- multiple candidates require intentional selection;
+- selected Tenant remains untrusted until current Tenant/Membership validation;
+- Suspended Tenant may remain discoverable/selectable for approved read-only access;
+- Disabled Membership does not gain ordinary protected authority.
 
-Rules:
+### Separate read and mutation authority
 
-- no Subject GSI is authority;
-- discovery uses a strongly consistent base-table `Query`;
-- if the request supplies an explicit selected Tenant, the selector is still untrusted until Merchant Access validates the current Tenant + Membership;
-- if no selection is supplied, CommerceOS may auto-select only when discovery yields one candidate and the final current Tenant/Membership validation succeeds;
-- when discovery is ambiguous/multiple, return `TENANT_SELECTION_REQUIRED` and require intentional selection;
-- a suspended/inactive target fails the final authority check; discovery never bypasses `TenantStatus` or `MembershipStatus`.
-
-This is intentionally conservative: product policy says one eligible Tenant **may** be auto-selected, not that auto-selection is mandatory.
-
-### 4.3 Trusted merchant execution context
-
-Conceptual transport-neutral result:
+Conceptual contracts:
 
 ```text
-TrustedTenantContext
-  tenantId
-  subjectId
-  membershipId
-  role                 # Owner | Admin | Staff | Viewer
-  tenantRevision?
-  membershipRevision?
-  correlationId
+ResolveTenantReadAuthority(...)     -> TrustedTenantReadContext | Failure
+ResolveTenantMutationAuthority(...) -> TrustedTenantMutationContext | Failure
 ```
 
-The owning application applies the approved domain-specific role policy. A generic client-supplied `capability` never becomes authority. Subscription entitlements remain a separate synchronous authority and are not copied into this context.
+`TrustedTenantReadContext` requires Active Membership and permits Tenant `Active` or `Suspended`, then the owning domain applies normal role read visibility.
 
-Protected mutation eligibility remains the conjunction of:
+`TrustedTenantMutationContext` requires Tenant `Active` plus normal role/domain authorization. A subscription-governed mutation separately asks SubscriptionBilling for current entitlement.
 
-```text
-authenticated identity
-+ TrustedTenantContext
-+ TenantStatus policy
-+ role/domain authorization
-+ current Subscription entitlement when applicable
-+ owning aggregate invariant
-```
+This split prevents accidental reuse of a Suspended read context for mutation.
 
-Public storefront, onboarding, background-worker, and platform-administration contexts remain separate types. No `bypassTenant`/`isAdmin` flag converts one into another.
+### Platform paths
 
-## 5. Cross-domain onboarding completion
+- `TrustedPlatformAdminContext` is required for `SuspendTenant`/`ReactivateTenant`; reason + expected revision + durable Audit intent/evidence are mandatory.
+- `TrustedPlatformSupportReadContext` is used for explicit producer-owned read-only support queries across modules.
+- no `bypassTenant`, no automatic Owner Membership, and no direct foreign-table support reads.
 
-### 5.1 Business outcome preserved
+### Public path
 
-Completed onboarding means all of these accepted outcomes exist:
+`PublicTenantContext` remains separate. Once Tenant storefront addressing is resolved, public Tenant resolution must check current Tenant status; Suspended denies storefront/checkout.
+
+## 5. Onboarding remains ADR-009
+
+Completed onboarding still means:
 
 ```text
 Tenancy:
   Active Tenant
-  Active initial Owner Membership
+  Active initial Owner
 
 SubscriptionBilling:
   30-day Trial Subscription
   Trial EntitlementSet
 ```
 
-The Trial is not moved into Tenancy and SubscriptionBilling does not write the Tenancy table.
-
-### 5.2 Technical consistency model
-
-Cross-domain DynamoDB ACID is not used. Onboarding uses an idempotent durable application process:
-
-1. delivery establishes `TrustedOnboardingContext` from an authenticated subject whose email is verified;
-2. Tenancy atomically commits its module-owned registration outcome: durable onboarding intent/operation, Active Tenant, Active initial Owner, authority lookup, subject-membership discovery link, owner guard, and required source-owned Audit intent when applicable;
-3. the application coordinator immediately invokes `SubscriptionBilling.StartTrialSubscription` with the stable onboarding/Tenant identity as the logical source;
-4. SubscriptionBilling atomically creates/replays one Trial Subscription + Trial EntitlementSet for that source;
-5. the coordinator marks the Tenancy-owned registration operation `Completed` only after Trial acceptance is proven;
-6. if the synchronous Trial call is interrupted/unavailable, a durable work-outbox written with the Tenancy registration outcome is relayed to a single-purpose SQS recovery worker; the API exposes the durable registration-operation status rather than claiming success;
-7. retry/recovery invokes the same idempotent Trial command; it never creates a second Trial and never deletes a committed Tenant/Owner as compensation.
-
-HTTP guidance:
-
-- return normal synchronous creation success only after all required outcomes are accepted;
-- return `202 Accepted` with durable operation identity when Tenancy committed but Trial completion is still being recovered;
-- equivalent onboarding retry returns the same logical operation/result;
-- incompatible idempotency-key reuse remains conflict.
-
-Until Trial exists, ordinary subscription-governed mutations fail closed because no effective operational entitlement can be established. This is not Tenant suspension or Membership disablement.
-
-This decision is recorded by ADR-009.
-
-## 6. Contract consequences
-
-### Tenancy contracts now final enough for near-term refinement
-
-- `DiscoverMerchantTenants(AuthenticatedPrincipal)` → bounded candidate Tenant/Membership references suitable for tenant selection; not authority for a business command.
-- `ResolveTenantAuthority(AuthenticatedPrincipal, RequestedTenantSelection?, RequestMetadata)` → `TrustedTenantContext | AuthorityFailure`.
-- onboarding request requires verified authenticated identity plus merchant display name and IANA business timezone; VND is product-wide and is not a selectable onboarding currency.
-- Invitation issue/resend/accept/revoke contracts preserve normalized verified-email binding, 7-day expiry, single-use acceptance, and credential rotation.
-- Membership commands carry expected revision where lost update is unsafe and must preserve last-Active-Owner.
-
-### Catalog contracts now final enough for near-term refinement
-
-- Draft creation may omit SKU; publication requires Name + SKU + valid VND Money.
-- `AssignProductSku` is legal only before first publication; post-publication change returns `SKU_IMMUTABLE_AFTER_PUBLICATION`.
-- Product lifecycle supports Draft/Published/Unpublished/Archived with direct Published→Archived and terminal Archived.
-- public product lookup uses immutable ProductId plus Tenant-scoped mutable slug after public Tenant addressing is approved.
-- Category/Brand are zero-or-one references, flat, tenant-owned, non-destructively retired.
-- public media accepts only `FilesMedia` asset references owned by the same trusted Tenant.
-- import apply is an explicit Catalog command and `Applied` is acknowledged only after Catalog accepts the canonical mutation.
-
-### Sales/Inventory/Payments contracts
-
-The now-approved purchase-confirmation interaction is:
+The Trial EntitlementSet is now concrete:
 
 ```text
-Sales PlaceOrder
-  -> Catalog/Pricing authoritative validation
-  -> price changed? reject with reconfirm-required and create no Order
-  -> OrderPlaced
-  -> Inventory ReserveOrderStock
-  -> Payments CaptureOrderPayment
-  -> verified PaymentCaptured
-  -> Sales ConfirmOrder
-  -> Sales MarkOrderAllocated
+CoreCommerceCapabilities = enabled
+MaxActiveMemberships = 3
+MaxWarehouses = 1
+ScheduledProductIngestion = true
+OrderVolumeWarningThreshold = 500
 ```
+
+Cross-domain DynamoDB ACID is not used. Tenancy commits local registration + durable Trial-bootstrap work; SubscriptionBilling creates/replays Trial through idempotent `StartTrialSubscription`; incomplete Trial bootstrap is recovered through the ADR-009 work-outbox/SQS path.
+
+Trial is dedicated terms and never aliases/auto-converts to Starter.
+
+## 6. SubscriptionBilling catalog and entitlement contracts
+
+### Plan catalog bootstrap/query
+
+SubscriptionBilling owns platform-global Plan/PlanVersion and Trial-terms records.
+
+Use a version-controlled catalog seed artifact consumed by an idempotent SubscriptionBilling bootstrap/migration command.
 
 Rules:
 
-- one logical checkout intent creates at most one Order;
-- reservation command is source-idempotent by Order/operation identity;
-- one Payment obligation exists per Order with immutable attempts;
-- definitive decline terminates the attempt only; it does not auto-cancel the Order;
-- `OutcomeUnknown` blocks another capture attempt and keeps stock held until provider evidence resolves it;
-- time, retry exhaustion, workflow timeout, DLQ placement, or operator impatience never means Payment failure;
-- cancellation remains a separate Sales command and may require separate Inventory release/Payments refund effects;
-- refund Accounting remains blocked by `PD-023`.
+- accepted PlanVersion/Trial terms are immutable;
+- a sellable version may be withdrawn without deleting historical records;
+- future price/limit changes create a new PlanVersion;
+- frontend/other modules query SubscriptionBilling rather than hard-code authority;
+- no AppConfig/SSM/separate runtime configuration authority is introduced for this catalog.
 
-Fulfillment starts only from an explicit approved fulfillment command/interaction. This reconciliation does not invent warehouse/shipping UX or an automatic fulfillment trigger.
+### Runtime authority
 
-### SubscriptionBilling contracts
+`EvaluateEntitlement` remains the synchronous authority for governed operations.
 
-- `StartTrialSubscription` is an idempotent onboarding-owned source command.
-- `EvaluateEntitlement` remains the synchronous authority for subscription-governed mutations.
-- upgrade execution requires verified successful PlatformCharge before new terms become effective and starts a fresh monthly period.
-- downgrade is scheduled for renewal, revalidates owner-authoritative hard-limit usage, and remains blocked without destructive remediation when usage is too high.
-- renewal `OutcomeUnknown` remains Unknown; definitive failure creates PastDue with the approved seven-day grace period.
-- `Ended` removes ordinary operational entitlements but does not remove authenticated read/history/export/recovery access.
-- order-volume metering consumes `OrderConfirmed` idempotently for the current billing period and is warning-only.
-- platform-admin contracts are read-only visibility in MVP.
-- exact package price/entitlement matrices remain gated by `PD-044`.
-
-## 7. Persistence ownership and access-pattern updates
-
-ADR-005 remains the physical strategy: one DynamoDB table per implementation module, trusted tenant keying, no application `Scan`, no foreign table access, and no cross-domain DynamoDB transaction.
-
-### 7.1 Tenancy additions
-
-| ID | Use case | Required access/protection |
-|---|---|---|
-| `TEN-AP-01R` | registration + Owner bootstrap | one Tenancy transaction writes onboarding operation/intent, Tenant, initial Owner, authority lookup, subject discovery link, owner guard, and durable work/audit intents as applicable |
-| `TEN-AP-04R` | resolve explicit selected Tenant | transactionally/currently read Tenant + authority record from the selected tenant partition; fail closed |
-| `TEN-AP-11R` | discover memberships for tenant selection | strongly consistent subject-partition Query; no GSI/JWT/client authority; final selected Tenant still revalidated |
-| `TEN-AP-13` | complete/recover Trial bootstrap | get/update onboarding operation by stable id with expected state/idempotency; never stores Subscription business state as authority |
-
-Membership disable/reactivate/role changes atomically update Membership, tenant authority lookup, subject discovery representation, and owner guard where applicable.
-
-### 7.2 Catalog additions/closures
-
-| ID | Use case | Required access/protection |
-|---|---|---|
-| `CAT-AP-05R` | assign/change Draft SKU | claim normalized tenant SKU + Product revision atomically; old Draft claim may be released only as allowed by the Product lifecycle; after first publication no SKU mutation path exists |
-| `CAT-AP-10R` | publish/unpublish/archive | expected revision + lifecycle condition; first publish fixes SKU; Archive never releases the permanent historical SKU claim |
-| `CAT-AP-14` | slug uniqueness/change | tenant-scoped normalized slug claim changed atomically with Product; no redirect record required by MVP |
-| `CAT-AP-15` | Category normalized-name uniqueness | tenant-scoped authoritative name claim; GSI is not uniqueness authority |
-| `CAT-AP-16` | Brand normalized-name uniqueness | tenant-scoped authoritative name claim; GSI is not uniqueness authority |
-| `CAT-AP-17` | media association | Product transaction validates same-Tenant `MediaAssetId` through a FilesMedia application contract; Catalog never reads FilesMedia persistence |
-| `CAT-AP-18` | source-product mapping | tenant-scoped claim for one external source-product identity → zero/one Product; apply remains explicit and idempotent |
-
-If Category/Brand rename/retirement implementation needs a rule for historical normalized-name reuse that is not stated by the domain baseline, the task must obtain a domain decision rather than infer claim-release semantics.
-
-### 7.3 Sales
-
-A Sales table is introduced only with a Ready Sales persistence task. Required patterns include:
-
-- Order by trusted Tenant + OrderId;
-- checkout-intent/idempotency claim with semantic fingerprint;
-- immutable Order-line/total snapshots;
-- expected-revision lifecycle writes;
-- technical order-process/orchestration reference/state separate from Sales business state;
-- outbox facts for named consumers such as `OrderConfirmed` and `OrderFulfilled`.
-
-### 7.4 Inventory
-
-Inventory owns Warehouse, StockItem, StockReservation, StockMovement, and source-idempotency records.
-
-Required properties:
-
-- every quantity mutation uses conditions/transactions that preserve `OnHand >= 0`, `Reserved >= 0`, and `Available >= 0`;
-- reserve/release/issue/receive/return/adjust source identities are duplicate-safe;
-- adjustment decrease condition prevents `OnHand` falling below `Reserved`;
-- `OutcomeUnknown` does not trigger an expiry/release write;
-- all-line reservation must expose only an accepted whole-order reservation result.
-
-If an Order can exceed the number of StockItem/reservation actions safely covered by one DynamoDB transaction, a later technical decision must introduce a durable Inventory reservation coordinator/compensation mechanism. Architecture must not invent a product max-order-line limit merely to fit DynamoDB transaction limits.
-
-### 7.5 Payments
-
-Payments owns Payment, immutable PaymentAttempts, provider-operation/evidence records, reconciliation status, idempotency records, and integration outbox.
-
-- Payment amount/currency comes from the accepted Sales obligation;
-- provider operation identity is stable across transport retries;
-- no second capture attempt starts while the prior attempt is Unknown;
-- callback/query evidence is verified/deduplicated and cannot regress known state;
-- merchant-order provider references stay inside Payments.
-
-### 7.6 SubscriptionBilling
-
-The existing `SUB-AP-*` patterns remain valid with gates closed as follows:
-
-- current Subscription/Entitlement evaluation is authoritative and strongly/currently read;
-- PlanVersion/accepted terms are immutable once accepted;
-- Trial creation is now an approved idempotent persistence path;
-- monthly period/anchor history is explicit;
-- plan-change intent and effectivity are separate records/states;
-- PlatformCharge remains a separate aggregate with Unknown/reconciliation evidence;
-- `OrderConfirmed` usage meter uses a source-idempotency record and current billing-period bucket;
-- provider-evidence inbox and a bounded due-reconciliation index are permitted only when the dedicated simulated provider task introduces the provider execution path;
-- platform-admin reads use a separate admin application query and never direct table access.
-
-Exact sellable package/price/entitlement definitions remain absent until `PD-044` is resolved.
-
-### 7.7 Accounting
-
-Accounting owns one table when posting begins. Required access patterns are:
-
-- ChartOfAccounts/control-account records;
-- Journal aggregate + immutable lines;
-- one logical source-posting claim/inbox keyed by authoritative source fact identity;
-- atomic `source claim + balanced Journal + affected Accounting-owned valuation state` where one source requires valuation mutation;
-- journal queries by effective date through a documented tenant-scoped index/access pattern;
-- General Ledger/Trial Balance derived from Accounting-owned journal truth, never foreign tables.
-
-Approved reliable source routes are:
-
-- `PaymentCaptured` → Cash / Customer Deposits posting;
-- `OrderFulfilled` → Customer Deposits / Sales Revenue posting;
-- `StockIssued` → COGS / Inventory posting;
-- `GoodsReceiptRecorded` → Inventory / GRNI posting using Procurement-owned accepted receipt-cost evidence;
-- `SupplierInvoiceRecorded` → GRNI / Accounts Payable (+ approved variance evidence);
-- `SupplierPaymentRecorded` → Accounts Payable / Cash;
-- `StockAdjusted` → approved Inventory Adjustment gain/loss posting.
-
-`PaymentRefunded`/`StockReturned` do not receive an Accounting consumer until `PD-023` is resolved.
-
-The domain baseline approves moving weighted-average valuation but does not state whether the cost pool is Tenant+Product, Tenant+Product+Warehouse, or another scope. Persistence keying for the valuation position therefore remains `DOMAIN DECISION REQUIRED`; Technical Architecture will not invent that business meaning.
-
-## 8. Synchronous versus asynchronous integration after reconciliation
-
-### Synchronous application contracts
-
-Use synchronous calls inside the shared runtime when the caller cannot truthfully complete without the owner result:
-
-- API → Merchant Access authority resolution;
-- protected command → SubscriptionBilling entitlement decision when governed;
-- Back Office/API → Catalog commands/queries;
-- checkout → Catalog/Pricing final sellability/price validation;
-- order workflow task → Inventory reservation command;
-- order workflow task → Payments capture/reconciliation command/query;
-- order workflow task → Sales confirm/allocation command;
-- import application → Catalog apply command;
-- platform-admin support → SubscriptionBilling read-only query.
-
-A synchronous call never permits foreign repository access.
-
-### Durable work queue
-
-Use direct SQS for one known retryable worker where fan-out is not the problem:
-
-- onboarding Trial-bootstrap recovery work;
-- Product Data Ingestion acquisition work;
-- provider callback/reconciliation work when a queue is needed for backpressure.
-
-When a work item must be guaranteed after a source transaction, write a module-owned transactional work-outbox and relay it idempotently to the named queue. Do not perform `commit -> best-effort SendMessage` for a required recovery path.
-
-### Reliable integration facts
-
-Use producer transaction/outbox → DynamoDB Stream relay → EventBridge → consumer-specific SQS/DLQ for committed owner facts with independent side-effecting consumers.
-
-Named routes now approved in principle include:
-
-| Producer fact | Named consumer/effect |
-|---|---|
-| `OrderConfirmed` | SubscriptionBilling UsageMeter warning count; Reporting projection |
-| `PaymentCaptured` | Accounting posting; Sales convergence if capture resolves asynchronously |
-| `OrderFulfilled` | Accounting revenue posting; Reporting |
-| `StockIssued` | Accounting COGS posting |
-| `GoodsReceiptRecorded` | Inventory receipt application; Accounting GRNI/inventory posting |
-| `SupplierInvoiceRecorded` | Accounting AP/GRNI posting |
-| `SupplierPaymentRecorded` | Accounting cash/AP posting |
-| `StockAdjusted` | Accounting adjustment posting |
-| approved privileged action/rejection audit intent | Audit append |
-| relevant owned facts | Notification/Reporting projections only where a named projection/recipient rule exists |
-
-Every consumer is at-least-once/idempotent and persists its source/inbox identity with its owned effect where possible.
-
-### Audit rejection evidence
-
-For an approved privileged action that is rejected before a business-state transaction, the rejecting owning module persists a standalone durable, idempotent audit-delivery intent in its own table before completing the application result where practical. Audit later appends its evidence through the same reliable delivery boundary. This avoids a best-effort log being mistaken for Audit and avoids synchronous foreign-table writes.
-
-## 9. Order payment/allocation orchestration
-
-The approved sequence plus unbounded-in-time payment uncertainty now creates a demonstrated durable orchestration need.
-
-Use **AWS Step Functions Standard** for the cross-domain order placement/payment/allocation process when that implementation frontier becomes Ready.
-
-Scope of the first state machine:
+Approved keys are:
 
 ```text
-accepted OrderPlaced
-  -> reserve all required stock
-  -> start/query merchant-order capture attempt
-  -> if Captured: Confirm Order -> verify/mark OrderAllocated
-  -> if Declined/NoCommit: retain Order/reservation and expose payment-retry-needed process state
-  -> if OutcomeUnknown: durable reconciliation/wait path; never infer failure from timeout
-  -> if technical recovery exhausts bounded automatic attempts: NeedsAttention process state; business facts remain unchanged
+CoreCommerceCapabilities
+MaxActiveMemberships
+MaxWarehouses
+ScheduledProductIngestion
+OrderVolumeWarningThreshold
 ```
 
-The state machine does **not**:
+Missing entitlement never means Unlimited/enabled. Current immutable EntitlementSet is authority, not Plan name.
 
-- create an Order before shopper price reconfirmation when price changed;
-- auto-cancel an Order on decline/technical error;
-- release stock because time elapsed, retries exhausted, or a workflow entered NeedsAttention;
-- call the provider directly; it calls Payments application contracts;
-- mutate Inventory/Payments/Sales persistence directly;
-- post Accounting;
-- encode refund accounting;
-- invent automatic fulfillment/shipping behavior.
+### `MaxActiveMemberships`
 
-Workflow execution identity is deterministic from the Sales-owned Order/process identity; duplicate start/continuation is idempotent. Sales keeps a module-owned process reference/status suitable for user support; Step Functions execution history is operational evidence, not Sales business state.
+Tenancy owns the authoritative Active Membership count and maintains a module-local count/guard transactionally with Membership lifecycle writes.
 
-This decision is recorded by ADR-010 and is an explicit specialization of ADR-006's general “Step Functions only with an approved durable sequence” rule.
+Before create/reactivate:
 
-## 10. AWS and CDK mapping
+```text
+ResolveTenantMutationAuthority
+-> SubscriptionBilling.EvaluateEntitlement(MaxActiveMemberships)
+-> Tenancy local count + last-owner invariant
+-> conditional Tenancy transaction
+```
 
-No service outside the existing approved serverless set is required.
+Every Active Owner/Admin/Staff/Viewer counts.
 
-| Need | AWS mapping | Status after reconciliation |
+### `MaxWarehouses`
+
+Inventory owns the authoritative active-Warehouse count/guard and conditionally protects create/reactivate using current `MaxWarehouses` entitlement.
+
+### `ScheduledProductIngestion`
+
+PDI checks both:
+
+```text
+SubscriptionBilling ScheduledProductIngestion entitlement
+AND
+PDI platform/source/Tenant source-policy permission
+```
+
+Check on schedule enable/create and again before scheduled dispatch. Losing entitlement suppresses future scheduled execution but does not delete PDI history/configuration.
+
+### Order warning
+
+`OrderConfirmed` feeds SubscriptionBilling UsageMeter idempotently. Threshold comes from the current period's EntitlementSet and is warning-only.
+
+## 7. Refund contracts after `PD-023`
+
+### Sales
+
+Sales owns refund request/review state and expected revision/idempotency.
+
+Conceptual commands:
+
+```text
+RequestRefund(...)
+ApproveRefund(refundRequestId, expectedRevision, ...)
+RejectRefund(refundRequestId, expectedRevision, ...)
+```
+
+`RefundRequested` has no downstream refund effect. Approval/rejection is terminal for the logical request and duplicate-safe.
+
+The exact role-to-refund-approval capability mapping remains Domain/Backlog refinement; Builders may not guess it from screen visibility.
+
+### `RefundApproved` integration fact
+
+Sales writes `RefundApproved` + outbox atomically. Stable event data includes the consumer-required approved amount/currency, returned-line quantities, Order/Payment/refund identifiers, and original issue/source references required for validation/provenance. It does not expose database serialization or provider secrets.
+
+### Inventory
+
+Inventory consumes `RefundApproved` idempotently, applies one `StockReturned` effect, and emits `StockReturned` with original issue provenance/reference. It owns quantity truth and never infers provider refund success.
+
+### Payments
+
+Payments consumes `RefundApproved` and starts/replays one logical provider refund operation.
+
+- provider operation identity is stable before unsafe retry;
+- timeout/network ambiguity is `OutcomeUnknown`;
+- no duplicate unsafe refund while prior logical operation is Unknown;
+- only verified provider evidence creates `PaymentRefunded`;
+- cumulative verified refund cannot exceed captured amount.
+
+### Accounting
+
+Accounting consumes three facts independently and never reads producer tables:
+
+| Source fact | Accounting effect |
+|---|---|
+| `RefundApproved` | linked revenue compensation `Dr Sales Revenue / Cr Customer Deposits` for already recognized sale |
+| `StockReturned` | original-issue-cost COGS reversal `Dr Inventory / Cr COGS` |
+| `PaymentRefunded` | refund settlement `Dr Customer Deposits / Cr Cash` |
+
+Each consumer atomically persists its source claim with one balanced immutable journal/effect. Original posted journals are never edited.
+
+For `StockReturned`, Accounting uses the event's original issue reference to locate its **own** original StockIssued posting/valuation provenance. Inventory does not become accounting-cost authority.
+
+### No global refund workflow state
+
+Architecture does not invent a cross-domain `RefundCompleted` business state. Sales approval remains committed while downstream effects recover independently. Reporting/support may project per-domain progress but projection is not source truth.
+
+ADR-011 owns this integration choice.
+
+## 8. Persistence updates
+
+ADR-005 remains the physical strategy: one DynamoDB table per implementation module, trusted Tenant keying, no application Scan, no foreign-table access, and no cross-domain DynamoDB transaction.
+
+### Tenancy
+
+Required additions/closures:
+
+- Tenant lifecycle stores only Active/Suspended in MVP; suspend/reactivate uses expected revision and durable Audit delivery intent;
+- no suspended business record is TTL-deleted under current MVP retention policy;
+- subject Membership discovery includes enough current Tenant/Membership reference/status data for selection but is never final authority;
+- authoritative Active Membership count/guard is updated atomically with activation/disable/reactivation changes;
+- read versus mutation authority uses current Tenant status from base-table authority reads.
+
+### SubscriptionBilling
+
+Required records:
+
+- platform-global Plan + immutable PlanVersion records;
+- immutable Trial-terms version;
+- catalog bootstrap source/idempotency/version conflict protection;
+- current/historical Subscription + EntitlementSet;
+- UsageMeter and `OrderConfirmed` source claims;
+- PlatformCharge/provider evidence/reconciliation;
+- restrictive downgrade transition/owner assessment acknowledgements.
+
+### Inventory
+
+Required additions:
+
+- authoritative active-Warehouse count/guard for hard limit;
+- `RefundApproved` source claim + one immutable StockReturned movement/effect;
+- StockReturned carries original issue provenance/reference in integration event.
+
+### Sales
+
+Required additions:
+
+- RefundRequest/refund-review state keyed to Tenant/Order/refund identity;
+- expected revision + terminal decision protection;
+- `RefundApproved`/`RefundRejected` Audit intent;
+- `RefundApproved` integration outbox atomic with approval.
+
+### Payments
+
+Required additions:
+
+- approved refund operation identity/status/evidence separate from capture attempts;
+- refund source claim by `refundApprovalId`/logical operation;
+- provider refund evidence + reconciliation state;
+- `PaymentRefunded` outbox only after verified evidence.
+
+### Accounting
+
+Required additions:
+
+- source posting claims for revenue refund compensation, StockReturned COGS reversal, and PaymentRefunded Cash settlement;
+- durable linkage to original journal/source/issue provenance required for append-only reversals;
+- no foreign table lookup for refund postings.
+
+The moving-weighted-average authoritative cost-pool scope remains a separate domain gap before valuation-state keying is hardened.
+
+## 9. Integration matrix updates
+
+### Synchronous
+
+Use synchronous producer-owned application contracts for immediate owner decisions:
+
+- merchant read/mutation authority resolution;
+- SubscriptionBilling entitlement/catalog queries;
+- Tenancy/Inventory resource-limit guarded writes;
+- PDI schedule enable/dispatch entitlement checks;
+- checkout Catalog/Pricing validation;
+- ADR-010 Inventory/Payments/Sales order tasks;
+- platform support read-only module queries.
+
+### Reliable facts
+
+Use producer outbox -> Stream relay -> EventBridge -> consumer-specific SQS/DLQ for committed facts with independent consumers.
+
+Named routes now include:
+
+| Producer fact | Consumer/effect |
+|---|---|
+| `OrderConfirmed` | SubscriptionBilling UsageMeter; Reporting |
+| `PaymentCaptured` | Accounting; Sales convergence |
+| `OrderFulfilled` | Accounting revenue; Reporting |
+| `StockIssued` | Accounting COGS |
+| `RefundApproved` | Inventory return; Payments refund execution; Accounting revenue compensation |
+| `StockReturned` | Accounting COGS/inventory reversal |
+| `PaymentRefunded` | Accounting Customer Deposits/Cash settlement |
+| `GoodsReceiptRecorded` | Inventory; Accounting |
+| `SupplierInvoiceRecorded` | Accounting |
+| `SupplierPaymentRecorded` | Accounting |
+| `StockAdjusted` | Accounting |
+| covered privileged actions/rejections | Audit |
+
+Consumers are at-least-once/idempotent and persist source identity with owned effect where possible.
+
+### Refund does not use Step Functions by default
+
+ADR-010 remains scoped to OrderPlaced -> OrderAllocated. Refund approval is durable Sales state; post-approval effects are independent fact consumers and Payments owns its own provider reconciliation. No refund state machine is created unless a future approved global process demonstrates a separate orchestration need.
+
+## 10. AWS/CDK mapping after final decisions
+
+No new managed service is required by resolving `PD-004`, `PD-023`, or `PD-044`.
+
+| Need | AWS mapping | Status |
 |---|---|---|
-| merchant authentication | Cognito + API Gateway HTTP API JWT authorizer | accepted with protected API |
-| shared synchronous API/application surface | Lambda `commerce-api` | accepted modular-monolith default |
-| module persistence | one DynamoDB table per introduced module | accepted by ADR-005 |
-| tenant-selection discovery | Tenancy base-table strongly consistent Query | accepted; no GSI required for authority |
-| onboarding Trial recovery | Tenancy transactional work-outbox → Stream relay → SQS + worker Lambda | conditional with onboarding implementation |
-| reliable business facts | module outbox → DynamoDB Stream → EventBridge | conditional with first named fact consumer |
-| critical side-effect consumers | consumer-specific SQS + DLQ + Lambda | conditional with consumer implementation |
-| order payment/allocation durable process | Step Functions Standard + Lambda task handlers | accepted for the named process when Ready; ADR-010 |
-| merchant-order provider | separate API Gateway/Lambda/DynamoDB stack/app | conditional with Payments provider task |
-| SaaS Billing Mock Provider | separate API Gateway/Lambda/DynamoDB stack/app | conditional; distinct from merchant-order provider |
-| provider reconciliation schedule | EventBridge Scheduler | conditional only if bounded periodic inquiry is required |
-| media binary storage | private S3 + CloudFront delivery through Web/FilesMedia policy | conditional with FilesMedia/Web task |
-| crawler acquisition | SQS/DLQ + Lambda workers; Scheduler only for approved schedules | conditional |
-| observability | CloudWatch built-ins/logs/alarms | accepted with bounded retention/low-cardinality policy |
+| protected merchant identity | Cognito + API Gateway HTTP API JWT authorizer | accepted |
+| shared synchronous application surface | Lambda `commerce-api` | accepted modular-monolith default |
+| module persistence | one DynamoDB table per introduced module | ADR-005 |
+| merchant subject discovery | Tenancy base-table strong Query | accepted |
+| onboarding Trial recovery | Tenancy work-outbox/Stream -> SQS worker | ADR-009 |
+| reliable business facts including refund | module outbox/Stream -> EventBridge | conditional with named consumer |
+| side-effecting fact consumers | consumer-specific SQS/DLQ + Lambda | conditional |
+| order payment/allocation | Step Functions Standard + application task handlers | ADR-010 only |
+| refund propagation | EventBridge + Inventory/Payments/Accounting queues/workers | ADR-011; no Step Functions |
+| merchant-order provider | separate API Gateway/Lambda/DynamoDB app | conditional |
+| SaaS Billing Mock Provider | separate API Gateway/Lambda/DynamoDB app | conditional |
+| provider reconciliation schedule | EventBridge Scheduler | conditional only with named due-work need |
+| PDI acquisition | SQS/DLQ + Lambda; Scheduler only for approved schedules | conditional |
+| media binaries | private S3 + controlled CloudFront delivery | conditional |
+| observability | CloudWatch built-ins/logs/alarms | accepted with bounded retention |
 | IaC | AWS CDK/CloudFormation | accepted |
 
-No NAT Gateway, ALB, EC2, RDS/Aurora, Redis/ElastiCache, OpenSearch, Kafka/MSK, EKS, always-on service, or provisioned Lambda concurrency is introduced.
+Do not introduce AppConfig/SSM merely for Plan catalog, or NAT Gateway/ALB/EC2/RDS/Redis/OpenSearch/MSK/EKS/always-on infrastructure without a new demonstrated problem and ADR.
 
-### Step Functions cost guardrail
+## 11. ADR reconciliation
 
-The order state machine must have a task-level transition budget before deployment. Normal successful flow should remain small; Unknown/reconciliation paths must use bounded operational retry/wait policy and must not create high-frequency polling loops. Learning/dev cloud tests remain low-volume under the repository Free Tier/credit guardrails.
+Current accepted architecture decisions include:
 
-## 11. Architecture decisions and ADR impact
+- ADR-003 — modular runtime/deployment boundaries;
+- ADR-004 — trusted Tenant authority, now including Suspended read versus mutation separation and explicit platform paths;
+- ADR-005 — module-owned DynamoDB/access-pattern strategy;
+- ADR-006 — reliable integration/outbox/EventBridge/SQS pattern;
+- ADR-007 — HTTP/idempotency conventions;
+- ADR-008 — SubscriptionBilling boundary, now including resolved MVP catalog bootstrap and concrete entitlement enforcement;
+- ADR-009 — onboarding Trial completion/recovery;
+- ADR-010 — Order payment/allocation Step Functions Standard workflow;
+- ADR-011 — refund approval propagation and Accounting correction integration.
 
-### Existing ADRs retained
+## 12. Remaining domain/architecture stop conditions
 
-- ADR-003 modular runtime/deployment boundaries remains valid.
-- ADR-004 trusted Tenant authority remains valid but its historical `PD-001`/`PD-003` gates are closed by this reconciliation; subject membership discovery and one-role context are now concrete.
-- ADR-005 module-owned DynamoDB strategy remains valid; onboarding no longer attempts cross-module ACID.
-- ADR-006 reliable integration remains valid; it now has named business routes and ADR-010 supplies the first justified Step Functions specialization.
-- ADR-007 HTTP/version/idempotency conventions remain valid.
-- ADR-008 SubscriptionBilling module/entitlement/provider boundary remains valid; its historical `PD-043`–`PD-053` gate list is superseded except exact commercial packages under `PD-044`.
+The final three PDs are no longer stop conditions. The following independent gaps remain and must not be guessed by Builders:
 
-### New ADRs required by this reconciliation
-
-- ADR-009 — cross-domain onboarding completion and Trial-bootstrap recovery.
-- ADR-010 — durable order payment/allocation orchestration with Step Functions Standard.
-
-A later Accounting valuation ADR is required before implementing weighted-average persistence if the domain clarifies the missing cost-pool scope and the resulting model materially affects keys/consistency.
-
-## 12. Remaining non-architecture product/domain gates
-
-This Technical Architect pass intentionally does not invent:
-
-1. `PD-004` exact Suspended read/support and Tenant closure/retention/privacy lifecycle.
-2. `PD-023` refund/return Accounting postings.
-3. `PD-044` exact sellable package prices and entitlement/limit matrix.
-4. Storefront Tenant-address ownership/lifecycle/uniqueness (the refreshed domain baseline still does not define it). Public Tenant route/index/cache-key contracts remain non-final.
-5. Accounting moving-weighted-average cost-pool scope. The business rule says moving weighted average but not the aggregation dimension used for the authoritative cost position.
-6. Any Category/Brand historical normalized-name reuse behavior not explicitly stated by the domain model.
-7. Any product max-order-line constraint. If DynamoDB transaction limits become relevant, Architecture must solve the process without inventing a business maximum.
-
-These are explicit stop conditions for affected work, not defaults.
+1. Storefront Tenant-address ownership/lifecycle/uniqueness. Public Tenant route/index/cache-key contracts are not final.
+2. Accounting moving-weighted-average cost-pool scope (`Tenant+Product`, `Tenant+Product+Warehouse`, or other domain-approved dimension). Persistence keying remains blocked until clarified.
+3. Category/Brand historical normalized-name reuse after rename/retirement if a task requires it.
+4. Refund approval role-to-capability mapping if a refund-approval task reaches refinement without a domain-authorized mapping.
+5. Any non-restock refund semantics; current MVP refund approval means accepted restockable return.
+6. Any product max-order-line limit. Architecture must solve DynamoDB transaction cardinality without inventing a commercial/business maximum.
 
 ## 13. Backlog Planner handoff
 
-The Backlog Planner may now remove obsolete product gates from tasks that depended only on the approved decisions above, but it still must apply the normal Ready gate.
+Backlog Planner may remove obsolete `PD-004`, `PD-023`, and `PD-044` gates from affected candidate tasks after verifying this architecture reconciliation.
 
-Near-term task refinement may rely on:
+Task refinement may now rely on:
 
-- multi-Tenant Membership discovery/selection and one-role authority;
-- verified-email self-service onboarding with display name + IANA timezone;
-- cross-domain Trial bootstrap recovery architecture;
-- finalized Catalog lifecycle/SKU/slug/media/import rules and their access-pattern requirements;
-- canonical purchase-confirmation sequence and Step Functions orchestration boundary through `OrderAllocated`;
-- Payments Unknown/reconciliation semantics;
-- approved accounting source routes except refund/return;
-- SubscriptionBilling lifecycle/enforcement/provider simulation semantics except exact commercial packages;
-- named reliable integration routes and conditional AWS resources above.
+- platform-only reasoned Tenant suspend/reactivate;
+- Suspended merchant read-only versus Active mutation authority split;
+- approved Trial/Starter/Growth/Business commercial terms;
+- concrete `MaxActiveMemberships`, `MaxWarehouses`, scheduled-ingestion, and order-warning entitlement behavior;
+- versioned immutable SubscriptionBilling catalog bootstrap;
+- `RefundRequested -> RefundApproved/RefundRejected` boundary;
+- `RefundApproved` fan-out to Inventory/Payments/Accounting;
+- `StockReturned` and verified `PaymentRefunded` Accounting routes;
+- no refund Step Functions workflow by default.
 
-Tasks touching the remaining domain/product gaps must stay non-Ready until the owning decision is supplied.
+Backlog Planner still owns task maturity/Ready status.
 
 ## 14. Verification requirements for dependent implementation
 
-When code-bearing tasks are later introduced, verify the applicable subset:
+Verify the applicable subset:
 
-- subject with memberships in Tenant A and Tenant B cannot gain authority from client selection/JWT claims; multi-membership selection requires intentional choice;
-- Membership/Tenant state changes affect the next authority resolution and subject discovery cannot become stale authority;
-- onboarding cannot report completed while Trial is absent; interrupted Trial bootstrap is recoverable and duplicate-safe;
-- no cross-module DynamoDB transaction/read/write is used for onboarding;
-- Draft SKU can change under concurrency, first publication fixes it, and Archive never releases its historical claim;
-- slug/name/source claims preserve tenant isolation and uniqueness without GSI authority;
-- checkout price change creates no Order until reconfirmed;
-- order workflow duplicate starts/retries do not duplicate reservation, Payment attempt, Sales transition, or integration fact;
-- Payment Unknown never becomes failure/release/cancel from timeout, Step Functions timeout, retry exhaustion, or DLQ placement;
-- Accounting consumers create one balanced immutable posting per logical source and never read producer tables;
-- `PaymentCaptured`, `OrderFulfilled`, and `StockIssued` cannot double-post revenue/COGS effects;
-- `OrderConfirmed` usage-meter replay increments at most once and never blocks shopper checkout;
-- dedicated SaaS billing provider state cannot leak into merchant-order Payments;
-- tenant-visible Audit/Subscription/public errors remain non-disclosing;
-- CDK synthesizes only resources introduced by named Ready consumers/workflows and preserves Free Tier/cost guardrails.
+- Suspended Tenant can perform approved role-scoped reads but no ordinary merchant mutation;
+- platform suspend/reactivate requires authorized platform context, reason, expected revision, and durable Audit evidence;
+- public storefront/checkout fails for Suspended Tenant despite cached Catalog data;
+- plan catalog seed is idempotent and accepted versions cannot be mutated;
+- Trial/Starter/Growth/Business values match the approved matrix exactly;
+- consumers never authorize by Plan name/frontend/JWT/copied limit;
+- Membership and Warehouse concurrent growth cannot bypass hard limits;
+- PDI rechecks scheduled-ingestion entitlement at dispatch;
+- order-volume warning replay counts once and never blocks checkout/charges overage;
+- RefundRequested/Rejected create no stock/payment/accounting effect;
+- RefundApproved replay produces at most one logical StockReturned, provider refund operation, and revenue compensation;
+- StockReturned and PaymentRefunded replay cannot double-post Accounting;
+- Payment refund OutcomeUnknown never becomes verified refund from timeout/retry/DLQ;
+- Accounting uses own original issue/journal provenance and never reads producer tables;
+- no refund Step Functions resource is synthesized absent a later approved ADR;
+- CDK creates only resources introduced by named Ready tasks and preserves Free Tier/pay-per-use constraints.
 
 ## 15. Stop condition
 
-**TECHNICAL BASELINE RECONCILED WITH THE 2026-08-10 PRODUCT-DECISION PASS.**
+**TECHNICAL BASELINE RECONCILED WITH RESOLVED PD-004, PD-023, AND PD-044.**
 
-The architecture no longer requires a Builder to choose module ownership, tenant authority, onboarding consistency/recovery, Catalog uniqueness mechanics, purchase-confirmation sync/async boundaries, Payment uncertainty handling, named accounting integration routes, SubscriptionBilling trust/provider boundaries, or the AWS mechanism for the approved order process.
-
-The remaining gaps are explicitly product/domain-owned and must not be filled by implementation convenience.
+The three former product-decision gates no longer require a Builder to choose technical semantics. Remaining independent domain gaps are explicit above rather than hidden behind stale PD status text.
