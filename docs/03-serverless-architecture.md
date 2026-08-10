@@ -1,12 +1,12 @@
 # CommerceOS — Serverless Architecture
 
-_Technical baseline originally reconciled by TASK-0088 on 2026-08-09 and refreshed on 2026-08-10 after the product/domain decision reconciliation._
+_Technical architecture entry point refreshed on 2026-08-10 after final resolution of `PD-004`, `PD-023`, and `PD-044`._
 
 ## 1. Authority and detailed baseline
 
-CommerceOS is a multi-tenant modular serverless SaaS. This document is the high-level architecture entry point.
+CommerceOS is a multi-tenant modular serverless SaaS.
 
-Implementation-useful authority is:
+Implementation-useful authority:
 
 - [Technical architecture baseline](architecture/technical-baseline.md)
 - [Product-decision technical reconciliation](architecture/product-decision-technical-reconciliation.md)
@@ -17,49 +17,57 @@ Implementation-useful authority is:
 
 Accepted ADRs include:
 
-- [ADR-001 — AWS CDK as Infrastructure as Code](adr/ADR-001-aws-cdk-infrastructure-as-code.md)
-- [ADR-002 — Phase 0 toolchain and repository structure](adr/ADR-002-phase-0-toolchain-and-repository-structure.md)
-- [ADR-003 — First-frontier modular runtime and deployment boundaries](adr/ADR-003-first-frontier-modular-runtime-and-deployment-boundaries.md)
-- [ADR-004 — Trusted tenant authority and authorization boundary](adr/ADR-004-trusted-tenant-authority-and-authorization-boundary.md)
-- [ADR-005 — DynamoDB module ownership and access-pattern strategy](adr/ADR-005-dynamodb-module-ownership-and-access-pattern-strategy.md)
-- [ADR-006 — Reliable cross-domain integration and deferred workflow orchestration](adr/ADR-006-reliable-cross-domain-integration-and-deferred-workflow-orchestration.md)
-- [ADR-007 — Versioned HTTP contract and command-safety conventions](adr/ADR-007-versioned-http-contract-and-command-safety-conventions.md)
-- [ADR-008 — Subscription & Billing module, entitlement decision, and provider boundary](adr/ADR-008-subscription-billing-module-entitlement-and-provider-boundary.md)
-- [ADR-009 — Cross-domain onboarding completion and Trial-bootstrap recovery](adr/ADR-009-cross-domain-onboarding-completion-and-trial-bootstrap-recovery.md)
-- [ADR-010 — Durable order payment/allocation orchestration](adr/ADR-010-order-payment-allocation-durable-orchestration.md)
+- [ADR-001 — AWS CDK](adr/ADR-001-aws-cdk-infrastructure-as-code.md)
+- [ADR-002 — Phase 0 toolchain/repository](adr/ADR-002-phase-0-toolchain-and-repository-structure.md)
+- [ADR-003 — modular runtime/deployment boundaries](adr/ADR-003-first-frontier-modular-runtime-and-deployment-boundaries.md)
+- [ADR-004 — trusted Tenant authority and authorization](adr/ADR-004-trusted-tenant-authority-and-authorization-boundary.md)
+- [ADR-005 — DynamoDB module ownership/access patterns](adr/ADR-005-dynamodb-module-ownership-and-access-pattern-strategy.md)
+- [ADR-006 — reliable cross-domain integration](adr/ADR-006-reliable-cross-domain-integration-and-deferred-workflow-orchestration.md)
+- [ADR-007 — HTTP/idempotency conventions](adr/ADR-007-versioned-http-contract-and-command-safety-conventions.md)
+- [ADR-008 — SubscriptionBilling boundary/catalog/entitlements/provider](adr/ADR-008-subscription-billing-module-entitlement-and-provider-boundary.md)
+- [ADR-009 — onboarding Trial completion/recovery](adr/ADR-009-cross-domain-onboarding-completion-and-trial-bootstrap-recovery.md)
+- [ADR-010 — order payment/allocation orchestration](adr/ADR-010-order-payment-allocation-durable-orchestration.md)
+- [ADR-011 — refund approval propagation/accounting corrections](adr/ADR-011-refund-approval-propagation-and-accounting-correction-integration.md)
 
-The [business-domain baseline](02-business-domains.md) and [product-decision register](domains/product-decisions.md) remain authoritative for business meaning. Architecture does not resolve missing business semantics by choosing an API, database key, AWS service, workflow state, or deployment topology.
+Business/domain baseline and product-decision register remain authoritative for business meaning.
 
 ## 2. Current decision boundary
 
-The 2026-08-10 product/domain pass resolved the former broad first-frontier and commerce gates. Architecture now treats the approved role model, Catalog lifecycle, order/payment sequence, Accounting triggers, and Subscription/Billing lifecycle as business inputs.
+The approved MVP product-decision register currently has **no unresolved/deferred `PD-*` gate**.
 
-Only these product-policy areas remain intentionally deferred in the current register:
+Final resolved inputs include:
 
-- `PD-004` — exact Suspended-Tenant read/support and closure/deletion/retention/recovery/privacy semantics;
-- `PD-023` — exact refund/return Accounting treatment;
-- exact sellable plan prices/entitlement packages under `PD-044`.
+- `PD-004`: Active/Suspended Tenant lifecycle; platform-only reasoned suspension/reactivation; merchant read-only access while Suspended; public commerce/mutations disabled; privileged platform support read-only path; no MVP destructive lifecycle;
+- `PD-023`: explicit refund request/approval/rejection; approved restockable return; append-only revenue/COGS/Cash corrections; provider-verified refund truth;
+- `PD-044`: exact Trial/Starter/Growth/Business pricing/limits/automation/warning thresholds.
 
-Additional domain meaning still missing for implementation is recorded explicitly in the refreshed technical baseline, notably Storefront Tenant addressing and Accounting moving-average cost-pool scope. Builders must not guess them.
+Independent domain gaps remain explicit rather than guessed:
+
+- Storefront Tenant-address ownership/lifecycle/uniqueness;
+- Accounting moving-weighted-average cost-pool scope;
+- Category/Brand historical normalized-name reuse if needed;
+- refund approval role-to-capability mapping if not supplied by refined task/domain contract;
+- non-restock refunds.
 
 ## 3. Core principles
 
-1. Business-domain ownership and contracts precede AWS services.
-2. Start as a modular monolith, not one deployed service per bounded context.
-3. Module, Lambda, table, queue, state machine, and CDK stack are different boundaries.
+1. Business ownership/contracts precede AWS services.
+2. Start as a modular monolith, not a deployed microservice per domain.
+3. Module, Lambda, table, queue, workflow, and stack are different boundaries.
 4. Cognito authenticates; Merchant Access resolves current Tenant authority.
 5. Tenant authorization and tenant-partitioned persistence are both mandatory.
-6. Subscription entitlement is a separate authority from Membership/Tenant authorization.
-7. Keep immediate owner decisions synchronous when the caller needs the accepted/rejected result.
-8. Use durable work queues for one-worker retry/backpressure; use reliable business facts for independent consumers.
-9. Use Step Functions only for a named approved process with real durable orchestration pressure.
-10. Critical commands, producers, relays, workflows, and consumers are idempotent at their own boundaries.
-11. Domain code has no AWS/framework/persistence/provider dependency.
-12. AWS CDK is source of truth; Free Tier/credit constraints are architecture constraints.
+6. Suspended read-only authority is distinct from Active mutation authority.
+7. Subscription EntitlementSet is separate commercial authority from Tenant/Membership.
+8. Keep immediate owner decisions synchronous.
+9. Use durable work queues for one-worker retry/backpressure and reliable facts for independent consumers.
+10. Step Functions is only for a named process with real durable orchestration pressure.
+11. Commands/producers/relays/workflows/consumers are idempotent at their own boundaries.
+12. Domain code has no AWS/framework/persistence/provider dependency.
+13. AWS CDK is source of truth; Free Tier/pay-per-use is an architecture constraint.
 
 ## 4. Implemented architecture
 
-The repository currently implements foundation scaffolding only:
+Repository currently implements foundation scaffolding only:
 
 ```text
 ASP.NET Core local/composition host
@@ -74,7 +82,7 @@ CDK FoundationStack
   environment/cost tags
 ```
 
-No business module runtime, Cognito, API Gateway, business DynamoDB table, EventBridge bus, SQS application queue, Step Functions state machine, S3 application bucket, or CloudFront application distribution is implemented yet.
+No business module runtime, Cognito, API Gateway, business DynamoDB table, EventBridge bus, application SQS queue, Step Functions state machine, S3 application bucket, or CloudFront distribution is implemented yet.
 
 ## 5. Target runtime and modules
 
@@ -85,7 +93,7 @@ merchant/public clients
 API Gateway HTTP API
         │ Cognito validates merchant identity where protected
         ▼
-shared Lambda application runtime
+shared Lambda application runtime (`commerce-api`)
         │
         ├── Tenancy
         ├── Catalog
@@ -103,92 +111,136 @@ module-owned DynamoDB tables
 conditional workers/queues/events/workflows
 ```
 
-`Tenancy` hosts Tenant Management and Merchant Access as distinct model areas because they need module-local atomic invariants such as initial Owner and last-Owner protection. `SubscriptionBilling` remains a separate module and business/persistence authority.
-
 Merchant-order Mock Payment Provider and simulated SaaS Billing Provider are separate external-like applications when introduced.
 
-## 6. Trusted Tenant context
+## 6. Trusted Tenant contexts
 
-Protected merchant requests use this trust chain:
+Protected merchant trust chain:
 
 ```text
 verified Cognito subject
-      +
-optional requested Tenant selector (untrusted)
+      + optional Tenant selector (untrusted)
       ▼
-Merchant Access discovery/current authority resolution
-      ▼
-TrustedTenantContext
-  tenantId / subjectId / membershipId / role
-      ▼
-domain role policy
-      ▼
-SubscriptionBilling.EvaluateEntitlement when governed
-      ▼
-owner-local invariant + tenant-scoped repository
+Merchant Access discovery/current validation
+      ├── merchant read -> TrustedTenantReadContext
+      └── merchant mutation -> TrustedTenantMutationContext
 ```
 
-One identity may hold Memberships in multiple Tenants. Merchant Access uses a strongly consistent subject-membership discovery representation, never JWT claims or an eventual Subject GSI as authority. Multiple/ambiguous memberships require intentional selection; any selected Tenant is revalidated against current Tenant + Membership state.
+One Subject may hold Memberships in multiple Tenants. Discovery uses a strongly consistent subject-membership representation and final current Tenant/Membership validation.
 
-Public storefront, onboarding, background-worker, and platform-admin paths use distinct contexts. No bypass flag exists.
+### Read
 
-## 7. Onboarding
+Active Membership + Tenant Active/Suspended produces merchant read context. Owning domain still applies normal role visibility.
 
-Successful onboarding now spans two modules:
+### Mutation
+
+Active Membership + Tenant Active produces mutation context. Owning domain role policy, current Subscription entitlement where applicable, and aggregate invariant must also accept the command.
+
+### Platform
+
+Suspend/reactivate and privileged support use separate platform contexts. There is no bypass flag and no Owner Membership in every Tenant.
+
+### Public
+
+Public storefront uses separate `PublicTenantContext`. Once Tenant-address binding exists, current Tenant status must be checked; Suspended makes storefront/checkout unavailable even if Catalog projection is cached.
+
+## 7. Onboarding and Trial
+
+Successful onboarding spans two modules:
 
 ```text
-Tenancy             SubscriptionBilling
-Active Tenant       30-day Trial Subscription
-Active Owner        Trial EntitlementSet
+Tenancy                 SubscriptionBilling
+Active Tenant           30-day Trial Subscription
+Active initial Owner    Trial EntitlementSet
 ```
 
-ADR-009 preserves ownership without a cross-domain transaction:
+ADR-009:
 
-- Tenancy atomically commits Tenant/Owner plus a durable onboarding operation and Trial-bootstrap work intent;
-- the coordinator calls idempotent `StartTrialSubscription` synchronously;
-- completed success is returned only after Trial acceptance;
-- interruption returns durable `202 Accepted` and SQS recovery retries the same logical Trial command;
-- committed Tenant/Owner is not destructively deleted as compensation.
+- Tenancy atomically commits local registration + durable onboarding operation/work intent;
+- coordinator calls idempotent `StartTrialSubscription` synchronously;
+- completed success only after Trial acceptance;
+- interruption returns durable `202 Accepted` and SQS recovery retries same logical Trial command;
+- no cross-domain DynamoDB transaction/destructive rollback.
 
-## 8. Persistence
+Trial terms:
 
-DynamoDB remains the initial transactional store with **one table per implementation module** when the module is introduced.
+```text
+core capabilities enabled
+MaxActiveMemberships = 3
+MaxWarehouses = 1
+ScheduledProductIngestion = true
+OrderVolumeWarningThreshold = 500
+```
+
+Trial does not auto-convert to Starter.
+
+## 8. Subscription catalog and entitlements
+
+Approved catalog:
+
+| Terms | Price/month | Memberships | Warehouses | Scheduled ingestion | Order warning |
+|---|---:|---:|---:|---|---:|
+| Trial | n/a | 3 | 1 | Yes | 500 |
+| Starter | 199,000 VND | 3 | 1 | No | 500 |
+| Growth | 499,000 VND | 10 | 3 | Yes | 2,000 |
+| Business | 999,000 VND | 30 | 10 | Yes | 10,000 |
+
+ADR-008:
+
+- SubscriptionBilling DynamoDB owns stable Plan + immutable PlanVersion + Trial terms;
+- initial values are loaded by version-controlled idempotent bootstrap/migration;
+- EntitlementSet is runtime authority, never Plan name/JWT/frontend constants;
+- future commercial changes create new PlanVersions;
+- Tenancy owns Active Membership count/guard;
+- Inventory owns active-Warehouse count/guard;
+- PDI checks scheduled-ingestion entitlement plus independent source policy at enable and dispatch;
+- `OrderConfirmed` feeds warning meter idempotently; threshold never blocks checkout/charges overage.
+
+No AppConfig/SSM/separate config database is introduced merely for the catalog.
+
+## 9. Persistence
+
+DynamoDB remains the initial transactional store with one table per implementation module when Ready.
 
 Rules:
 
-- every tenant-owned base key/query receives trusted Tenant scope;
-- no unscoped tenant repository overload;
-- no cross-module table read/write or cross-domain DynamoDB transaction;
+- trusted Tenant scope on tenant-owned keys/queries;
+- no unscoped merchant repository overload;
+- no cross-module table read/write/transaction;
 - no application `Scan`;
-- GSI only for approved eventual queries, never sole authority/uniqueness/invariant enforcement;
-- conditions protect revisions/single-item invariants;
-- bounded same-module transactions protect local all-or-nothing invariants;
-- module-owned command/idempotency/outbox/inbox/technical-operation records support retries and recovery.
+- GSI only for approved eventual queries, never authority/uniqueness/invariant sole source;
+- conditional writes and bounded transactions protect local invariants;
+- module-owned idempotency/outbox/inbox/process records support retries/recovery.
 
-The refreshed access-pattern consequences include strongly consistent membership discovery, permanent post-publication SKU claims, slug/name/source mapping claims, Inventory zero-floor conditions, Payment provider-evidence records, SubscriptionBilling entitlement/charge history, and Accounting source-posting deduplication.
+Current notable patterns:
 
-## 9. Synchronous integration
+- Tenancy: subject discovery, last-owner guard, active Membership count guard, Active/Suspended status with no suspension TTL;
+- Catalog: permanent SKU claims, current slug/name/source claims;
+- SubscriptionBilling: immutable PlanVersion/Trial terms, EntitlementSets, UsageMeter, PlatformCharge;
+- Sales: immutable Order + technical order process + RefundRequest/review/outbox;
+- Inventory: stock/reservations/StockReturned + active-Warehouse count guard;
+- Payments: capture/refund provider operations/evidence/reconciliation;
+- Accounting: source claims + immutable balanced journals + own provenance/valuation state.
 
-Use synchronous producer-owned application contracts when the caller cannot truthfully complete without an immediate owner result and the modules share the runtime.
+## 10. Synchronous integration
+
+Use producer-owned synchronous contracts when an immediate owner answer is required.
 
 Examples:
 
-- Merchant Access authority resolution;
-- SubscriptionBilling entitlement evaluation;
-- Catalog commands/queries and checkout validation;
-- Inventory reserve command from the order process;
-- Payments capture/reconciliation command/query;
-- Sales confirmation/allocation command;
-- Catalog import application;
-- read-only platform-admin Subscription/Billing support query.
+- merchant read/mutation authority;
+- SubscriptionBilling catalog/entitlement;
+- Catalog commands/checkout validation;
+- Membership/Warehouse hard-limit enforcement;
+- PDI scheduled-ingestion entitlement check;
+- ADR-010 Inventory/Payments/Sales workflow tasks;
+- platform support read-only queries.
 
-No synchronous contract authorizes foreign persistence access.
+No synchronous contract allows foreign persistence access.
 
-## 10. Reliable asynchronous integration
+## 11. Reliable asynchronous integration
 
-For one known retryable worker with no fan-out, use SQS. If work must survive a source commit, pair it with a transactional work-outbox and idempotent Stream relay.
-
-For committed business facts with independent consumers, use ADR-006:
+For committed facts with independent consumers:
 
 ```text
 owner state + outbox
@@ -199,221 +251,155 @@ EventBridge
       ↓
 consumer-specific SQS/DLQ
       ↓
-inbox/source id + owned effect
+inbox/source identity + owned effect
 ```
 
-Named approved routes now include:
+Named routes include:
 
-- `OrderConfirmed` → SubscriptionBilling order-volume meter / Reporting;
-- `PaymentCaptured` → Accounting and asynchronous Sales convergence;
+- `OrderConfirmed` → SubscriptionBilling meter / Reporting;
+- `PaymentCaptured` → Accounting / Sales convergence;
 - `OrderFulfilled` → Accounting revenue / Reporting;
 - `StockIssued` → Accounting COGS;
-- `GoodsReceiptRecorded` → Inventory receipt application and Accounting;
-- `SupplierInvoiceRecorded` / `SupplierPaymentRecorded` / `StockAdjusted` → Accounting;
-- approved privileged audit intents → Audit;
-- selected facts → Notification/Reporting when a named recipient/projection exists.
+- `RefundApproved` → Inventory / Payments / Accounting revenue compensation;
+- `StockReturned` → Accounting COGS/inventory reversal;
+- `PaymentRefunded` → Accounting Customer Deposits/Cash settlement;
+- Procurement source facts → Inventory/Accounting;
+- covered privileged actions/rejections → Audit;
+- named facts → Notification/Reporting where appropriate.
 
-`PaymentRefunded`/`StockReturned` do not route to Accounting until `PD-023` is resolved.
+For one known retryable worker, use direct SQS with work-outbox when reliability from source commit is required.
 
-## 11. Order payment/allocation workflow
+## 12. Order payment/allocation workflow
 
-The approved order sequence now demonstrates a real Step Functions need.
-
-ADR-010 selects **Step Functions Standard** for the process from accepted `OrderPlaced` through `OrderAllocated`:
+ADR-010 selects Step Functions Standard for accepted `OrderPlaced` through `OrderAllocated`:
 
 ```text
 OrderPlaced
    ↓
 all-line Inventory reservation
    ↓
-full Payment capture attempt
-   ├── Captured → OrderConfirmed → OrderAllocated
-   ├── definitive decline/no-commit → payment retry needed
-   └── OutcomeUnknown → durable reconciliation/wait
-                          └── unresolved automation → NeedsAttention
+full Payment capture
+   ├── Captured -> OrderConfirmed -> OrderAllocated
+   ├── definitive no-commit/decline -> payment retry needed
+   └── OutcomeUnknown -> durable Payments reconciliation/wait
+                          -> NeedsAttention if automation stops unresolved
 ```
 
-Critical semantic guards:
+Technical timeout/retry exhaustion does not imply Payment failure, Order cancellation, or stock release.
 
-- price changes require shopper reconfirmation before Order creation;
-- decline is attempt-terminal only;
-- Unknown blocks another attempt and keeps stock held;
-- workflow timeout/retry exhaustion/DLQ/elapsed time never means Payment failure, Order cancellation, or stock release;
-- state machine invokes application contracts only;
-- provider-private state and Accounting are outside the state machine;
-- the initial workflow does not invent automatic fulfillment/shipping behavior.
+State machine invokes application contracts only and never owns provider persistence or Accounting.
 
-## 12. Subscription & Billing
+## 13. Refund propagation
 
-`SubscriptionBilling` remains the sole commercial/entitlement authority for CommerceOS SaaS.
+ADR-011 selects reliable event choreography after Sales `RefundApproved`:
 
-Approved technical consequences now include:
+```text
+RefundRequested
+   -> merchant review
+   -> RefundApproved / RefundRejected
 
-- automatic 30-day no-card Trial;
-- monthly accepted billing periods/anchors;
-- VND whole-đồng SaaS Money with no tax/statutory invoice/proration machinery;
-- upgrade only after verified successful PlatformCharge and a fresh monthly period;
-- downgrade at renewal with owner-authoritative hard-limit revalidation and no destructive remediation;
-- definitive renewal failure → PastDue with seven-day grace; Unknown stays Unknown;
-- Ended removes ordinary operational entitlements while approved authenticated history/export/recovery access remains;
-- separate hard capability, hard counted-resource, and warning-only order-volume categories;
-- dedicated simulated SaaS billing provider separate from merchant-order Payments;
-- read-only platform-admin Subscription/Billing support surface.
+RefundApproved
+   ├── Inventory -> StockReturned
+   ├── Payments -> provider refund/reconcile -> PaymentRefunded
+   └── Accounting -> Dr Sales Revenue / Cr Customer Deposits
 
-Exact sellable package prices/entitlements remain `PD-044`-gated.
+StockReturned
+   -> Accounting -> Dr Inventory / Cr COGS
 
-## 13. Accounting
+PaymentRefunded
+   -> Accounting -> Dr Customer Deposits / Cr Cash
+```
 
-Accounting consumes approved authoritative business facts and persists one immutable balanced logical posting per source.
+Rules:
+
+- request/rejection causes no stock/payment/accounting effect;
+- consumers are source-idempotent;
+- provider timeout remains OutcomeUnknown;
+- Accounting never reads producer tables and uses own original issue/journal provenance;
+- no global `RefundCompleted` state is invented;
+- refund does not use Step Functions under current MVP architecture.
+
+## 14. Accounting
+
+Accounting consumes authoritative facts and persists one immutable balanced logical posting per source.
 
 Current routes:
 
-- `PaymentCaptured` → Cash / Customer Deposits;
-- `OrderFulfilled` → Customer Deposits / Sales Revenue;
-- `StockIssued` → COGS / Inventory;
-- `GoodsReceiptRecorded` → Inventory / GRNI;
-- `SupplierInvoiceRecorded` → GRNI / Accounts Payable plus approved variance;
-- `SupplierPaymentRecorded` → Accounts Payable / Cash;
-- `StockAdjusted` → Inventory Adjustment gain/loss.
+- PaymentCaptured → Cash / Customer Deposits;
+- OrderFulfilled → Customer Deposits / Sales Revenue;
+- StockIssued → COGS / Inventory;
+- RefundApproved → Sales Revenue / Customer Deposits compensation;
+- StockReturned → Inventory / COGS reversal using original issue-cost provenance;
+- PaymentRefunded → Customer Deposits / Cash settlement;
+- GoodsReceiptRecorded → Inventory / GRNI;
+- SupplierInvoiceRecorded → GRNI / AP plus approved variance;
+- SupplierPaymentRecorded → AP / Cash;
+- StockAdjusted → approved Inventory Adjustment gain/loss.
 
-Posting + source dedup is atomic in Accounting. Consumer failure is recovered asynchronously and never rolls back the source domain.
+Posting + source dedup is atomic. Journals are immutable.
 
-Refund/return posting remains blocked by `PD-023`. Moving-weighted-average cost-pool scope also requires domain clarification before valuation persistence keys are finalized.
+Moving-weighted-average cost-pool scope remains a domain decision before valuation keys harden.
 
-## 14. Files, ingestion, reporting, notification, and audit
+## 15. Suspension architecture
 
-- Merchant Product media uses CommerceOS-managed merchant uploads through `FilesMedia`; S3/CloudFront are technical delivery choices when that task is Ready; arbitrary external copy/hotlink is not supported.
-- Product Data Ingestion requires platform source-policy approval + Tenant opt-in + Subscription capability when applicable; source evidence never writes Catalog persistence.
-- Reporting is rebuildable/display-only and never transaction/entitlement authority.
-- Notification owns per-recipient delivery/read/acknowledgement state; acknowledgement never resolves the source exception.
-- Audit owns append-oriented privileged/security evidence. Successful/rejected covered actions use durable source-owned audit intents; Tenant-visible Audit is Owner/Admin only and non-disclosing.
+Suspension is a Tenant eligibility state, not a mass mutation of every domain.
 
-## 15. AWS service map
+- Tenancy stores Active/Suspended.
+- Suspended merchant mutation fails at authority resolution.
+- approved merchant queries may continue under role-scoped read context.
+- public commerce resolves Tenant status and fails closed while Suspended.
+- platform suspend/reactivate is reasoned, revision-protected, audited.
+- Membership/Subscription/Order/Accounting data is not rewritten/deleted.
+- no suspended-data TTL/cleanup workflow exists in MVP.
 
-| Capability | AWS mapping | Status |
-|---|---|---|
-| HTTPS/JWT edge | API Gateway HTTP API | accepted with first protected/public API |
-| application/workers | Lambda | accepted pay-per-use runtime |
-| authentication | Cognito | accepted for merchant identity only |
-| transactional persistence | DynamoDB | accepted per module |
-| outbox wake-up/relay | DynamoDB Streams | conditional with named durable integration/work recovery |
-| business fact routing | EventBridge | conditional with named consumer |
-| work/backpressure/critical consumer | SQS + DLQ | conditional with named worker/consumer |
-| order durable orchestration | Step Functions Standard | accepted for ADR-010 process when Ready |
-| schedules | EventBridge Scheduler | conditional for approved crawl/reconciliation jobs |
-| object/static storage | S3 | conditional for Web/FilesMedia/Ingestion/export |
-| CDN/static delivery | CloudFront | conditional for Web/FilesMedia |
-| observability | CloudWatch | accepted with bounded retention/metrics |
-| IaC | AWS CDK/CloudFormation | accepted |
+## 16. AWS target
 
-Initial application writes remain single-region in `ap-southeast-1`; CloudFront is global.
-
-No NAT Gateway, ALB, EC2, RDS/Aurora, Redis/ElastiCache, OpenSearch, MSK/Kafka, EKS, always-on ECS/Fargate, paid WAF, or provisioned Lambda concurrency is approved.
-
-## 16. Stack direction
+Use only when named Ready work introduces the need:
 
 ```text
-FoundationStack
-  shared bounded technical configuration/observability
-
 IdentityStack
-  Cognito when protected API begins
+  Cognito
 
-CommerceStack
+ApiStack
   API Gateway HTTP API
   commerce-api Lambda
-  module DynamoDB constructs as Ready tasks introduce them
 
-WebStack
-  private S3 origins + CloudFront
+Module persistence
+  DynamoDB per module
 
-OrderWorkflow resources
-  Step Functions Standard + task handler composition when ADR-010 task is Ready
+Reliable integration
+  DynamoDB Streams
+  EventBridge custom bus
+  consumer SQS/DLQ + Lambda
 
-Integration resources
-  Streams/relays/EventBridge/SQS/DLQ/workers only for named contracts
+Order workflow
+  Step Functions Standard for ADR-010 only
 
-CrawlerStack / MockPaymentStack / MockSaaSBillingStack
-  introduced only by their Ready runtime tasks
+MockPaymentStack
+  merchant-order provider
+
+MockSaaSBillingStack
+  SaaS billing provider
+
+Crawler / FilesMedia capabilities
+  SQS/Lambda/Scheduler and S3/CloudFront when Ready
 ```
 
-Stacks are deployment/update units, never business ownership.
+No refund-specific workflow stack is approved.
 
-## 17. Security, reliability, and cost
+No NAT Gateway, ALB, EC2, RDS/Aurora, Redis, OpenSearch, MSK/Kafka, EKS, provisioned Lambda concurrency, or AppConfig/SSM plan authority by default.
 
-- no client/JWT Tenant, role, plan, entitlement, price, provider, or cursor value becomes authority;
-- fail closed when current Tenant/entitlement authority cannot be established;
-- every external/async boundary has stable idempotency/source identity;
-- provider timeout is an explicit Unknown observation until verified evidence resolves it;
-- EventBridge/SQS delivery assumes duplicates/out-of-order and supports redrive/reconciliation;
-- Step Functions operational failure never becomes a business conclusion;
-- structured logs omit tokens, secrets, card-like data, invitation credentials, raw provider payloads, and cross-Tenant disclosure;
-- use built-in metrics first and bounded log retention;
-- no speculative AWS resource is provisioned;
-- normal development remains near the Free Tier / low-credit envelope.
+## 17. Cost and reliability
 
-This architecture documentation update deploys nothing and changes AWS runtime cost by **$0**.
+- serverless/pay-per-use remains default;
+- no speculative resource before named Ready producer/consumer/process;
+- event consumers assume at-least-once/out-of-order delivery;
+- SQS/DLQ/workflow retry states are operational, never business truth;
+- Step Functions transition budget required for ADR-010 implementation;
+- refund reuses ADR-006 event infrastructure and adds no state-machine transition cost;
+- current authority/entitlement reads are measured before considering caches that weaken freshness;
+- CloudWatch logging/alarms use bounded retention and low-cardinality metrics.
 
-## 18. Remaining gates
+## 18. Stop condition
 
-Architecture intentionally leaves these non-final:
-
-- `PD-004` suspension-detail/closure/retention/privacy lifecycle;
-- `PD-023` refund/return Accounting;
-- exact commercial packages/prices/entitlements under `PD-044`;
-- Storefront Tenant-address business semantics;
-- Accounting moving-weighted-average cost-pool scope;
-- any other domain meaning not explicitly recorded by the canonical domain baseline.
-
-The Backlog Planner must keep affected work non-Ready rather than letting a Builder select a convenient default.
-
-## 19. Evolution checkpoints
-
-### A — First protected modular slice
-
-- Tenancy/Catalog projects and architecture tests;
-- Cognito/API Gateway/Lambda/module tables;
-- trusted tenant discovery/selection/current authority;
-- two-Tenant/idempotency/concurrency tests.
-
-### B — Cross-domain onboarding
-
-- Tenancy registration transaction + operation/outbox;
-- SubscriptionBilling Trial contract;
-- SQS recovery worker under ADR-009;
-- partial-failure/idempotency verification.
-
-### C — First durable commerce workflow
-
-- Sales/Inventory/Payments contracts;
-- provider uncertainty/reconciliation;
-- Step Functions Standard under ADR-010;
-- transition-cost/failure-injection verification.
-
-### D — Reliable financial/operational consumers
-
-- producer-owned versioned facts;
-- outbox/EventBridge/SQS/DLQ;
-- Accounting/Reporting/SubscriptionBilling/Audit consumers;
-- replay/reconciliation verification.
-
-### E — Selective extraction
-
-Split a module/deployment only for measured IAM/security/runtime/reliability/scale/ownership pressure. A domain boundary alone is not a reason to create a microservice.
-
-## 20. Technology baseline
-
-- Backend/runtime/CDK: C# / .NET 10
-- Frontend: React 19 + TypeScript + Vite
-- API: API Gateway HTTP API
-- Authentication: Cognito
-- Transactional data: DynamoDB
-- Objects/static origins: S3
-- CDN: CloudFront
-- Fact routing: EventBridge when justified
-- Work/backpressure: SQS + DLQ when justified
-- Durable order workflow: Step Functions Standard for ADR-010 process
-- Observability: CloudWatch
-- IaC: AWS CDK
-
-Exact libraries/packages remain implementation-task choices inside these boundaries.
+**SERVERLESS TECHNICAL ARCHITECTURE RECONCILED WITH THE FINAL MVP PRODUCT DECISIONS.**
