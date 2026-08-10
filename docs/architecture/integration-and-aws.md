@@ -1,83 +1,88 @@
 # CommerceOS — Integration and AWS Service Matrix
 
-_Cross-domain, delivery, reliability, orchestration, and cost baseline originally reconciled by TASK-0088 and refreshed on 2026-08-10 after the product/domain decision pass._
+_Cross-domain, delivery, reliability, orchestration, and cost baseline refreshed on 2026-08-10 after resolved `PD-004`, `PD-023`, and `PD-044`._
 
 ## 1. Interaction selection rules
 
-Choose the interaction from the business/process need, not from the availability of an AWS service.
+Choose interactions from process need, not from AWS service availability.
 
 ### Synchronous producer-owned application contract
 
-Use when:
+Use when the caller cannot truthfully complete without the owner's immediate accepted/rejected/current result and modules share the runtime.
 
-- the caller cannot truthfully complete without the owner's immediate accepted/rejected/current result;
-- modules share the current runtime and latency/failure coupling is acceptable;
-- no independent buffering, durable waiting, or fan-out is required.
-
-The consumer references only the producer-owned contract/application boundary. It never reads producer persistence.
+The caller references producer-owned application/contracts only and never reads producer persistence.
 
 ### Durable one-worker work item
 
-Use SQS when one known worker needs retry/backpressure/latency isolation and fact fan-out is not the problem.
+Use SQS when one known worker needs retry/backpressure/latency isolation and fan-out is not the problem.
 
-If the work **must** survive a source transaction, write a module-owned work-outbox in the same transaction and relay it idempotently through DynamoDB Streams to the named queue. `commit -> best-effort SendMessage` is not reliable enough for required recovery work.
+If required work must survive a source transaction, write a module-owned transactional work-outbox and relay through DynamoDB Streams. `commit -> best-effort SendMessage` is not sufficient.
 
 ### Reliable business fact
 
-Use producer outbox + DynamoDB Stream relay + EventBridge when a committed owner fact has independent consumer(s) and eventual completion is acceptable.
+Use producer state + outbox -> DynamoDB Stream relay -> EventBridge when a committed owner fact has independent consumers and eventual completion is acceptable.
 
-Critical/side-effecting consumers receive their own SQS queue + DLQ.
+Critical/side-effecting consumers receive their own SQS + DLQ.
 
 ### Durable workflow
 
-Use Step Functions Standard only for a named approved process that needs durable wait/branch/retry/reconciliation/compensation and whose business transitions are already owned/defined.
+Use Step Functions Standard only for a named approved process that needs durable wait/branch/retry/reconciliation and whose business transitions are already defined.
 
-ADR-010 now selects Standard Workflows for the approved `OrderPlaced -> reservation -> payment/reconciliation -> OrderConfirmed -> OrderAllocated` process. Other processes remain unselected until they demonstrate the same need.
+ADR-010 selects Step Functions for `OrderPlaced -> reservation -> payment/reconciliation -> OrderConfirmed -> OrderAllocated` only.
+
+ADR-011 explicitly selects event choreography, not Step Functions, for refund propagation after `RefundApproved`.
 
 ## 2. Status legend
 
-- **Accepted** — architecture mechanism is selected for the named use case when implementation becomes Ready.
-- **Conditional** — mechanism is selected but resources/contracts are created only with a named Ready producer/consumer/work item.
-- **Domain/Product-gated** — implementation would encode missing business meaning.
-- **Deferred** — no current need justifies a mechanism yet.
+- **Accepted** — mechanism selected for the named use case.
+- **Conditional** — mechanism selected but resources appear only with a named Ready producer/consumer/process.
+- **Domain-gated** — missing business meaning still prevents implementation.
+- **Deferred** — no current demonstrated need.
 
 ## 3. Current interaction matrix
 
 | Caller / producer | Owner / consumer | Mechanism/status | Required truth/reliability | Remaining gate |
 |---|---|---|---|---|
-| API Gateway/Cognito | Tenancy / Merchant Access | synchronous; **Accepted** | JWT validates identity only; Merchant Access resolves current Tenant + Membership | none for approved `PD-001/003`; `PD-004` only for exact Suspended support/read routes |
-| protected API | Merchant Access | synchronous; **Accepted** | current authority on every request; strong subject discovery + selected Tenant validation; no JWT/cache authority | none for ordinary Active-Tenant path |
-| protected subscription-governed use case | SubscriptionBilling | synchronous `EvaluateEntitlement`; **Accepted** | current entitlement authority from SubscriptionBilling; owner-local usage/state remains separate | exact package keys/values under `PD-044` where needed |
-| onboarding delivery | Tenancy + SubscriptionBilling | sync fast path + durable work-outbox/SQS recovery; **Accepted** | completed result requires Active Tenant + Owner + 30-day Trial; no cross-module transaction | none for approved MVP onboarding; ADR-009 |
-| back office/API | Catalog | synchronous commands/queries; **Accepted** | Catalog owns lifecycle/uniqueness/public Product truth | Storefront Tenant address only for public Tenant route |
-| public Storefront | Catalog public Product projection | synchronous read; **Domain-gated** at Tenant-address binding | Published public projection; cache cannot authorize checkout | Storefront Tenant-address ownership/lifecycle/uniqueness |
-| checkout / Sales PlaceOrder | Catalog/Pricing | synchronous owner query; **Accepted** | current sellability/price; any price change requires reconfirmation and no Order | future Pricing promotion semantics only if introduced |
-| Sales order process | Inventory | synchronous application command from workflow task; **Accepted** | all-line source-idempotent reservation; Inventory owns quantity truth | cardinality process refinement only if one transaction cannot cover real order size |
-| Sales order process | Payments | synchronous capture/query/reconcile application contracts; **Accepted** | one Payment obligation/Order, multiple attempts, Unknown preserved | none for merchant-order MVP semantics |
-| Sales OrderPlaced | order process | Sales outbox -> Step Functions Standard start; **Accepted/Conditional** | deterministic process/execution identity; duplicate-safe start; ADR-010 | implementation Ready task only |
-| Payments | merchant-order Mock Provider | provider port/adapter + HTTPS/callback/query; **Conditional** | external-like idempotency, verified evidence, Unknown/reconciliation | concrete mock-provider implementation task |
-| PaymentCaptured | Sales convergence | producer outbox -> EventBridge -> Sales SQS or workflow-compatible convergence path; **Conditional** | duplicate immediate result + event cannot double-confirm | named consumer introduced with order workflow |
-| PaymentCaptured | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | one source posting Dr Cash / Cr Customer Deposits | Accounting implementation Ready task |
-| OrderConfirmed | SubscriptionBilling UsageMeter | outbox -> EventBridge -> SubscriptionBilling SQS/DLQ; **Conditional** | idempotent current-billing-period warning meter; never blocks checkout | exact threshold/package value under `PD-044` if not otherwise approved |
-| OrderConfirmed | Reporting | EventBridge projection; **Conditional** | approved operational KPI source fact; projection never authority | projection task |
-| OrderFulfilled | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | one revenue posting Dr Deposits / Cr Sales Revenue | fulfillment implementation contract |
-| StockIssued | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | one COGS posting using Accounting valuation truth | moving-average cost-pool domain scope before valuation implementation |
-| Procurement GoodsReceiptRecorded | Inventory | outbox -> EventBridge -> Inventory SQS/DLQ; **Conditional** | Procurement evidence remains committed if Inventory application fails; Inventory applies source idempotently | Procurement/Inventory Ready tasks |
-| GoodsReceiptRecorded | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | accepted Procurement cost evidence drives Inventory/GRNI posting; no foreign table read | moving-average cost-pool scope for valuation state |
-| SupplierInvoiceRecorded | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | GRNI/AP + approved variance posting | Ready task |
-| SupplierPaymentRecorded | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | AP/Cash posting | Ready task |
-| StockAdjusted | Accounting | outbox -> EventBridge -> Accounting SQS/DLQ; **Conditional** | approved adjustment gain/loss posting | valuation basis supplied by source/domain contract |
-| PaymentRefunded / StockReturned | Accounting | **Domain/Product-gated** | no Accounting effect inferred | `PD-023` |
-| Product Data Ingestion dispatcher | crawler worker | direct SQS/DLQ; **Conditional** | bounded source concurrency/retry/kill switch; immutable snapshot | source-specific Ready policy/task |
-| Product Data Ingestion | Catalog | explicit synchronous Catalog apply command; **Accepted** | Approved candidate != Applied until Catalog accepts; no cross-table access | none for `PD-040` semantics |
-| scheduled ingestion start | SubscriptionBilling + PDI policy | synchronous entitlement + source-policy checks; **Accepted** | entitlement cannot override globally disabled/unapproved source | exact plan capability value under `PD-044` if needed |
-| owned critical fact | Notification | EventBridge -> Notification SQS/DLQ; **Conditional** | per-recipient state; delivery failure never reverses source | named recipient/event contract |
-| approved privileged action/rejection | Audit | source-owned durable audit intent -> reliable append; **Accepted/Conditional** | source success cannot silently omit recoverable required Audit evidence; rejection not reduced to logs | Audit implementation task |
-| SubscriptionBilling | Mock SaaS Billing Provider | provider-neutral port -> separate external-like app; **Accepted/Conditional** | dedicated provider separate from merchant-order Payments; Unknown/idempotency/query/callback | exact package amount only when charge needs it |
-| Mock SaaS Billing Provider | SubscriptionBilling | authenticated provider callback/query evidence; **Accepted/Conditional** | evidence only until SubscriptionBilling verifies/accepts | provider task |
-| platform-admin support | SubscriptionBilling | synchronous read-only application query; **Accepted** | separate admin context; no direct table/mutation/override | platform-admin auth/delivery task |
-| owned facts | Reporting | EventBridge projection; **Conditional** | rebuildable/display only | named formula/projection task |
-| fulfillment | Inventory/Sales | **Deferred** beyond approved fact sequence | whole-order semantics known, but initiation/shipping/cardinality mechanism not yet refined | Ready fulfillment contract/architecture refinement |
+| API Gateway/Cognito | Tenancy Merchant Access | synchronous; **Accepted** | authentication identity only; current Tenant/Membership authority | none for approved merchant auth |
+| merchant query | Merchant Access | `ResolveTenantReadAuthority`; **Accepted** | Active Membership; Active or Suspended Tenant; normal role read visibility | none |
+| merchant command | Merchant Access | `ResolveTenantMutationAuthority`; **Accepted** | Active Membership + Active Tenant; no Suspended mutation | none |
+| platform admin | Tenancy | synchronous `SuspendTenant/ReactivateTenant`; **Accepted** | separate platform trust, reason, revision, Audit intent | platform-auth delivery task only |
+| platform support | owning modules | synchronous read-only queries; **Accepted** | separate privileged context; no Tenant Membership/direct storage | platform-auth delivery task only |
+| public Storefront | Tenant status + Catalog | synchronous read/composition; **Domain-gated** for Tenant addressing | Suspended must make storefront/checkout unavailable; cache not authority | Storefront Tenant-address semantics |
+| protected governed command | SubscriptionBilling | `EvaluateEntitlement`; **Accepted** | current EntitlementSet authority | none for approved keys/values |
+| plan selection/catalog UI | SubscriptionBilling | synchronous catalog query; **Accepted** | current sellable PlanVersion; history immutable | implementation task only |
+| onboarding | Tenancy + SubscriptionBilling | sync fast path + work-outbox/SQS recovery; **Accepted** | Active Tenant + Owner + exact Trial EntitlementSet | ADR-009 |
+| Membership create/reactivate | SubscriptionBilling + Tenancy | sync entitlement then local conditional write; **Accepted** | `MaxActiveMemberships`, all Active roles count, owner-local count guard | none |
+| Warehouse create/reactivate | SubscriptionBilling + Inventory | sync entitlement then local conditional write; **Accepted** | `MaxWarehouses`, owner-local count guard | none |
+| PDI schedule enable/create | SubscriptionBilling + PDI | sync capability/policy check; **Accepted** | ScheduledProductIngestion + PDI source policy | none |
+| scheduled PDI dispatch | SubscriptionBilling + PDI | recheck sync entitlement before run; **Accepted** | stale schedule cannot bypass downgrade/Ended | none |
+| checkout | Catalog/Pricing | synchronous owner query; **Accepted** | current sellability/price; price change => reconfirm/no Order | future promotion policy only if introduced |
+| Sales OrderPlaced | order process | Sales outbox -> Step Functions Standard; **Accepted/Conditional** | deterministic process identity; ADR-010 | Ready task |
+| order workflow | Inventory | synchronous app command; **Accepted** | all-line idempotent reservation | cardinality refinement if DynamoDB transaction insufficient |
+| order workflow | Payments | synchronous capture/query/reconcile; **Accepted** | provider ambiguity preserved | none |
+| PaymentCaptured | Sales convergence | EventBridge -> Sales queue or workflow-compatible convergence; **Conditional** | duplicate immediate/event path cannot double-confirm | Ready order task |
+| PaymentCaptured | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | Dr Cash / Cr Customer Deposits once | Accounting task |
+| OrderConfirmed | SubscriptionBilling UsageMeter | EventBridge -> SQS/DLQ; **Conditional** | threshold from current EntitlementSet; warning-only | meter task |
+| OrderConfirmed | Reporting | EventBridge projection; **Conditional** | projection only | projection task |
+| OrderFulfilled | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | Dr Deposits / Cr Revenue once | fulfillment task |
+| StockIssued | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | COGS/Inventory using Accounting valuation truth | moving-average cost-pool scope |
+| Sales RefundApproved | Inventory | EventBridge -> Inventory SQS/DLQ; **Accepted/Conditional** | exactly one approved restockable StockReturned | refund task |
+| Sales RefundApproved | Payments | EventBridge -> Payments SQS/DLQ; **Accepted/Conditional** | one logical provider refund; Unknown/reconciliation preserved | refund task |
+| Sales RefundApproved | Accounting | EventBridge -> Accounting SQS/DLQ; **Accepted/Conditional** | revenue compensation once | refund/accounting task |
+| Inventory StockReturned | Accounting | EventBridge -> Accounting SQS/DLQ; **Accepted/Conditional** | original issue-cost COGS reversal using Accounting provenance | valuation cost-pool scope for valuation state only |
+| Payments PaymentRefunded | Accounting | EventBridge -> Accounting SQS/DLQ; **Accepted/Conditional** | verified provider truth; Dr Deposits / Cr Cash once | refund/accounting task |
+| Procurement GoodsReceiptRecorded | Inventory | EventBridge -> Inventory SQS/DLQ; **Conditional** | receipt evidence committed independently | procurement/inventory task |
+| GoodsReceiptRecorded | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | Inventory/GRNI posting | cost-pool scope for valuation state |
+| SupplierInvoiceRecorded | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | GRNI/AP + approved variance | task |
+| SupplierPaymentRecorded | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | AP/Cash | task |
+| StockAdjusted | Accounting | EventBridge -> Accounting SQS/DLQ; **Conditional** | approved gain/loss posting | valuation basis contract |
+| PDI dispatcher | crawler worker | SQS/DLQ; **Conditional** | bounded concurrency/retry/kill switch | source-specific task |
+| PDI | Catalog | synchronous apply command; **Accepted** | candidate != Applied until Catalog accepts | none |
+| covered privileged action/rejection | Audit | durable source-owned Audit intent -> reliable append; **Accepted/Conditional** | audit cannot be best-effort log | Audit task |
+| owned facts | Notification | EventBridge -> SQS/DLQ; **Conditional** | per-recipient delivery/read truth | named event/recipient rule |
+| SubscriptionBilling | Mock SaaS Billing Provider | provider port + separate app; **Accepted/Conditional** | dedicated provider; Unknown/idempotency/query | provider task |
+| Mock SaaS Billing Provider | SubscriptionBilling | authenticated callback/query; **Accepted/Conditional** | evidence until verified/accepted | provider task |
+| fulfillment | Inventory/Sales | **Deferred** beyond approved fact sequence | whole-order semantics known; initiation/shipping mechanism not refined | Ready fulfillment refinement |
 
 ## 4. Reliable publication pattern
 
@@ -85,7 +90,7 @@ Critical business facts use ADR-006:
 
 ```text
 owning module TransactWriteItems
-  business state + OUTBOX record
+  business state + OUTBOX
              │ atomic
              ▼
 module DynamoDB Stream
@@ -97,62 +102,50 @@ EventBridge custom bus
 consumer-specific SQS + DLQ
              ▼
 idempotent consumer transaction
-  INBOX/source marker + consumer-owned effect
+  INBOX/source marker + owned effect
 ```
 
 Rules:
 
-1. state commit followed by best-effort `PutEvents` is not reliable publication;
-2. outbox payload is the complete stable integration contract, not a pointer requiring producer-table access;
-3. relay may publish the same eventId more than once; consumers must be duplicate-safe;
-4. Stream/Lambda/EventBridge/SQS are at-least-once paths and may deliver out of order;
-5. stream retention is not the recovery store — pending outbox remains queryable;
-6. EventBridge target failure and consumer queue failure are distinct operational failure points;
-7. redrive preserves original eventId/version/correlation/causation/source identity;
-8. queue/DLQ/retry/age are operational states only and never mutate business truth;
-9. reconciliation compares durable source/consumer-owned records via application contracts/own state, never foreign table reads.
+1. best-effort `PutEvents` after state commit is not sufficient;
+2. event payload contains stable consumer-required facts, not a pointer requiring producer-table access;
+3. relay/event/queue delivery is at-least-once and may be out of order;
+4. consumers persist source identity and cannot duplicate/regress owned state;
+5. stream retention is not the recovery store—pending outbox stays durable/queryable;
+6. queue/DLQ/retry age are operational states only;
+7. redrive preserves event/source/correlation/causation identity;
+8. reconciliation never reads foreign persistence.
 
-No Stream/bus/rule/queue is created until a named producer/consumer is Ready.
+No stream/bus/rule/queue is created before a named Ready consumer exists.
 
 ## 5. Transactional work-outbox
 
-For a required one-worker command, use a targeted work-outbox instead of EventBridge fan-out.
+For one required retryable worker with no fan-out, use direct SQS after a module-owned work-outbox.
 
-Current approved example: onboarding Trial-bootstrap recovery under ADR-009.
+Current approved example: onboarding Trial recovery.
 
 ```text
 Tenancy transaction
-  local onboarding outcome + WORKOUTBOX
-             │
-             ▼
-DynamoDB Stream relay
-             ▼
-SQS onboarding recovery queue
-             ▼
-worker invokes idempotent SubscriptionBilling.StartTrialSubscription
+  registration state + WORKOUTBOX
+             ↓ Stream relay
+           SQS
+             ↓
+worker -> idempotent SubscriptionBilling.StartTrialSubscription
 ```
 
-Rules:
-
-- work message is a command/request, not a business fact;
-- duplicate delivery is expected and command identity is stable;
-- queue failure never means Trial business failure;
-- successful worker result updates operation status only through the owning application contract;
-- EventBridge is unnecessary when there is one known target and no fan-out.
+The message is work/command intent, not business fact. Queue failure never means Trial business failure.
 
 ## 6. Integration event contract
-
-An internal domain fact becomes an integration event only when a named cross-boundary consumer exists.
 
 Required envelope:
 
 ```json
 {
   "eventId": "evt_...",
-  "eventType": "OrderConfirmed",
+  "eventType": "RefundApproved",
   "eventVersion": 1,
   "tenantId": "tenant_...",
-  "aggregateId": "order_...",
+  "aggregateId": "refund_or_order_...",
   "occurredAt": "2026-08-10T00:00:00Z",
   "correlationId": "corr_...",
   "causationId": "cmd_or_evt_...",
@@ -163,326 +156,256 @@ Required envelope:
 
 Rules:
 
-- `tenantId` required for tenant-owned facts;
-- `data` carries stable consumer-required facts, never database/domain serialization;
-- consumer rejects unsupported type/version safely;
-- additive evolution may remain compatible only under the contract policy; breaking semantic/required-field change creates a new version;
-- sensitive/private fields minimized; no token/credential/raw provider/source payload/card-like data;
-- EventBridge rule matches explicit producer/type/version.
+- TenantId required for tenant-owned facts but never merchant actor authority;
+- `data` is explicit stable integration shape, not Domain/database serialization;
+- unsupported event type/version is rejected safely;
+- breaking semantic/required-field changes use a new event version;
+- sensitive/private/provider raw data is minimized/excluded;
+- EventBridge rules match explicit producer/type/version.
 
-## 7. Consumer requirements
+## 7. Refund integration under ADR-011
+
+### Sales approval publication
+
+Sales transaction writes:
+
+```text
+RefundApproved state/revision
++ RefundApproved OUTBOX
++ required Audit intent
+```
+
+`RefundRequested` alone has no downstream effect. `RefundRejected` publishes no stock/payment/accounting authorization.
+
+### Fan-out
+
+```text
+RefundApproved
+   ├── Inventory queue -> ApplyApprovedReturn -> StockReturned
+   ├── Payments queue  -> StartApprovedRefund -> provider reconcile -> PaymentRefunded
+   └── Accounting queue -> revenue compensation
+
+StockReturned  -> Accounting queue -> COGS/inventory reversal
+PaymentRefunded -> Accounting queue -> Deposits/Cash settlement
+```
+
+### Safety
+
+- consumers are source-idempotent;
+- Payments persists stable refund operation identity before unsafe provider retry;
+- timeout/network ambiguity remains OutcomeUnknown;
+- no new refund attempt while prior logical operation is Unknown;
+- only verified Payments evidence creates PaymentRefunded;
+- Accounting never reads producer tables;
+- StockReturned carries original issue reference/provenance so Accounting can locate its own original posting;
+- no global `RefundCompleted` business state is invented;
+- downstream lag/DLQ does not undo RefundApproved.
+
+### Why no Step Functions
+
+The human review is durable Sales business state. After approval, the three owner effects are independent and naturally event-driven. A global state machine would add coupling and imply an unapproved global completion semantic.
+
+If a future product decision defines global refund completion/compensation, revisit with a focused ADR.
+
+## 8. Order Step Functions Standard workflow
+
+ADR-010 remains scoped to:
+
+```text
+OrderPlaced
+ -> Inventory reserve
+ -> Payments capture
+    -> Captured: Sales Confirm + Allocate
+    -> definitive NoCommit/Decline: AwaitingPaymentRetry
+    -> OutcomeUnknown: Payments reconciliation/wait
+                       -> NeedsAttention if bounded automation stops unresolved
+```
+
+Workflow cannot:
+
+- create Order before price reconfirmation;
+- convert technical timeout/retry exhaustion into Payment failure;
+- auto-cancel/release stock on decline/Unknown;
+- start another capture attempt while prior is Unknown;
+- call provider/table internals;
+- post Accounting;
+- own refund processing;
+- invent fulfillment/shipping.
+
+Sales writes workflow-start outbox atomically with Order/process state; execution identity is deterministic.
+
+## 9. Suspended Tenant integration effects
+
+Resolved `PD-004` does not require async fan-out to rewrite every domain's business state.
+
+- Tenancy stores current `TenantStatus` and resolves read/mutation authority per request.
+- Merchant mutations fail before owning-domain command execution when Suspended.
+- public Storefront resolution checks current Tenant status and returns unavailable.
+- scheduled PDI dispatch must pass current merchant/Tenant/subscription eligibility before work starts.
+- platform suspend/reactivate writes durable Audit intent.
+- no Membership/Subscription/order/accounting mass-update event is produced merely to mirror suspension.
+
+This avoids duplicated lifecycle authority across modules.
+
+## 10. Plan/entitlement integration
+
+Resolved `PD-044` uses synchronous SubscriptionBilling authority for operations requiring current limits/capabilities.
+
+Do not publish plan-change CRUD events merely so Tenancy/Inventory/PDI can cache authority.
+
+- Membership create/reactivate asks `MaxActiveMemberships`, then Tenancy protects local count.
+- Warehouse create/reactivate asks `MaxWarehouses`, then Inventory protects local count.
+- PDI schedule enable/dispatch asks `ScheduledProductIngestion`, then applies PDI source policy.
+- `OrderConfirmed` is an async fact to SubscriptionBilling only because UsageMeter is an accumulated projection/owned meter.
+
+Restrictive downgrade uses explicit owner assessment/fencing contracts from ADR-008 rather than eventual copied counts.
+
+## 11. Consumer requirements
 
 Every side-effecting consumer:
 
 - assumes duplicate/out-of-order delivery;
 - validates envelope/Tenant/source/type/version/business invariants;
 - atomically writes inbox/source identity with owned effect where possible;
-- returns prior effect for equivalent replay and rejects incompatible source reuse;
-- never regresses a later state from older evidence;
-- classifies transient/permanent errors and bounds automatic retry;
-- exposes queue age/errors/throttles/DLQ through built-in metrics/alarms;
-- documents redrive/reconciliation before production use;
-- never writes/reads producer persistence;
-- never treats message TenantId as merchant actor authority.
+- returns/replays prior equivalent effect and rejects incompatible source reuse;
+- never regresses later accepted state from older evidence;
+- classifies transient/permanent errors and bounds retries;
+- exposes queue age/errors/throttles/DLQ metrics/alarms;
+- documents redrive/reconciliation;
+- never reads/writes producer persistence;
+- never treats event TenantId as merchant actor authority.
 
-For external side effects, persist stable operation identity before unsafe retry and use provider idempotency/query semantics. Timeout remains potentially ambiguous.
+For external side effects, persist stable operation identity before unsafe retry. Timeout remains ambiguous unless provider evidence proves otherwise.
 
-## 8. Order Step Functions Standard workflow
+## 12. Audit delivery
 
-ADR-010 is the first approved Step Functions specialization.
+Audit is not a log stream and not source business state.
 
-### Scope
-
-Start only after `OrderPlaced` is accepted. It coordinates:
+Accepted covered mutation:
 
 ```text
-Inventory reserve
-  -> Payments capture
-     -> Captured: Sales Confirm + Allocate
-     -> definitive NoCommit/Decline: AwaitingPaymentRetry process state
-     -> Unknown: Payments reconciliation/wait
-                  -> Captured / definitive NoCommit
-                  -> NeedsAttention if bounded automation stops unresolved
+source business transaction + durable Audit intent
+   -> reliable delivery
+   -> Audit appends immutable evidence
 ```
 
-### Semantic safety
+Covered rejected attempts without a state transaction persist an idempotent source-owned Audit delivery intent before returning where practical.
 
-The workflow cannot:
+Current notable privileged facts include:
 
-- create an Order before price reconfirmation;
-- convert technical timeout/retry exhaustion/workflow failure into Payment failure;
-- auto-cancel Order or release stock on decline/Unknown/technical failure;
-- start another capture attempt while prior attempt is Unknown;
-- call provider persistence/API directly instead of Payments contracts;
-- post Accounting;
-- infer refund Accounting;
-- invent automatic fulfillment/shipping.
+- Tenant suspend/reactivate reason/outcome;
+- refund approve/reject action;
+- privileged SubscriptionBilling actions/evidence as domain policy requires.
 
-Workflow/process states are technical only unless an owning domain accepts a business transition.
+Audit consumer never reads source tables.
 
-### Start reliability
+## 13. SQS/DLQ policy
 
-Sales writes a workflow-start outbox atomically with Order/process state. Relay starts a Standard execution with deterministic Order/process identity. Duplicate starts are idempotent.
-
-### Cost guardrail
-
-Each Ready implementation task calculates:
-
-- normal-success transition count;
-- decline path transition count;
-- Unknown/reconciliation transition envelope;
-- expected monthly workflow executions;
-- retry/wait strategy that avoids high-frequency polling.
-
-## 9. EventBridge policy
-
-Use custom EventBridge for versioned fact routing/fan-out with named consumers.
-
-Do not use it for:
-
-- ordinary in-process commands/queries;
-- generic database changes;
-- one known work queue command where SQS is sufficient;
-- an empty platform bus created from a target diagram.
-
-Each rule documents producer/type/version, target, retry/failure policy, IAM, payload minimization, cost, compatibility/deletion plan.
-
-## 10. SQS/DLQ policy
-
-Use Standard queue by default. FIFO only when ordering/dedup requirements cannot be safely handled by source/aggregate idempotency and the trade-off is justified.
+Use Standard queue by default. FIFO only if ordering/dedup cannot safely be handled by source identity and an ADR/task justifies the trade-off.
 
 Every queue defines:
 
-- producer/consumer and message contract;
-- visibility timeout > bounded handler duration;
-- batch/concurrency cap;
-- max receives/redrive policy;
+- producer/consumer/message contract;
+- visibility timeout vs bounded handler duration;
+- batch/concurrency caps;
+- redrive/max receives;
 - DLQ retention/alarm;
-- transient/permanent failure classification;
+- transient/permanent classification;
 - replay preserving identity;
 - poison-message/manual recovery;
 - safe logs/metrics.
 
 Queue age/DLQ is never business state.
 
-## 11. Step Functions policy beyond ADR-010
+## 14. EventBridge policy
 
-Do not wrap CRUD or every cross-module call in a state machine.
+Use custom EventBridge only for versioned fact routing/fan-out with named consumers.
+
+Do not use it for:
+
+- in-process commands/queries;
+- generic CRUD/database changes;
+- one known work command where SQS is sufficient;
+- empty diagram-driven infrastructure.
+
+Each rule documents producer/type/version, target, retry/failure policy, IAM, payload minimization, cost, and compatibility/deletion plan.
+
+## 15. Step Functions policy beyond ADR-010
 
 Any new workflow requires:
 
-- approved business sequence/owner for every transition;
+- approved business sequence and owner for every transition;
 - demonstrated durable wait/branch/callback/retry/compensation need;
 - execution identity/duplicate-start rule;
 - explicit Unknown/timeout semantics;
-- operator recovery/reconciliation;
-- state-transition cost envelope;
-- an ADR when the choice is material.
+- operator recovery;
+- transition-cost envelope;
+- ADR when material.
 
-ADR-010 does not approve Step Functions for onboarding, Subscription plan changes, Procurement, refund, or fulfillment by default.
+ADR-010 does not approve Step Functions for onboarding, Subscription changes, Procurement, refund, or fulfillment by default. ADR-011 explicitly chooses choreography for current MVP refund semantics.
 
-## 12. Audit delivery
+## 16. AWS capability matrix
 
-Audit is not a log stream and not source business state.
+CommerceOS remains serverless/pay-per-use and Free Tier/credit constrained.
 
-### Successful covered mutation
-
-Source module writes a durable Audit intent/outbox atomically with accepted state. Audit appends idempotently later.
-
-### Covered rejected attempt
-
-When rejection produces no source-state transaction, the rejecting owning module persists a standalone idempotent Audit-delivery intent before returning where practical. This is still source-owned delivery evidence, not an Audit table write.
-
-Audit consumer:
-
-- appends immutable evidence;
-- validates Tenant/actor/action/outcome/source identity;
-- does not read source tables;
-- preserves tenant-visible non-disclosure rules.
-
-## 13. AWS capability matrix
-
-The project remains serverless/pay-per-use and Free-Tier/credit constrained.
-
-| Capability | Problem solved | Status / introduction point | Cost/security guardrail |
+| Capability | Problem solved | Status | Guardrail |
 |---|---|---|---|
-| API Gateway HTTP API | HTTPS routing/JWT/throttling | **Accepted** with first protected/public API | HTTP API by default; bounded payload/load; provider ingress may be separate route/API if isolation warrants |
-| Lambda | scale-to-zero API/workers/task handlers | **Accepted** | no provisioned concurrency; bounded risky-worker concurrency; no sleeping/long polling |
-| Cognito | merchant authentication/token lifecycle | **Accepted** in IdentityStack | identity only; avoid paid SMS/advanced features by default |
-| DynamoDB | module-owned transactional persistence | **Accepted** per module | one table/module; no Scan/speculative GSI/PITR; explicit capacity/cost |
-| DynamoDB Streams | outbox/work wake-up | **Conditional** with first durable outbox relay | filter relevant records; retain durable outbox for repair |
-| EventBridge custom bus | versioned fact routing/fan-out | **Conditional** with first named fact consumer | no CRUD/generic events/empty bus |
-| SQS + DLQ | one-worker recovery/backpressure/critical consumer isolation | **Conditional** with named worker/consumer | bounded retries/batches; DLQ alarm/redrive |
-| Step Functions Standard | durable order payment/allocation orchestration | **Accepted** for ADR-010 process when Ready | count transitions; no high-frequency Unknown polling; no unrelated CRUD workflows |
-| EventBridge Scheduler | crawler/provider reconciliation/cleanup schedule | **Conditional** when a scheduled use case is approved | dev schedules disabled/manual by default; no demo loops |
-| S3 | private static/media/raw/export objects | **Conditional** with Web/FilesMedia/Ingestion task | lifecycle raw/temp data; no arbitrary external media copy |
-| CloudFront | public static/media delivery/cache | **Conditional** with Web/FilesMedia | cache never transaction/authorization authority |
-| CloudWatch | logs/metrics/alarms | **Accepted** with runtime | bounded retention, built-ins first, low-cardinality custom metrics |
-| CDK/CloudFormation | reproducible reviewed infrastructure | **Accepted** | no Console source of truth |
+| API Gateway HTTP API | HTTPS/JWT/throttling | **Accepted** with API tasks | HTTP API by default; separate provider ingress only if isolation warrants |
+| Lambda | scale-to-zero API/workers/tasks | **Accepted** | no provisioned concurrency; bounded risky-worker concurrency |
+| Cognito | merchant authentication | **Accepted** | identity only; avoid paid SMS/advanced features by default |
+| DynamoDB | module-owned transactional persistence | **Accepted** per module | one table/module; no Scan/speculative GSI |
+| DynamoDB Streams | outbox/work relay wake-up | **Conditional** | only when a named outbox exists |
+| EventBridge custom bus | fact routing/fan-out | **Conditional** | named facts/consumers only |
+| SQS + DLQ | recovery/backpressure/consumer isolation | **Conditional** | bounded retry/redrive/concurrency |
+| Step Functions Standard | ADR-010 durable order process | **Conditional/Accepted** for that process only | transition budget; no high-frequency polling |
+| EventBridge Scheduler | due reconciliation/renewal/PDI schedules | **Conditional** | only named due-work need; timer not business proof |
+| S3 + CloudFront | FilesMedia binaries/delivery | **Conditional** | private upload; controlled delivery; no arbitrary hotlink authority |
+| CloudWatch | logs/metrics/alarms | **Accepted** | bounded retention, low-cardinality dimensions |
+| CDK/CloudFormation | IaC | **Accepted** | source of truth |
 
-No NAT Gateway, ALB/NLB, EC2 application server, RDS/Aurora, Redis/ElastiCache, OpenSearch, MSK/Kafka, EKS, always-on ECS/Fargate, paid WAF, or provisioned Lambda concurrency is approved.
+Not introduced by current architecture: NAT Gateway, ALB, EC2, RDS/Aurora, Redis/ElastiCache, OpenSearch, Kafka/MSK, EKS, always-on services, provisioned Lambda concurrency, or AppConfig/SSM plan authority.
 
-## 14. Regional and stack mapping
+## 17. CDK composition target
 
-Initial application workloads remain single-region `ap-southeast-1`; CloudFront is global.
+Conceptually:
 
 ```text
 FoundationStack
-  bounded shared technical observability/config only
-
 IdentityStack
-  Cognito user pool + SPA client when protected API starts
+ApiStack
 
-CommerceStack
-  API Gateway HTTP API
-  commerce-api Lambda
-  module DynamoDB constructs as Ready tasks introduce them
-
-WebStack
-  private S3 origins
-  CloudFront
+module persistence resources/stacks
+  only when Ready
 
 Integration resources
-  per-module Streams/outbox relays
-  EventBridge bus/rules
-  per-consumer SQS/DLQ/workers
+  Stream relay / EventBridge / SQS-DLQ
+  only with named producer-consumer
 
-OrderWorkflow resources
-  Step Functions Standard
-  task-handler Lambda composition
-  only with ADR-010 Ready implementation
-
-CrawlerStack
-  only with crawler Ready work
+OrderWorkflow capability
+  Step Functions Standard for ADR-010
 
 MockPaymentStack
   merchant-order external-like provider
 
 MockSaaSBillingStack
-  separate simulated SaaS provider
+  CommerceOS SaaS external-like provider
+
+CrawlerStack / FilesMedia capability
+  only with Ready tasks
 ```
 
-Stacks are deployment/update groups, not bounded contexts.
+Refund uses the existing integration capability pattern; there is no `RefundWorkflowStack` under current MVP architecture.
 
-## 15. Files/Media AWS mapping
+## 18. Remaining gates
 
-Merchant-uploaded Product media uses:
+Integration work remains domain-gated only where it would encode:
 
-```text
-client
-  -> FilesMedia upload authorization (API/Lambda)
-  -> private S3 object under server-assigned Tenant/Asset key
-  -> FilesMedia metadata becomes accepted
-  -> Catalog attaches MediaAssetId through application contract
-  -> CloudFront/public projection serves only approved public association
-```
+- Storefront Tenant-address semantics;
+- moving-average cost-pool scope where Accounting valuation state depends on it;
+- non-restock refund behavior;
+- refund approval role/capability if not supplied by task refinement;
+- unapproved Category/Brand historical-name behavior.
 
-Rules:
+## 19. Stop condition
 
-- bucket private by default;
-- client cannot choose another Tenant object prefix;
-- no arbitrary external image hotlink/copy;
-- S3 key is not public business identity;
-- lifecycle/deletion must respect future FilesMedia/reference policy;
-- CloudFront cache does not authorize Catalog/public lifecycle.
-
-## 16. Provider boundaries
-
-### Merchant-order Mock Provider
-
-Payments adapter treats provider as external:
-
-- provider idempotency identity;
-- success/decline/Unknown;
-- callback/query verification;
-- duplicate/out-of-order evidence;
-- reconciliation before unsafe retry.
-
-### Mock SaaS Billing Provider
-
-Separate application/provider seam from merchant-order Payments:
-
-- PlatformCharge idempotency;
-- success/definitive NoCommit/Unknown;
-- callback/query/reconciliation;
-- no real card/bank data;
-- no provider state leaking into merchant-order Payments.
-
-Provider webhook ingress may use a separate API/Lambda boundary if secret/IAM/rate-limit/failure isolation benefits justify it.
-
-## 17. Security controls
-
-- API Gateway/Cognito authenticates; Merchant Access authorizes Tenant/Membership; owning module authorizes operation.
-- SubscriptionBilling separately authorizes subscription-governed capability/limit.
-- tenant-owned data keys derive Tenant scope from trusted context only.
-- worker/workflow messages contain minimum stable IDs/data and are not merchant authority.
-- provider ingress is authenticated using provider-specific evidence, not merchant tokens.
-- IAM is least privilege per runtime/queue/table/stream/state machine.
-- no token, invitation secret, signing secret, card-like data, raw provider payload, or cross-Tenant identifier leakage in logs/events/problems.
-
-## 18. Reliability/observability controls
-
-Observe separately:
-
-- authority/entitlement dependency errors;
-- DynamoDB condition/transaction/throttle errors;
-- outbox relay lag/failure;
-- EventBridge target failure;
-- queue age/depth/DLQ;
-- workflow execution age/failure/NeedsAttention count;
-- provider Unknown/reconciliation age/count;
-- Accounting source/posting gaps;
-- onboarding operation Pending/NeedsAttention age;
-- crawler source-specific throttling/failure.
-
-These are operational facts only. Logs/metrics never claim a business transition that the owning aggregate did not commit.
-
-## 19. Cost posture
-
-This architecture reconciliation deploys nothing and changes runtime cost by **$0**.
-
-When implemented:
-
-- no integration resource exists without a named contract;
-- no state machine exists without ADR-010 Ready task;
-- every GSI/queue/worker/schedule/state-machine/provider task includes a cost note;
-- normal dev remains near `$0-$5/month` target from repository guardrails;
-- Step Functions Unknown paths use waits/backoff, not frequent polling;
-- preview/staging resources are ephemeral where possible.
-
-## 20. Remaining gates
-
-Do not finalize integration/AWS behavior that would encode:
-
-- `PD-004` exact Suspended/closure/retention/privacy semantics;
-- `PD-023` refund/return Accounting;
-- exact plan price/entitlement packages under `PD-044`;
-- Storefront Tenant-address business semantics;
-- Accounting moving-average cost-pool dimension;
-- any future fulfillment/shipping process not yet refined.
-
-## 21. Verification
-
-Dependent cloud/integration tasks must verify applicable cases:
-
-- Cognito valid/invalid/expired token and no business authority in claims;
-- Tenant A/B selector/message/workflow override isolation;
-- onboarding crash/retry/queue redrive without duplicate Trial;
-- outbox+source atomicity and duplicate relay/event delivery;
-- EventBridge type/version routing and target failure behavior;
-- SQS visibility/retry/DLQ/redrive/poison message;
-- order workflow duplicate start, technical task failure, decline, Unknown, reconciliation and no false cancellation/release;
-- provider callback signature/dedup/out-of-order behavior;
-- Accounting consumer replay and reconciliation;
-- CDK least privilege, bounded logging/tags/retention and absence of speculative resources;
-- measured transition/request/log cost stays within Ready task budget.
-
-## 22. References
-
-- [Technical baseline](technical-baseline.md)
-- [Product-decision technical reconciliation](product-decision-technical-reconciliation.md)
-- [ADR-006](../adr/ADR-006-reliable-cross-domain-integration-and-deferred-workflow-orchestration.md)
-- [ADR-008](../adr/ADR-008-subscription-billing-module-entitlement-and-provider-boundary.md)
-- [ADR-009](../adr/ADR-009-cross-domain-onboarding-completion-and-trial-bootstrap-recovery.md)
-- [ADR-010](../adr/ADR-010-order-payment-allocation-durable-orchestration.md)
-- [Free Tier and credit guardrails](../development/13-free-tier-and-credit-guardrails.md)
+**INTEGRATION AND AWS BASELINE RECONCILED.**
