@@ -426,17 +426,19 @@ Accounting policies below define the **CommerceOS learning/MVP accounting model*
 - **Affected baseline documents updated:** Pending Domain Architect/Accounting reconciliation.
 - **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
-### PD-023 — Refund/return accounting
+### PD-023 — Refund request approval, return, and accounting correction
 
-- **Status:** Deferred until returns/refunds domain refinement
-- **Question:** Does refund use contra revenue or reversal, on what recognition date, and how do restock/non-restock outcomes affect COGS and inventory?
-- **Interim human direction:** Do not implement refund/return accounting by assumption. PaymentRefunded, Order refund/cancellation state, StockReturned/restocked, and JournalPosted remain separate facts. Historical posted journals remain immutable and any later financial correction must be represented by explicit compensating/reversal entries.
-- **Rationale:** Correct refund accounting depends on the still-unrefined return disposition, restock, timing, partial-return, and revenue-policy semantics. Freezing a specific posting model now would likely need reversal once the return domain is designed.
-- **Decision gate:** before TASK-0050 refund posting or TASK-0063–0066 can become Ready.
-- **Affected tasks:** TASK-0050, TASK-0063–0066, reports.
-- **Safe interim constraint:** no refund event implies stock, revenue, COGS, or journal effects that the owning domain has not confirmed.
-- **Approved by:** CommerceOS human Product Owner for defer decision
+- **Status:** Resolved
+- **Question:** What approval must occur before refund effects are accepted, and how do approved refunds affect stock, revenue/COGS, journals, and provider-refund truth?
+- **Decision:** MVP uses an explicit request-and-approval workflow. A refund begins as `RefundRequested` and must be reviewed in a dedicated merchant refund-approval experience before refund consequences are authorized. Approval records `RefundApproved`; rejection records `RefundRejected`. In MVP, approving the refund also means the merchant accepts the corresponding returned goods as restockable, so Inventory records the approved `StockReturned` quantity exactly once. Accounting creates linked reversal/compensating journal(s), never edits posted history: for already recognized fulfilled sales, the approved refund reverses the applicable revenue recognition (`Dr Sales Revenue / Cr Customer Deposits`) and the accepted `StockReturned` reverses the applicable COGS/inventory effect (`Dr Inventory / Cr COGS`) using the original issue-cost basis/provenance. Payment money movement remains owned by Payments: approval authorizes the refund operation, but `PaymentRefunded` exists only after verified provider evidence; when verified, Accounting clears the corresponding customer-deposit liability against Cash (`Dr Customer Deposits / Cr Cash`). Rejection produces no `StockReturned`, no refund accounting correction, and no payment-refund authorization. Non-restock refund semantics are outside the MVP policy established by this decision.
+- **Rationale:** A dedicated approval gate prevents an unreviewed refund request from automatically mutating stock or financial history. Tying approval to an accepted restock plus explicit compensating journals gives the MVP one auditable recovery path while preserving immutable journals and the existing rule that only verified provider evidence proves money was actually refunded.
+- **Decision gate:** Resolved; refund/return work still requires Domain/Technical/Backlog reconciliation before Ready.
+- **Affected tasks:** TASK-0050, TASK-0063–0066, refund back-office approval experience, Inventory returns, Accounting reconciliation, Reporting.
+- **Approved policy constraint:** `RefundRequested` alone has no stock/accounting/payment effect; `RefundApproved` authorizes one logical `StockReturned` plus linked compensating accounting effects; posted journals are never edited; `PaymentRefunded` still requires verified provider evidence; `RefundRejected` creates none of those effects.
+- **Approved by:** CommerceOS human Product Owner
 - **Approved on:** 2026-08-10
+- **Affected baseline documents updated:** `docs/domains/commerce-operations.md`, `docs/02-business-domains.md`, `docs/domains/product-decision-reconciliation.md` in the same Domain Architect reconciliation pass.
+- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
 
 ### PD-024 — Financial treatment of stock adjustments
 
