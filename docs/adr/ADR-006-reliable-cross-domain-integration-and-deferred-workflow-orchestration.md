@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-08-09
-Last reconciled: 2026-08-10
+Last reconciled: 2026-08-10 after resolved PD-023
 Decision owners: CommerceOS Technical Architecture
 Supersedes: N/A
 Superseded by: N/A
@@ -11,13 +11,16 @@ Superseded by: N/A
 
 CommerceOS requires explicit cross-domain contracts and assumes at-least-once delivery. Inventory, Payments, Procurement, Accounting, Reporting, Notification, Audit, SubscriptionBilling, and Product Data Ingestion need different combinations of immediate owner decisions, independent retry, backpressure, fan-out, durable waiting, and reconciliation.
 
-The original ADR deliberately deferred Step Functions for checkout/payment because business sequence and timeout semantics were unresolved. The 2026-08-10 product/domain reconciliation now defines the purchase-confirmation sequence and Payment `OutcomeUnknown` behavior sufficiently for one named workflow: ADR-010 selects Step Functions Standard from accepted `OrderPlaced` through `OrderAllocated`.
+The product/domain reconciliation now provides two concrete specializations:
 
-The general rule remains: no generic event bus/queue/workflow is created because a diagram contains an AWS icon, and no transport failure is allowed to manufacture a business fact.
+- ADR-010 selects Step Functions Standard for the durable `OrderPlaced -> reservation -> payment/reconciliation -> OrderConfirmed -> OrderAllocated` process;
+- ADR-011 selects reliable fact choreography after Sales `RefundApproved`, with independent Inventory, Payments, and Accounting effects.
+
+The general rule remains: no generic event bus/queue/workflow is created because a diagram contains an AWS icon, and no transport failure manufactures a business fact.
 
 ## Decision
 
-### 1. Interaction selection
+### Interaction selection
 
 Use a **synchronous producer-owned application contract** when:
 
@@ -25,10 +28,7 @@ Use a **synchronous producer-owned application contract** when:
 - modules share the current runtime;
 - independent buffering/fan-out/durable wait is not required.
 
-Use a **direct SQS work item** when:
-
-- one known worker needs retry/backpressure/latency isolation;
-- fan-out is not the problem.
+Use a **direct SQS work item** when one known worker needs retry/backpressure/latency isolation and fan-out is not the problem.
 
 Use a **versioned integration fact via EventBridge** when:
 
@@ -38,13 +38,13 @@ Use a **versioned integration fact via EventBridge** when:
 
 Give critical/side-effecting consumers their own **SQS queue + DLQ**.
 
-Use **Step Functions Standard** only for a named approved process with real durable wait/branch/retry/reconciliation/compensation pressure. ADR-010 is the first accepted specialization.
+Use **Step Functions Standard** only for a named approved process with demonstrated durable wait/branch/retry/reconciliation/compensation pressure. ADR-010 is the first accepted specialization; ADR-011 explicitly does not use it for the current refund model.
 
-### 2. Reliable business-fact publication
+### Reliable business-fact publication
 
 When a named cross-domain fact consumer is Ready:
 
-1. producer transaction writes accepted business state + complete immutable outbox record in the producer's module table;
+1. producer transaction writes accepted business state + complete immutable outbox record in producer module table;
 2. filtered DynamoDB Stream invokes an idempotent relay Lambda;
 3. relay publishes producer-owned versioned integration envelope to a custom EventBridge bus;
 4. EventBridge routes explicit producer/type/version to consumer-specific queue/target;
@@ -54,25 +54,23 @@ When a named cross-domain fact consumer is Ready:
 
 A database commit followed by best-effort `PutEvents` is not reliable publication.
 
-The outbox payload is the stable contract data required by consumers, not a raw item/domain serialization and not a pointer that forces foreign-table reads.
+The outbox payload is stable contract data required by consumers, not raw item/domain serialization and not a pointer requiring foreign-table reads.
 
-### 3. Transactional work-outbox for required one-worker recovery
+### Transactional work-outbox for required one-worker recovery
 
-A direct SQS work item also needs crash-safe source delivery when the work is required after a source commit.
+When a direct SQS work item must survive source commit:
 
-In that case:
-
-1. source module writes a complete `WORKOUTBOX` record in the same transaction as the local source operation/state;
-2. filtered Stream relay sends the stable work contract directly to the named SQS queue;
-3. worker invokes the target application contract using stable logical work/source identity;
+1. source module writes complete `WORKOUTBOX` in the same transaction as local source state;
+2. filtered Stream relay sends stable work contract to the named queue;
+3. worker invokes target application contract with stable logical source identity;
 4. duplicate relay/queue delivery is safe;
 5. durable work-outbox remains queryable for repair.
 
-EventBridge is unnecessary when there is exactly one known worker and no fact fan-out.
+EventBridge is unnecessary when exactly one worker is known and no fact fan-out exists.
 
-ADR-009 onboarding Trial-bootstrap recovery is the first accepted use of this pattern.
+ADR-009 onboarding Trial-bootstrap recovery is the first accepted use.
 
-### 4. Integration event envelope
+### Integration event envelope
 
 Every tenant-owned integration fact includes:
 
@@ -92,37 +90,40 @@ data
 Rules:
 
 - event identity describes one immutable published fact;
-- `tenantId` required for tenant-owned facts;
+- TenantId is required for tenant-owned facts but never merchant actor authority;
 - `data` contains only stable consumer-required facts;
-- consumers reject unsupported type/version rather than guessing;
-- sensitive/private data minimized;
-- redrive preserves eventId/source/correlation/causation rather than manufacturing a new fact;
-- an internal domain event is not published automatically — a named contract/consumer must exist.
+- consumers reject unsupported type/version instead of guessing;
+- sensitive/private/provider raw data is minimized;
+- redrive preserves eventId/source/correlation/causation;
+- an internal event is not published automatically—a named cross-boundary consumer must exist.
 
-### 5. Consumer requirements
+### Consumer requirements
 
 Every side-effecting consumer:
 
 - assumes at-least-once and possible out-of-order delivery;
 - validates envelope/Tenant/source/type/version and owner-specific invariants;
-- writes inbox/logical source marker atomically with its owned effect where possible;
-- returns prior effect for equivalent replay and rejects incompatible source reuse;
+- writes inbox/logical source marker with its owned effect atomically where possible;
+- returns prior equivalent effect and rejects incompatible source reuse;
 - cannot regress later accepted state from older evidence;
-- classifies transient/permanent errors and bounds automatic retry;
+- classifies transient/permanent failures and bounds retry;
 - has DLQ/redrive/reconciliation before production use;
 - never reads/writes producer persistence;
 - never treats message TenantId as merchant actor authority.
 
 For external side effects, persist stable operation identity before unsafe retry and use provider idempotency/query/reconciliation semantics. Timeout remains potentially ambiguous.
 
-### 6. Named business fact routes after reconciliation
+### Named business fact routes
 
-The following routes are now approved in principle and may be introduced by their Ready producer/consumer tasks:
+Approved routes may be introduced only with Ready producer/consumer work:
 
 - `OrderConfirmed` -> SubscriptionBilling UsageMeter and Reporting;
 - `PaymentCaptured` -> Accounting and asynchronous Sales convergence where needed;
 - `OrderFulfilled` -> Accounting revenue and Reporting;
 - `StockIssued` -> Accounting COGS;
+- `RefundApproved` -> Inventory approved return, Payments refund execution, Accounting revenue compensation;
+- `StockReturned` -> Accounting original-issue-cost COGS/inventory reversal;
+- `PaymentRefunded` -> Accounting Customer Deposits/Cash settlement;
 - `GoodsReceiptRecorded` -> Inventory receipt application and Accounting inventory/GRNI posting;
 - `SupplierInvoiceRecorded` -> Accounting AP/GRNI posting;
 - `SupplierPaymentRecorded` -> Accounting AP/Cash posting;
@@ -130,23 +131,23 @@ The following routes are now approved in principle and may be introduced by thei
 - approved privileged action/rejection Audit intents -> Audit;
 - selected domain facts -> Notification only where a named recipient/event contract exists.
 
-`PaymentRefunded`/`StockReturned` do not receive an Accounting posting route until `PD-023` is resolved.
+Refund routes are further constrained by ADR-011: `RefundRequested`/`RefundRejected` cause no stock/payment/accounting effect, provider ambiguity remains Payments-owned, and no global `RefundCompleted` state is inferred from delivery progress.
 
-A route is still provisioned only when the producer + consumer implementation task is Ready; approval of business meaning does not justify an empty bus/queue.
+A route is provisioned only when producer + consumer implementation is Ready; approved meaning does not justify an empty bus/queue.
 
-### 7. Audit delivery
+### Audit delivery
 
 Audit records are not domain events or CloudWatch logs.
 
-For a **successful covered mutation**, the source transaction writes a safe durable Audit-delivery intent/outbox atomically with accepted state.
+For a successful covered mutation, the source transaction writes safe durable Audit-delivery intent/outbox atomically with accepted state.
 
-For a **covered rejected attempt** that has no business-state transaction, the rejecting owning module persists a standalone idempotent Audit-delivery intent before completing the application result where practical.
+For a covered rejected attempt with no business-state transaction, the rejecting owner persists standalone idempotent Audit-delivery intent before completing the result where practical.
 
-Audit appends its owned evidence idempotently through the reliable delivery path. No source module writes the Audit table directly.
+Audit appends owned evidence idempotently through reliable delivery. No source module writes Audit persistence directly.
 
-### 8. Order Step Functions specialization
+### Order Step Functions specialization
 
-ADR-010 selects **Step Functions Standard** for the approved process from already accepted `OrderPlaced` through `OrderAllocated`.
+ADR-010 selects **Step Functions Standard** from accepted `OrderPlaced` through `OrderAllocated`.
 
 The state machine may coordinate:
 
@@ -157,67 +158,49 @@ Inventory reserve
   -> Sales Allocate
 ```
 
-with durable technical branches for:
+with durable technical branches for definitive decline/no-commit, `OutcomeUnknown`, and bounded-automation `NeedsAttention`.
 
-- definitive decline/no-commit -> payment retry needed;
-- `OutcomeUnknown` -> reconciliation/wait;
-- bounded automation unable to resolve -> technical `NeedsAttention`.
-
-The state machine cannot:
+It cannot:
 
 - create Order before price reconfirmation;
 - infer Payment failure from timeout/retry exhaustion/workflow failure;
-- auto-cancel Order or release stock from technical failure/Unknown;
+- auto-cancel/release stock from technical failure/Unknown;
 - call provider internals instead of Payments contracts;
 - post Accounting;
-- invent refund/fulfillment/shipping business behavior.
+- own refund/fulfillment/shipping business behavior.
 
 Workflow/process state is operational coordination, not source-domain truth.
 
-### 9. Workflow selection beyond ADR-010
+### Refund choreography specialization
 
-Do not introduce Step Functions for Tenancy/Catalog CRUD or preselect it for onboarding, Subscription plan changes, Procurement, refunds, or fulfillment merely for consistency of tooling.
+ADR-011 selects:
 
-Any later workflow requires a focused task/ADR showing:
+```text
+Sales RefundApproved + OUTBOX
+        ↓ EventBridge
+        ├── Inventory SQS/DLQ -> StockReturned + outbox
+        ├── Payments SQS/DLQ -> provider refund/reconcile -> PaymentRefunded + outbox
+        └── Accounting SQS/DLQ -> revenue compensation
+
+StockReturned   -> Accounting SQS/DLQ -> COGS/inventory reversal
+PaymentRefunded -> Accounting SQS/DLQ -> Deposits/Cash settlement
+```
+
+No Step Functions workflow is selected because human review is durable Sales state and post-approval effects are independently owned/eventually consistent. A later global completion/compensation business policy would require new domain/architecture work.
+
+### Workflow selection beyond ADR-010
+
+Do not introduce Step Functions for Tenancy/Catalog CRUD or preselect it for onboarding, Subscription plan changes, Procurement, refund, or fulfillment merely for tooling consistency.
+
+Any later workflow requires:
 
 - approved business sequence and owner of every transition;
-- why application code + durable records/queues are insufficient;
+- demonstrated need beyond application code + durable records/queues;
 - execution identity/duplicate-start semantics;
 - timeout/Unknown rules;
 - retry/catch/wait/callback/compensation semantics;
 - operator recovery/reconciliation;
 - bounded transition/cost envelope.
-
-## EventBridge policy
-
-Use EventBridge for versioned business-fact routing/fan-out with named consumers.
-
-Do not use it for:
-
-- ordinary in-process commands/queries;
-- generic database changes;
-- one-worker commands where SQS is sufficient;
-- an empty FoundationStack event bus.
-
-Each rule documents owner/source/type/version, target, retry/failure policy, IAM, payload minimization, compatibility/deletion, and cost.
-
-## SQS/DLQ policy
-
-Standard queue by default. FIFO only if an explicit ordering/dedup requirement cannot be safely handled by source/aggregate idempotency and its cost/throughput trade-off is justified.
-
-Every queue defines:
-
-- producer/consumer + message contract;
-- visibility timeout greater than bounded handler duration;
-- batch/concurrency cap;
-- maximum receives/redrive policy;
-- DLQ retention/alarm;
-- transient/permanent classification;
-- identity-preserving replay;
-- poison-message/manual recovery;
-- tenant-safe logs/metrics.
-
-Queue age/retry/DLQ is never business state.
 
 ## Alternatives considered
 
@@ -235,95 +218,100 @@ Chosen for reliable business facts because state and delivery intent commit toge
 
 ### Transactional work-outbox + Stream relay + direct SQS
 
-Chosen for required one-worker recovery because it closes the dual-write gap without unnecessary fan-out/EventBridge.
+Chosen for required one-worker recovery because it closes the dual-write gap without unnecessary fan-out.
 
 ### Put every cross-domain action in SQS/Step Functions
 
-Rejected because it adds asynchronous ceremony/latency and creates a distributed monolith for immediate owner decisions.
+Rejected because it adds ceremony/latency and creates a distributed monolith for immediate owner decisions.
 
-### Never use Step Functions
+### One Step Functions refund workflow
 
-Rejected after the order/payment domain reconciliation because `OutcomeUnknown` creates a legitimate durable cross-module wait/reconciliation process. ADR-010 uses Step Functions selectively for that named process.
+Rejected for current MVP because no global refund-completion business state is approved, while the downstream effects have independent owners and Payments has its own ambiguous provider reconciliation lifecycle.
 
 ## Consequences
 
-### Positive
+Positive consequences:
 
-- no Builder invents a dual-write, event topology, duplicate strategy, or workflow default;
-- immediate owner decisions stay simple/synchronous;
+- immediate owner decisions stay synchronous and explicit;
 - required recovery work survives source commit;
 - critical facts survive consumer outages without shared persistence;
 - order Payment Unknown has a durable coordinator without false business failure;
-- EventBridge, SQS, and Step Functions each have a distinct purpose;
-- business fact identity and operational delivery/workflow state remain separate.
+- refund approval can fan out to independently recoverable owner effects without a distributed transaction;
+- EventBridge, SQS, work-outbox, and Step Functions each have a distinct purpose;
+- business fact identity stays separate from operational delivery/workflow state.
 
-### Negative / trade-offs
+Trade-offs:
 
 - reliable integration adds outbox/inbox items, Streams, relays, queues/DLQs, alarms, and reconciliation;
-- work-outbox adds another durable delivery shape to govern/test;
 - at-least-once means every consumer/worker must be idempotent;
-- Step Functions introduces state-machine/task/IAM/transition cost for the named order process;
-- eventual consumer completion/NeedsAttention becomes visible operationally.
+- refund effects can temporarily be at different completion points;
+- Step Functions adds state-machine/task/IAM/transition cost for the named order process;
+- eventual consumer completion/NeedsAttention is operationally visible.
 
 ## Security and tenant impact
 
-- tenant-owned envelopes/work items carry TenantId for routing/scope validation but are never merchant actor authority;
+- tenant-owned envelopes/work carry TenantId for routing/scope validation but never merchant actor authority;
 - producer authorization occurs before accepting source fact/operation;
 - workers use service IAM + contract validation;
-- minimum stable payload only, no tokens/credentials/raw card/provider/source data/database rows;
+- payloads exclude tokens/credentials/raw card/provider/source data/database rows;
 - relay/queue/event IAM is explicit and narrow;
-- customer-managed keys are not introduced by default without security/cost justification.
+- refund consumers validate source Tenant/refund/order/payment references without foreign-table access;
+- customer-managed keys are not introduced by default without separate security/cost justification.
 
 ## Reliability and operability impact
 
 Observe separately:
 
 - producer transaction cancellation;
-- work/event outbox pending age;
-- Stream/relay error/iterator lag;
+- outbox/work pending age;
+- Stream relay error/iterator lag;
 - EventBridge target failure;
 - queue backlog/oldest age/DLQ;
 - consumer error/throttle/source conflict;
-- Step Functions execution/NeedsAttention state;
-- provider Unknown/reconciliation;
+- Step Functions execution/NeedsAttention;
+- provider capture/refund OutcomeUnknown and reconciliation;
 - committed source with missing expected consumer effect.
 
-Retry/redrive preserves logical identities. Operational exhaustion never changes domain state unless an owner command independently accepts a transition.
+Retry/redrive preserves logical identities. Operational exhaustion never changes domain state unless an owner independently accepts a transition.
 
 ## Cost impact
 
 This ADR update deploys nothing and changes runtime cost by zero.
 
-When introduced, current serverless cost model already covers low-volume DynamoDB/Lambda/EventBridge/SQS and selective Step Functions. Each Ready task must calculate its own request/write/transition/log amplification.
+When introduced, the serverless cost model covers low-volume DynamoDB/Lambda/EventBridge/SQS and selective Step Functions. Each Ready task calculates request/write/transition/log amplification.
 
-Step Functions Unknown paths use waits/backoff and bounded automated campaigns, not high-frequency polling.
+Refund choreography reuses the approved outbox/EventBridge/SQS pattern and adds no Step Functions transition cost.
 
 No standing-cost infrastructure is introduced.
 
 ## Reversibility / migration
 
-- changing relay transport preserves producer event/work contracts and logical identities during cutover;
-- consumer direct-Lambda/SQS topology can change with replay/cutover plan without changing producer fact meaning;
-- replacing DynamoDB Streams requires an equivalent durable outbox dispatcher;
-- extracting a module retains integration/application contracts while changing deployment/IAM/network boundaries;
-- replacing Step Functions later must preserve Sales process/source identities and Payment Unknown/recovery semantics.
+- relay transport can change while preserving producer event/work contracts and logical identities;
+- consumer target topology can change with replay/cutover without changing producer fact meaning;
+- replacing DynamoDB Streams requires equivalent durable outbox dispatch;
+- module extraction preserves integration/application contracts while deployment/IAM/network boundaries change;
+- replacing Step Functions later must preserve Sales process identity and Payment Unknown semantics;
+- a future orchestrated refund process must preserve existing RefundApproved/StockReturned/PaymentRefunded facts as migration/source truth.
 
 ## Validation
 
 Dependent implementation must verify:
 
 - producer state + outbox/work intent commit together or neither;
-- duplicate Stream relay preserves same event/work identity;
-- EventBridge source/type/version routing + target failure handling;
+- duplicate relay preserves event/work identity;
+- explicit EventBridge source/type/version routing + target failure handling;
 - SQS visibility/retry/duplicate/out-of-order/DLQ/redrive;
 - consumer inbox/source marker + owned effect idempotency;
-- onboarding work-outbox/SQS recovery produces one Trial;
+- onboarding recovery creates one Trial;
 - order workflow duplicate start/task retry does not duplicate business effects;
 - workflow/provider timeout/retry exhaustion cannot cause false Payment failure/cancellation/stock release;
-- Accounting/source consumers never read producer tables;
-- Audit rejection evidence is not reduced to best-effort logging;
-- CDK creates no Stream/bus/queue/state-machine before named Ready use case and enforces least privilege/retention/tags;
-- measured cloud cost stays within Ready-task guardrails.
+- RefundRequested/RefundRejected do not fan out refund effects;
+- RefundApproved replay cannot duplicate StockReturned/provider refund/revenue compensation;
+- Payment refund Unknown cannot create PaymentRefunded until verified provider evidence;
+- Accounting consumers never read producer tables;
+- Audit rejection evidence is not best-effort logging;
+- CDK creates no integration resource before named Ready use case and enforces least privilege/retention/tags;
+- measured cloud cost stays within task guardrails.
 
 ## References
 
@@ -332,3 +320,4 @@ Dependent implementation must verify:
 - [Technical baseline](../architecture/technical-baseline.md)
 - [ADR-009](ADR-009-cross-domain-onboarding-completion-and-trial-bootstrap-recovery.md)
 - [ADR-010](ADR-010-order-payment-allocation-durable-orchestration.md)
+- [ADR-011](ADR-011-refund-approval-propagation-and-accounting-correction-integration.md)
