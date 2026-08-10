@@ -1,6 +1,6 @@
 # CommerceOS Human Product-Decision Register
 
-_Created by TASK-0087 on 2026-08-09._
+_Created by TASK-0087 on 2026-08-09. Extended for Subscription & Billing by TASK-0091 on 2026-08-10._
 
 ## 1. Rule
 
@@ -378,7 +378,110 @@ The safe interim constraint under each decision is mandatory until resolution.
 - **Affected tasks:** TASK-0009 and every later privileged domain action.
 - **Safe interim constraint:** Audit retains actor/trusted-tenant/action/outcome/correlation safely; tenant-visible evidence never discloses another tenant's entity existence or sensitive input.
 
-## 6. Resolution template
+## 6. Subscription & Billing decisions
+
+The decisions in this section are intentionally unresolved by TASK-0091. The domain baseline defines ownership and safe invariants while these policy choices remain human gates.
+
+### PD-043 — Subscription acquisition, trial, and tenant-without-subscription policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** After merchant registration, is subscription acquisition an automatic trial, explicit plan selection, platform provisioning, or another path? Is trial supported; if so, what duration, payment-method requirement, entitlement set, and expiry behavior apply? May a Tenant exist or perform ordinary commerce without an Active subscription?
+- **Why material:** This determines whether subscription activation is part of onboarding, when the first entitlement set becomes effective, and what happens before/after a trial.
+- **Decision gate:** before any subscription-acquisition/trial task or any onboarding task that couples Tenant activation to Subscription can become Ready.
+- **Affected tasks:** TASK-0006–0009 when subscription-coupled, future Subscription & Billing acquisition/onboarding tasks, TASK-0092 architecture alternatives.
+- **Safe interim constraint:** Tenant registration and Subscription activation remain separate business facts; do not create an automatic trial, assume a default paid plan, or assume ordinary commerce eligibility without an approved policy.
+
+### PD-044 — Plan catalog, versioning, accepted terms, and commercial package policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Which initial plans are actually offered, which prices/terms belong to each, how are versions identified and made available/retired, and may an accepted PlanVersion ever be edited versus replaced by a new version? Is Enterprise/custom pricing in scope?
+- **Why material:** Starter/Growth/Business and any discussed prices are commercial hypotheses, while historical subscription meaning must survive future catalog changes.
+- **Decision gate:** before plan-catalog management, plan selection, or plan-change tasks become Ready.
+- **Affected tasks:** future plan/subscription tasks, entitlement-definition tasks, merchant subscription UI/history.
+- **Safe interim constraint:** marketing plan names/prices are not domain constants outside Subscription & Billing; once a Tenant accepts terms, later catalog edits cannot retroactively rewrite the historical accepted terms or EntitlementSet.
+
+### PD-045 — Billing-cycle and subscription-period policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Does the product support monthly, annual, both, or another billing cycle? How are billing anchors, effective period boundaries, renewal dates, leap/month-end behavior, and business timezone/date semantics defined?
+- **Why material:** SubscriptionPeriod, renewal, cancellation timing, usage windows, and charges cannot share a stable meaning without an approved period policy.
+- **Decision gate:** before recurring-period/renewal or cycle-sensitive usage/billing tasks become Ready.
+- **Affected tasks:** future SubscriptionPeriod, renewal, metering, billing-history, cancellation, upgrade/downgrade tasks.
+- **Safe interim constraint:** every effective subscription/entitlement period is explicit; no monthly or annual cadence is inferred from examples.
+
+### PD-046 — CommerceOS SaaS currency, tax, invoice, and proration policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Which currency/currencies may CommerceOS charge merchants in, what precision/rounding applies, are taxes included/added/ignored in the learning phase, what does “invoice” mean, and is proration supported for mid-period changes?
+- **Why material:** These choices determine the commercial amount and legal/business meaning of PlatformCharge evidence and whether mid-cycle plan changes create immediate financial effects.
+- **Decision gate:** before a task creates priced PlatformCharges, invoices, tax calculations, or proration.
+- **Affected tasks:** future SaaS billing/charge/history tasks and upgrade/cancellation flows that depend on charge adjustments.
+- **Safe interim constraint:** SaaS Money always carries currency; do not calculate tax, claim legally compliant invoicing, perform currency conversion, or prorate by convention.
+
+### PD-047 — Upgrade effective-time and charge-precondition policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Is an upgrade effective immediately, at the next cycle, or after another condition? If a charge is required, must verified settlement precede higher entitlements, may entitlements become effective before settlement, and how does proration interact with the transition?
+- **Why material:** A plan-change request must not accidentally grant higher capabilities or create duplicate charges.
+- **Decision gate:** before any upgrade execution task becomes Ready.
+- **Affected tasks:** future plan-change, EntitlementSet effectivity, PlatformCharge, merchant UI/history tasks.
+- **Safe interim constraint:** `PlanChangeRequested` does not grant higher entitlements; only the approved effective condition may produce a new effective EntitlementSet, and charge outcome remains a separate fact.
+
+### PD-048 — Downgrade timing and excess-resource remediation policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Is downgrade immediate or next-cycle? If current usage exceeds target limits, must the merchant remediate first, may excess resources be grandfathered/read-only, is temporary overage allowed, or is another policy used? Which owning-domain actions constitute accepted remediation?
+- **Why material:** A lower plan may conflict with existing Memberships, Warehouses, ingestion capability, or other usage; forcing compliance by destructive cross-domain mutation would corrupt business state.
+- **Decision gate:** before any downgrade execution/remediation task becomes Ready.
+- **Affected tasks:** future subscription plan-change work plus entitlement-enforced Merchant Access, Inventory, Ingestion, and other domains.
+- **Safe interim constraint:** if authoritative current usage exceeds a target hard limit, downgrade does not become effective; record blocked/remediation-required state. Never delete, disable, archive, or rewrite another context's business data merely to satisfy the target plan.
+
+### PD-049 — Cancellation, expiry, grace, delinquency, reactivation, suspension, and retention policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Is cancellation immediate or end-of-cycle? What happens at expiry? Are grace/past-due states supported, for how long, and what becomes readable versus mutable? Can a subscription be reactivated, does billing delinquency ever restrict access, and how long is tenant data retained/recoverable after subscription end?
+- **Why material:** Commercial subscription state, billing standing, TenantStatus, Membership access, and data retention are independent dimensions and cannot safely be collapsed.
+- **Decision gate:** before cancellation/expiry/delinquency/reactivation/restriction implementation or subscription-driven retention work becomes Ready.
+- **Affected tasks:** future lifecycle/recovery/support tasks and any ordinary-operation gating based on subscription state.
+- **Safe interim constraint:** cancellation request or billing failure/unknown outcome never deletes tenant data, disables Memberships, or mutates TenantStatus by implication; timeout/age alone never proves delinquency or termination.
+
+### PD-050 — Hard, soft, overage, unlimited, and enforcement-point policy
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** For each entitlement/limit, is it a hard block, warning/soft threshold, allowed overage, grace state, or operationally unlimited? At which owning-domain command does enforcement occur, and what read/recovery operations remain allowed while over limit?
+- **Why material:** Staff, Warehouse, ingestion, API/webhook, accounting/reporting, and future limits have different operational consequences; one generic “limit exceeded” convention would be unsafe.
+- **Decision gate:** before any entitlement-enforced write task becomes Ready for the affected capability.
+- **Affected tasks:** future Subscription/Entitlement work and every domain task that enforces a plan capability/limit.
+- **Safe interim constraint:** use trusted capability/limit decisions rather than plan-name checks; a stale UI/Reporting projection never authorizes a hard-limit write; no task silently destroys data or blocks recovery access to enforce a limit.
+
+### PD-051 — Order-volume limit and shopper-checkout behavior
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** How is order volume counted, what time/window/eligibility rules apply, and may reaching/exceeding a plan threshold ever reject shopper checkout? If not, is the threshold warning-only, overage-billed, or an operational follow-up signal?
+- **Why material:** Blocking public checkout due to a merchant subscription threshold directly harms the merchant's customer flow and must be an explicit product choice.
+- **Decision gate:** before an order-volume entitlement can affect checkout or before billing depends on metered order volume.
+- **Affected tasks:** future UsageMeter/order-volume work, Sales checkout, Reporting/platform-admin usage views.
+- **Safe interim constraint:** an order-volume threshold must not silently reject an otherwise valid shopper checkout; accepted Sales facts may be counted idempotently for visibility without authorizing an unapproved block/overage effect.
+
+### PD-052 — SaaS billing-provider strategy for learning/MVP and later real operation
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** For the learning/MVP phase, is CommerceOS SaaS billing domain-only with no execution, simulated through a dedicated billing seam, or connected to a real provider? What is the later provider-selection/transition intent?
+- **Why material:** Technical Architecture must know whether to design only the provider boundary or also near-term execution/reconciliation; choosing Stripe/Paddle/etc. is explicitly out of TASK-0091 scope.
+- **Decision gate:** before any real/simulated SaaS billing-provider execution task becomes Ready.
+- **Affected tasks:** TASK-0092 provider-boundary choices, future PlatformCharge/billing attempt/webhook/reconciliation tasks.
+- **Safe interim constraint:** remain provider-agnostic; do not route SaaS billing through the existing merchant-order Payments/Mock Payment Provider by convenience; do not store real card data; external timeout/duplicate/out-of-order evidence retains explicit unknown/reconciliation semantics.
+
+### PD-053 — Platform-admin subscription/billing support and override authority
+
+- **Status:** HUMAN PRODUCT DECISION REQUIRED
+- **Question:** Which platform administrators, if any, may manually assign/comp/change a plan, cancel/reactivate a subscription, adjust billing evidence, or override an entitlement/usage restriction? Which actions require tenant notice/consent and what audit evidence is mandatory?
+- **Why material:** Platform support visibility is in product scope, but a hidden cross-tenant override path would bypass subscription truth and tenant/security controls.
+- **Decision gate:** before any platform-admin mutation/support tool for Subscription & Billing becomes Ready.
+- **Affected tasks:** future platform-admin subscription/billing operations, Audit, support/recovery tooling.
+- **Safe interim constraint:** platform administrators may have approved visibility/projections only; no direct subscription/entitlement/charge mutation or tenant-wide bypass is assumed. Any later mutation uses explicit Subscription & Billing business commands and Audit evidence under approved authority.
+
+## 7. Resolution template
 
 When the human resolves an entry, replace its status and append:
 
