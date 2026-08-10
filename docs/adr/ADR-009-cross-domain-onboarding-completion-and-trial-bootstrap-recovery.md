@@ -8,7 +8,7 @@ Superseded by: N/A
 
 ## Context
 
-The reconciled domain baseline now defines successful merchant onboarding as three accepted outcomes with separate business owners:
+The reconciled domain baseline defines successful merchant onboarding as three accepted outcomes with separate business owners:
 
 ```text
 Tenant Management      -> Active Tenant
@@ -16,40 +16,40 @@ Merchant Access        -> Active initial Owner Membership
 Subscription & Billing -> 30-day Trial Subscription + Trial EntitlementSet
 ```
 
-The earlier technical baseline could commit the first two outcomes atomically because Tenant Management and Merchant Access are hosted by the same `Tenancy` implementation module and DynamoDB table. It therefore described completed onboarding as one Tenancy transaction.
+The earlier technical baseline could commit the first two outcomes atomically because Tenant Management and Merchant Access share the `Tenancy` implementation module/table. It therefore described completed onboarding as one Tenancy transaction.
 
-That description is no longer sufficient. `SubscriptionBilling` is a separate implementation module and persistence owner under ADR-008/ADR-005. Using a cross-module DynamoDB transaction would weaken module ownership and let a technical convenience couple two bounded contexts' persistence. Conversely, committing Tenancy and then best-effort calling SubscriptionBilling can strand a Tenant/Owner without the required Trial while the API incorrectly reports onboarding complete.
+That is no longer sufficient. `SubscriptionBilling` is a separate module/persistence owner under ADR-008/ADR-005. A cross-module DynamoDB transaction would weaken bounded-context persistence ownership, while a Tenancy commit followed by a best-effort Trial call can strand a local Tenant/Owner and falsely report onboarding complete.
 
-The architecture needs a durable, idempotent completion/recovery process without moving Subscription truth into Tenancy or inventing rollback/delete business semantics.
+The architecture needs durable, idempotent completion/recovery without moving Subscription truth into Tenancy or inventing destructive rollback semantics.
 
 ## Decision
 
 ### 1. Preserve separate business ownership
 
-`Tenancy` remains owner of Tenant and Membership state. `SubscriptionBilling` remains owner of Trial Subscription and Trial EntitlementSet state.
+`Tenancy` owns Tenant/Membership state. `SubscriptionBilling` owns Trial Subscription/EntitlementSet state.
 
-No module reads/writes the other's table, and no cross-module DynamoDB transaction is used.
+No module reads/writes the other's table and no cross-module DynamoDB transaction is used.
 
-### 2. Tenancy transaction commits the durable registration intent and local outcome
+### 2. Tenancy commits its local outcome and durable operation
 
-For one logical onboarding request, Tenancy atomically writes its own state:
+For one logical registration, Tenancy atomically writes:
 
 ```text
-durable onboarding operation / idempotency claim
+onboarding operation / idempotency claim
 + Active Tenant
 + Active initial Owner Membership
 + current authority lookup
 + subject-membership discovery record
 + active-owner guard
 + required source-owned Audit intent when applicable
-+ Trial-bootstrap recovery work-outbox record
++ Trial-bootstrap WORKOUTBOX record
 ```
 
-All records are Tenancy-owned technical/business records. The recovery work item contains only the stable contract data required to invoke SubscriptionBilling; it is not a copied Subscription aggregate.
+All are Tenancy-owned business/technical records. The work item contains only stable contract data required to invoke SubscriptionBilling; it is not copied Subscription state.
 
-### 3. Start Trial through an explicit SubscriptionBilling application contract
+### 3. Start Trial through a SubscriptionBilling application contract
 
-The application coordinator invokes an idempotent producer-owned command conceptually equivalent to:
+Conceptual producer-owned command:
 
 ```text
 StartTrialSubscription(
@@ -60,161 +60,138 @@ StartTrialSubscription(
     -> TrialAccepted | AlreadyApplied | Failure
 ```
 
-SubscriptionBilling commits exactly one Trial Subscription and corresponding Trial EntitlementSet for the same logical onboarding source. Equivalent replay returns the accepted result; incompatible source reuse conflicts.
+SubscriptionBilling atomically creates exactly one Trial Subscription + Trial EntitlementSet for the same logical onboarding source. Equivalent replay returns the accepted result; incompatible source reuse conflicts.
 
-### 4. Use synchronous completion as the fast path, durable work as recovery
+### 4. Synchronous fast path, durable recovery path
 
-Immediately after the Tenancy transaction, the coordinator calls `StartTrialSubscription` synchronously because the user cannot truthfully receive completed onboarding until the Trial exists.
+Immediately after the Tenancy transaction, the coordinator calls `StartTrialSubscription` synchronously because the caller cannot truthfully receive completed onboarding until Trial acceptance exists.
 
-If Trial acceptance is proven, the coordinator conditionally marks the Tenancy onboarding operation `Completed` and returns the completed onboarding result.
+If Trial acceptance is proven, the coordinator conditionally marks the Tenancy onboarding operation `Completed` and returns the completed result.
 
 If the synchronous call is unavailable/interrupted or completion cannot be proven:
 
-- the API does not claim completed onboarding;
-- the already-written work-outbox is relayed idempotently to a single-purpose SQS recovery queue;
-- a worker retries the same SubscriptionBilling command using the same logical source identity;
-- after Trial acceptance, the worker invokes the Tenancy operation-completion application contract;
-- the operation remains queryable and may enter a technical `NeedsAttention` state if bounded automatic recovery cannot proceed.
+- API does not claim completed onboarding;
+- the already-written work-outbox is relayed idempotently through DynamoDB Streams to a single-purpose SQS recovery queue;
+- the worker retries the same SubscriptionBilling command with the same logical source identity;
+- after Trial acceptance the worker invokes the Tenancy operation-completion application contract;
+- bounded automatic recovery may stop in a technical `NeedsAttention` operation state without manufacturing a Tenant/Subscription business transition.
 
-Queue/retry/NeedsAttention are technical process states only. They do not become Tenant, Membership, or Subscription business states.
+Queue age, retry count, DLQ, and `NeedsAttention` are technical states only.
 
 ### 5. No destructive compensation
 
-A committed Active Tenant/Owner is not deleted merely because Trial creation was delayed or a caller lost the response. The domain baseline does not authorize destructive onboarding rollback.
+A committed Active Tenant/Owner is not deleted merely because Trial creation is delayed or a caller loses the response. The domain baseline does not authorize destructive onboarding rollback.
 
-Until a Trial EntitlementSet exists, subscription-governed ordinary mutations fail closed because no current entitlement authority can be established. This is not Tenant suspension and not Membership disablement.
+Until Trial entitlement authority exists, subscription-governed ordinary mutations fail closed. This is not Tenant suspension and not Membership disablement.
 
-### 6. HTTP/idempotency behavior
+### 6. HTTP and idempotency behavior
 
-- Completed onboarding may return the normal synchronous creation result only when Active Tenant, Active initial Owner, and Trial acceptance are all proven.
-- When the local Tenancy outcome committed but Trial completion is still pending/recovering, return `202 Accepted` with a durable operation identity/status resource under ADR-007 conventions.
-- Equivalent client retry uses the same logical onboarding identity and returns the same operation/result.
-- Incompatible reuse of the same onboarding idempotency identity returns conflict and creates no second Tenant/Trial.
-- A lost response never authorizes a second logical registration.
+- return normal synchronous creation success only after Active Tenant + Active initial Owner + Trial acceptance are all proven;
+- when Tenancy committed but Trial completion is still recovering, return `202 Accepted` with durable operation identity/status under ADR-007;
+- equivalent client retry returns the same logical operation/result;
+- incompatible reuse of onboarding idempotency identity returns conflict and creates no second Tenant/Trial;
+- lost response never authorizes a second logical registration.
 
 ### 7. Transactional work-outbox to one worker
 
-ADR-006 already distinguishes a direct SQS work item from an EventBridge business fact. This ADR adds the required crash-safety rule for onboarding recovery:
+ADR-006 distinguishes one-worker work from business-fact fan-out. Onboarding recovery uses:
 
-- the work-outbox record is written in the same Tenancy transaction as the local registration outcome;
-- a filtered DynamoDB Stream relay sends the stable work item to the named SQS queue;
-- relay/delivery can duplicate and therefore the worker command remains idempotent;
-- EventBridge is not required because this is one targeted recovery command, not business-fact fan-out;
-- the outbox remains queryable for repair after stream retention expires.
+```text
+Tenancy transaction
+  local state + WORKOUTBOX
+      ↓ DynamoDB Stream
+idempotent relay
+      ↓
+SQS recovery queue
+      ↓
+worker -> SubscriptionBilling.StartTrialSubscription
+```
+
+Rules:
+
+- work item is a command/request, not a business fact;
+- duplicate relay/queue delivery is expected;
+- EventBridge is unnecessary because there is one known target and no fan-out;
+- outbox remains queryable for repair after stream retention expires.
 
 ## Alternatives considered
 
-### Option A — Put Trial Subscription state in Tenancy
+### Option A — Put Trial state in Tenancy
 
-Benefits:
-- one transaction and one table.
+Rejected because it creates duplicate commercial authority and violates SubscriptionBilling ownership.
 
-Costs/risks:
-- violates SubscriptionBilling ownership;
-- creates duplicate commercial authority;
-- couples Merchant Access to commercial lifecycle/provider rules.
+### Option B — Cross-module DynamoDB transaction
 
-Rejected.
+Rejected because it couples bounded-context persistence/IAM/migration and contradicts ADR-005's no-cross-domain-ACID rule.
 
-### Option B — Cross-module DynamoDB transaction across Tenancy and SubscriptionBilling tables
+### Option C — Tenancy commit followed by best-effort Trial call
 
-Benefits:
-- one ACID commit for all onboarding outcomes.
+Rejected because it creates an unrecoverable dual-write gap and ambiguous completion.
 
-Costs/risks:
-- persistence coupling across bounded contexts;
-- broad IAM and migration coupling;
-- contradicts ADR-005's explicit no-cross-domain-ACID strategy;
-- makes future module extraction harder.
+### Option D — Tenancy local transaction + synchronous Trial fast path + transactional SQS recovery
 
-Rejected.
-
-### Option C — Tenancy commit followed by best-effort synchronous Trial call
-
-Benefits:
-- minimal infrastructure.
-
-Costs/risks:
-- dual-write gap can permanently strand incomplete onboarding;
-- response loss/timeout creates ambiguous completion;
-- no durable repair source.
-
-Rejected.
-
-### Option D — Tenancy transaction + idempotent synchronous Trial fast path + durable SQS recovery
-
-Benefits:
-- preserves business/persistence ownership;
-- user gets synchronous completion in the common case;
-- interruption is recoverable without destructive rollback;
-- uses existing serverless capabilities and pay-per-use resources;
-- explicit durable operation gives honest `202` behavior.
-
-Costs/risks:
-- onboarding can temporarily be in a technical pending state;
-- adds an outbox relay, queue, worker, operation status, alarms, and recovery procedure.
-
-Chosen.
+Chosen because it preserves ownership, provides common-case synchronous completion, survives interruption, and uses existing pay-per-use services.
 
 ### Option E — Step Functions for onboarding
 
-Benefits:
-- visible durable orchestration and retries.
-
-Costs/risks:
-- the process has no approved external wait/branch complexity beyond one recoverable module call;
-- adds state-machine/runtime ceremony where a durable operation + one work queue is sufficient;
-- transition cost/operational surface is unnecessary for the current process.
-
-Rejected for the initial implementation. A later material expansion may revisit it.
+Rejected initially because one recoverable cross-module call does not justify a state machine. Durable operation + one targeted queue is sufficient. A later materially more complex onboarding process may revisit this.
 
 ## Consequences
 
 ### Positive
 
-- Completed onboarding cannot silently omit the required Trial.
-- No domain owns another domain's business state.
-- No cross-module persistence transaction is introduced.
-- Caller timeout and worker retry are duplicate-safe.
-- Recovery remains possible after the synchronous path or stream delivery fails.
-- Subscription end/suspension/membership states remain independent after onboarding.
+- completed onboarding cannot silently omit the required Trial;
+- no domain owns another domain's business state;
+- no cross-module persistence transaction;
+- caller timeout/worker retry duplicate-safe;
+- recovery remains possible after synchronous/stream/queue interruption;
+- Subscription/Tenant/Membership lifecycles remain independent after onboarding.
 
 ### Negative / trade-offs
 
-- A merchant may briefly see an onboarding operation in `PendingTrial`/recovery rather than immediate completion.
-- The first onboarding implementation introduces one small SQS queue/DLQ/worker and an outbox relay path.
-- A Tenancy commit can exist while the Trial is temporarily absent; ordinary entitlement-governed mutations therefore fail closed until recovery completes.
-- Operations/support needs a pending/NeedsAttention view and redrive/reconciliation procedure.
+- onboarding may briefly be a durable pending operation;
+- implementation adds outbox relay, SQS/DLQ, worker, operation status, alarms, and recovery procedure;
+- Tenancy may exist while Trial is temporarily absent, so governed mutations fail closed during recovery;
+- operations/support needs visibility for old Pending/NeedsAttention operations.
 
 ## Security and tenant impact
 
-- `TrustedOnboardingContext` is built from authenticated verified identity and contains no caller-selected Tenant authority.
-- Server assigns Tenant/Membership/Subscription identities; client TenantId never scopes registration.
-- The recovery work item carries the minimum stable Tenant/onboarding references and no token, invitation secret, provider secret, or raw personal data.
-- Worker IAM receives only the named queue and the application/runtime resources required for its coordinator; it does not obtain permission to bypass module repository boundaries.
-- Tenant-visible status remains non-disclosing about any other Tenant.
+- `TrustedOnboardingContext` is built from authenticated verified identity and contains no caller-selected Tenant authority;
+- server assigns Tenant/Membership/Subscription identities;
+- work item carries minimum Tenant/onboarding references and no token/invitation secret/provider secret/raw personal payload;
+- worker IAM is limited to named queue/runtime capabilities and does not permit module-boundary bypass;
+- operation status is tenant/non-tenant scoped by trusted accepted identities and remains non-disclosing.
 
-## Reliability and idempotency impact
+## Reliability and operability impact
 
-- Tenancy registration, Trial start, work relay, worker consumption, and operation completion each have explicit stable logical identities.
-- Duplicate stream/SQS delivery and duplicate Trial invocation are safe.
-- Queue age/DLQ/retry count never means Trial failed as a business fact.
-- Outbox records remain the durable recovery source after DynamoDB Stream retention.
-- A reconciliation operation can find Tenancy onboarding operations lacking completed Trial evidence and safely retry the SubscriptionBilling command.
+- Tenancy registration, Trial start, relay, worker consumption, and operation completion each use stable logical identities;
+- duplicate Stream/SQS delivery and duplicate Trial invocation are safe;
+- queue age/DLQ/retry count never means Trial business failure;
+- outbox remains durable recovery source after Stream retention;
+- reconciliation can find incomplete onboarding operations and retry the same SubscriptionBilling command without foreign-table access;
+- alarms cover oldest pending operation/work item, relay errors, queue age/DLQ, worker failures, and reconciliation gaps.
 
-## AWS and cost impact
+## Cost impact
 
-This ADR selects only already-approved serverless capabilities when onboarding becomes Ready:
+This ADR itself deploys nothing and changes runtime cost by zero.
 
-- Tenancy DynamoDB table/Stream;
+When onboarding becomes Ready, conditional resources are limited to:
+
+- Tenancy DynamoDB Stream;
 - relay Lambda;
-- one small standard SQS queue + DLQ;
+- one small Standard SQS queue + DLQ;
 - worker Lambda;
 - CloudWatch alarms/logs.
 
-No EventBridge bus is required solely for this one targeted recovery command. No Step Functions, NAT Gateway, ALB, EC2, RDS/Aurora, Redis, or always-on compute is introduced.
+No EventBridge bus or Step Functions resource is required solely for onboarding. The implementing task must include queue/relay/worker request/log assumptions in its cost note.
 
-The ADR itself deploys nothing and changes runtime cost by zero. The implementing task must add queue/relay/worker request assumptions to the cost note; at the learning profile they should remain tiny and pay-per-use.
+## Reversibility / migration
+
+- A later orchestration mechanism may replace the work-queue coordinator if it preserves stable onboarding/Trial source identities and honest pending/completed semantics.
+- Moving SubscriptionBilling to a separate service changes transport/deployment but not ownership or idempotency contracts.
+- Changing outbox dispatch from Stream relay requires a cutover that preserves pending work records and logical work IDs.
+- Existing completed operations need no migration if the coordinator implementation changes; pending operations require explicit resume/replay handling.
+- No migration may collapse Subscription business state into Tenancy merely to simplify the process.
 
 ## Validation
 
@@ -222,21 +199,21 @@ Dependent implementation must prove:
 
 - Tenant + initial Owner local outcome is atomic inside Tenancy;
 - SubscriptionBilling state is not in the Tenancy transaction/table;
-- a failure after Tenancy commit but before Trial response returns an honest durable pending operation, not completed success;
-- queue replay and API retry create one logical Trial;
-- incompatible onboarding-idempotency reuse cannot create another Tenant/Trial;
+- failure after Tenancy commit but before Trial response returns durable pending status, not completed success;
+- queue/API replay creates one logical Trial;
+- incompatible idempotency reuse cannot create another Tenant/Trial;
 - outbox/relay failure is recoverable from durable pending records;
-- Tenant A cannot resolve/update Tenant B onboarding operation by known IDs;
+- Tenant A cannot resolve/update Tenant B operation by known IDs;
 - absent Trial does not fall back to client/JWT entitlement claims;
-- CDK contains no EventBridge/Step Functions resource solely for this onboarding path unless a later ADR changes the decision.
+- CDK contains no EventBridge/Step Functions resource solely for onboarding unless a later ADR changes the decision.
 
 ## References
 
-- domain reconciliation: `docs/domains/product-decision-reconciliation.md`
-- Tenant/Merchant Access baseline: `docs/domains/tenant-identity.md`
-- Subscription/Billing baseline: `docs/domains/subscription-billing.md`
-- technical reconciliation: `docs/architecture/product-decision-technical-reconciliation.md`
-- ADR-005: DynamoDB module ownership and access patterns
-- ADR-006: reliable cross-domain integration
-- ADR-007: HTTP/version/idempotency conventions
-- ADR-008: SubscriptionBilling module/entitlement/provider boundary
+- `docs/domains/product-decision-reconciliation.md`
+- `docs/domains/tenant-identity.md`
+- `docs/domains/subscription-billing.md`
+- `docs/architecture/product-decision-technical-reconciliation.md`
+- ADR-005 — DynamoDB module ownership/access patterns
+- ADR-006 — reliable integration/work delivery
+- ADR-007 — HTTP/version/idempotency conventions
+- ADR-008 — SubscriptionBilling boundary
