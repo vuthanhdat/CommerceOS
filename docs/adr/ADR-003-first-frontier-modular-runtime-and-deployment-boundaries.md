@@ -53,6 +53,24 @@ There is **no fixed AWS Region/account target** under ADR-012. Region/account-id
 
 Split a function, stack, or deployable service only when measured runtime, security isolation, reliability/blast-radius, team ownership, or deployment-cadence pressure justifies it. A bounded context alone is not sufficient evidence.
 
+## Alternatives considered
+
+### One deployable/service per bounded context from the start
+
+Rejected because it would turn logical domain separation into premature distributed deployment, increasing coordination, failure modes, and operational complexity before there is measured pressure requiring extraction.
+
+### One undifferentiated Platform module
+
+Rejected because it would erase business ownership and make persistence/contracts difficult to govern even if deployment remained simple.
+
+### One shared runtime with explicit module boundaries
+
+Selected because it keeps deployment/runtime complexity low while preserving module ownership, contract seams, persistence isolation, and later extraction options.
+
+### Real AWS runtime as the initial verification target
+
+Superseded by ADR-012. Real AWS would add account, IAM, cost, and control-plane dependencies that are not required for the current learning objective. LocalStack is the runtime target while AWS-style services remain capability mappings.
+
 ## Consequences
 
 ### Positive
@@ -84,6 +102,12 @@ Split a function, stack, or deployable service only when measured runtime, secur
 - module-local commands use owned transactions/idempotency;
 - logs/metrics should identify module/operation where supported by the selected local runtime;
 - LocalStack runtime state is operational/testing state only.
+
+## Cost impact
+
+The shared-runtime modular monolith minimizes local infrastructure/process overhead compared with one service/runtime per bounded context. Under ADR-012 there is no AWS billing gate or cloud cost target.
+
+Relevant costs are developer-machine CPU/memory/disk, CI runtime, and any LocalStack edition/licensing requirements. Later extraction may increase these operational costs and therefore requires measured justification rather than architectural fashion.
 
 ## Reversibility / migration
 

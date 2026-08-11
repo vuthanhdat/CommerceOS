@@ -16,6 +16,12 @@ Infrastructure verification: Required — LocalStack only
 
 Establish the first reproducible CommerceOS infrastructure environment using LocalStack. Prove that the existing FoundationStack and repository tooling can start, become ready, bootstrap/deploy, inspect, reset/destroy as defined, and redeploy without hidden manual resources or any real-AWS account dependency.
 
+## Business context
+
+CommerceOS is a learning-first commerce platform. This task introduces no business capability and changes no product/domain semantics. Its purpose is to provide the deterministic local infrastructure foundation required before business modules begin exercising AWS-style persistence, messaging, identity, workflow, and delivery capabilities through LocalStack.
+
+The outcome must therefore improve development/verification infrastructure without becoming business authority or forcing Domain/Application code to know that LocalStack is the runtime target.
+
 ## Planning readiness
 
 - Owning area: Platform Engineering / local infrastructure harness.
@@ -79,16 +85,43 @@ Repository harness/IaC tests, `cdk synth`, LocalStack readiness/deploy/smoke evi
 
 Any unsupported, partially supported, edition-dependent, or behaviorally different LocalStack capability encountered is recorded as a limitation. No real AWS fallback is used to make the task pass.
 
-## Architecture/security/resource constraints
+## Architecture impact
 
-- ADR-012 is authoritative.
-- AWS CDK remains the IaC source of truth under ADR-001 as amended.
-- Use only synthetic LocalStack credentials/configuration.
-- No business Tenant data is introduced.
-- No LocalStack-specific types/configuration may leak into Domain/Application code.
-- Infrastructure state is operational/testing state, never business authority.
-- Do not add speculative infrastructure services beyond the FoundationStack outcome required by this task.
-- Local machine CPU/memory/disk growth should remain bounded and documented when material; AWS monetary cost is not a planning gate.
+- ADR-012 remains authoritative for the LocalStack-only runtime policy.
+- ADR-001 remains authoritative for AWS CDK as IaC source of truth, as amended by ADR-012.
+- The task may change infrastructure/runtime tooling, configuration, CDK bootstrap/deploy support, and harness checks.
+- It must not alter module boundaries, persistence ownership, tenant-context contracts, sync/async integration semantics, or domain/application dependency direction.
+- LocalStack-specific types, endpoints, credentials, and feature switches remain outside Domain/Application code.
+- Do not add speculative services beyond the FoundationStack outcome required here.
+
+## Security and tenant impact
+
+- No real AWS credentials, IAM roles, OIDC federation, or production secrets are introduced.
+- Only synthetic LocalStack credentials/configuration may be used.
+- No business Tenant data is introduced by this task.
+- Existing tenant isolation and authorization rules remain unchanged and cannot be weakened because infrastructure runs locally.
+- Task/worktree resource prefixes and ports must avoid accidental cross-task state sharing.
+
+## Reliability and idempotency impact
+
+- Start/readiness/deploy/reset/redeploy must be deterministic and safe to repeat.
+- Re-running bootstrap/deploy against a documented known state must not depend on hidden manual resources.
+- Reset/destroy behavior must make stale infrastructure state visible rather than allowing accidental reuse.
+- Infrastructure lifecycle idempotency is an operational property only; it does not create or change business idempotency semantics.
+- Unsupported or behaviorally different LocalStack features must fail visibly or be recorded as limitations rather than silently bypassed.
+
+## Observability impact
+
+- The lifecycle must expose enough diagnostics to distinguish LocalStack readiness, CDK synthesis/deployment, resource creation, and smoke-check failures.
+- Where the emulator supports relevant logs/metadata, verification should capture them as operational evidence.
+- Completion evidence must record commands, LocalStack version/edition assumptions, isolation result, limitations, and harness outcome.
+- LocalStack observability is development/verification evidence, never business truth.
+
+## Cost impact
+
+- No AWS monetary cost, Budget, Free Tier, credit, or Cost Explorer gate applies under ADR-012.
+- Local machine CPU, memory, disk, container/runtime overhead, CI minutes, and any LocalStack edition/licensing requirement are the relevant resource concerns.
+- Resource growth should remain bounded and material prerequisites/limits documented.
 
 ## Test plan
 

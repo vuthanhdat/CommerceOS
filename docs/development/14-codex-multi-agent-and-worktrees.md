@@ -16,9 +16,11 @@ The infrastructure invariant under ADR-012 is:
 
 ## 2. Model policy
 
-Planning roles use the stronger reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use the lower-cost execution profile defined there.
+CommerceOS preserves a **Luna-first implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors should start with the Luna Builder profile defined by the repository unless the task's accepted planning artifacts explicitly require stronger reasoning.
 
-Escalate based on reasoning difficulty/risk, not task size alone. Architecture, security/tenant isolation, accounting, payment ambiguity/idempotency, concurrency, and difficult distributed-system design belong in planning artifacts before Builder execution.
+Planning roles use the stronger Sol reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use Luna. Interactive Codex/TUI model settings do not override the repository role policy used by the Task Orchestrator.
+
+Escalate based on reasoning difficulty/risk, not task size alone. Architecture, security/tenant isolation, accounting, payment ambiguity/idempotency, concurrency, and difficult distributed-system design belong in planning artifacts before Builder execution rather than being silently delegated to a stronger coding model.
 
 ## 3. Agent roles
 
@@ -32,6 +34,7 @@ Escalate based on reasoning difficulty/risk, not task size alone. Architecture, 
 
 ### Builder
 
+- use the Luna-first implementation profile unless repository policy explicitly escalates it;
 - work from one Ready task;
 - modify only its task worktree;
 - add/update tests/docs;
@@ -46,9 +49,11 @@ Escalate based on reasoning difficulty/risk, not task size alone. Architecture, 
 
 ## 4. Concurrency policy
 
-Default maximum is two active Builder-style writable tasks, and only when contracts/resources are sufficiently independent.
+The repository default is **maximum 2 active Builder-style coding tasks in parallel**.
 
-Stable boundaries permit concurrency; available agent count does not.
+That limit is a ceiling, not a target. Two Builder tasks may execute concurrently only when their dependencies, contracts, worktrees, and exclusive/mutable resources are sufficiently independent. Otherwise execution is serialized.
+
+Stable boundaries permit concurrency; available agent count does not. Planning/review agents do not justify increasing the writable Builder limit.
 
 ## 5. Core worktree rule
 
@@ -97,7 +102,7 @@ Ready TASK
    ↓
 create task branch/worktree
    ↓
-Builder
+Luna-first Builder
    ↓
 local harness/tests
    ↓
@@ -190,7 +195,7 @@ Avoid: normal feature implementation directly on main, mixing task changes, unco
 
 ## 15. Prompt guidance
 
-Builder prompts should require the task's declared verification and should say **LocalStack**, not AWS cloud deployment, when infrastructure semantics are in scope.
+Builder prompts should preserve the Luna-first execution policy, require the task's declared verification, and say **LocalStack**, not AWS cloud deployment, when infrastructure semantics are in scope.
 
 Technical Architect prompts should describe capabilities first and map them to LocalStack-supported AWS-style services only after the capability/contract is defined.
 

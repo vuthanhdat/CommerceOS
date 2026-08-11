@@ -135,11 +135,39 @@ No real-AWS verification fallback is required or permitted by default.
 - ADR-003 through ADR-011 remain valid unless a specific clause requires real AWS hosting. Their module, tenant, persistence, reliable-integration, contract, onboarding, entitlement, orchestration, and refund semantics are unchanged.
 - Any later ADR that requires a real AWS account must explicitly supersede this ADR and requires a new human architecture decision.
 
-## Security impact
+## Alternatives considered
 
-LocalStack removes AWS-account credential and IAM-provisioning risk from the learning workflow but does not relax application authorization requirements.
+### Continue using a real AWS account for dev/staging/validation
 
-Synthetic SDK credentials are configuration only and must never be treated as production secrets. Tenant authorization, privileged support/admin contexts, non-disclosing cross-tenant behavior, and provider-secret hygiene remain mandatory.
+Rejected for the current project because account provisioning, IAM/OIDC, billing exposure, and cloud cleanup add operational/cost risk without being necessary for the learning objective.
+
+### Use only in-memory/local test doubles
+
+Rejected as the sole infrastructure strategy because the project intentionally learns serverless service integration, IaC, queues, events, workflows, object storage, and infrastructure lifecycle behavior that simple test doubles cannot exercise sufficiently.
+
+### Use LocalStack as the default runtime while retaining optional AWS fallback
+
+Rejected. An implicit AWS fallback would keep cloud credentials/cost/authorization as hidden readiness dependencies. Any future real-AWS target must be an explicit new architecture decision that supersedes this ADR.
+
+### Replace AWS-style services with unrelated local technologies
+
+Not selected as the default because doing so would reduce fidelity to the intended AWS-style serverless learning model. Such substitutions may be used only behind project-owned capability contracts when LocalStack cannot support a required scenario and the limitation is documented.
+
+## Security and tenant impact
+
+- Removing real AWS accounts eliminates the need for real deployment credentials, IAM role provisioning, and cloud-account authorization in the normal workflow.
+- Synthetic LocalStack credentials are configuration only and must never be treated as real secrets or business authority.
+- Existing tenant isolation, TrustedTenant contexts, privileged support/admin rules, and non-disclosing cross-tenant behavior remain unchanged.
+- LocalStack endpoints, credentials, account placeholders, and feature switches cannot leak into Domain/Application contracts.
+- Emulator convenience must never weaken authentication/authorization semantics; where Cognito behavior is insufficient, a test identity adapter must preserve the same project-owned trust contract.
+
+## Reliability and operability impact
+
+- The repository must provide deterministic start/readiness/bootstrap/deploy/smoke/reset/redeploy behavior for infrastructure-sensitive work.
+- LocalStack state is disposable operational/testing state and must not become hidden business authority.
+- Parallel worktrees/tasks must isolate mutable resource names, ports, and state or declare explicit serialization constraints.
+- Unsupported, partial, edition-dependent, or behaviorally different emulator behavior must be visible in task evidence and limitation documentation.
+- LocalStack verification proves the project-owned capability contract only to the extent actually exercised; it does not prove AWS control-plane quotas, performance, IAM edge cases, or managed-service operations.
 
 ## Cost impact
 
@@ -163,6 +191,16 @@ Trade-offs:
 - some services/features may be unavailable or edition-dependent;
 - performance, quotas, IAM edge cases, managed-service operational behavior, and true AWS control-plane behavior are not validated;
 - documentation must clearly distinguish architecture capability from emulator evidence.
+
+## Reversibility / migration
+
+This decision is reversible only through a new explicit human architecture decision and ADR that supersedes ADR-012.
+
+Moving to real AWS later would require a deliberate migration plan covering account/environment topology, authentication and deployment credentials, IAM/OIDC, configuration/endpoint removal, service compatibility gaps, cost controls, cloud verification, state/data migration where applicable, and updated CI/CD semantics.
+
+Moving from LocalStack to another emulator/local runtime would likewise require validating each capability mapping, updating infrastructure adapters/configuration, preserving Domain/Application independence, and documenting compatibility differences.
+
+Because application/domain code depends on project-owned capabilities rather than LocalStack-specific APIs, the current boundary is intended to keep such migration technically possible.
 
 ## Validation
 
