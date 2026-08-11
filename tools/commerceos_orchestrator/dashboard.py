@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,6 +10,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .backlog import BacklogReader, BacklogValidationError
+from .dashboard_ui import DASHBOARD_HTML
+from .live_feed import LiveAgentFeed
 from .models import TaskExecutionState
 from .scheduler import Scheduler
 from .service import TaskOrchestrator
@@ -165,6 +168,7 @@ class LocalDashboardServer:
         self.root = root.resolve()
         self.state = state_store
         self.read_model = DashboardReadModel(self.root, self.state)
+        self.live_feed = LiveAgentFeed(self.state.path.parent / "logs")
         self.runtime = runtime
         self.httpd = ThreadingHTTPServer((host, port), self._handler())
         self.host = host
@@ -200,13 +204,21 @@ class LocalDashboardServer:
                 parsed = urlparse(self.path)
                 try:
                     if parsed.path == "/":
-                        self._send(_HTML.encode(), "text/html; charset=utf-8")
+                        self._send(DASHBOARD_HTML.encode(), "text/html; charset=utf-8")
                         return
                     if parsed.path == "/api/status":
                         self._json(server.read_model.status())
                         return
-                    if parsed.path.startswith("/api/tasks/"):
-                        task_id = unquote(parsed.path.removeprefix("/api/tasks/"))
+                    prefix = "/api/tasks/"
+                    if parsed.path.startswith(prefix) and parsed.path.endswith("/stream"):
+                        task_id = unquote(parsed.path[len(prefix) : -len("/stream")].rstrip("/"))
+                        if server.read_model.task_detail(task_id) is None:
+                            self._json({"error": "task not found"}, HTTPStatus.NOT_FOUND)
+                        else:
+                            self._stream(task_id)
+                        return
+                    if parsed.path.startswith(prefix):
+                        task_id = unquote(parsed.path.removeprefix(prefix))
                         detail = server.read_model.task_detail(task_id)
                         if detail is None:
                             self._json({"error": "task not found"}, HTTPStatus.NOT_FOUND)
@@ -216,6 +228,8 @@ class LocalDashboardServer:
                     self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
                 except BacklogValidationError as exc:
                     self._json({"error": "BACKLOG_INVALID", "detail": str(exc)}, HTTPStatus.CONFLICT)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
                 except Exception as exc:
                     self._json({"error": "INTERNAL", "detail": repr(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -238,6 +252,42 @@ class LocalDashboardServer:
                 except Exception as exc:
                     self._json({"error": "CONTROL_FAILED", "detail": repr(exc)}, HTTPStatus.CONFLICT)
 
+            def _stream(self, task_id: str) -> None:
+                path = server.live_feed.path_for(task_id)
+                try:
+                    offset = max(0, int(self.headers.get("Last-Event-ID", "0") or "0"))
+                except ValueError:
+                    offset = 0
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                deadline = time.monotonic() + 15.0
+                next_keepalive = time.monotonic()
+                while time.monotonic() < deadline:
+                    if path.is_file():
+                        size = path.stat().st_size
+                        if offset > size:
+                            offset = 0
+                        with path.open("rb") as handle:
+                            handle.seek(offset)
+                            while True:
+                                raw = handle.readline()
+                                if not raw:
+                                    break
+                                offset = handle.tell()
+                                data = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                                if data:
+                                    self.wfile.write(f"id: {offset}\ndata: {data}\n\n".encode())
+                                    self.wfile.flush()
+                    now = time.monotonic()
+                    if now >= next_keepalive:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                        next_keepalive = now + 2.0
+                    time.sleep(0.25)
+
             def _json(self, value: object, status: HTTPStatus = HTTPStatus.OK) -> None:
                 self._send(
                     json.dumps(value, ensure_ascii=False).encode(),
@@ -259,16 +309,3 @@ class LocalDashboardServer:
                 self.wfile.write(payload)
 
         return Handler
-
-
-_HTML = r'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CommerceOS Orchestrator</title>
-<style>body{font:14px system-ui;margin:0;background:#11151b;color:#e8ebf0}header,main{padding:16px 22px}header{display:flex;justify-content:space-between;background:#181d25}.cards,.lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.card,.panel{background:#181d25;border:1px solid #303746;border-radius:10px;padding:12px;margin-bottom:12px}.big{font-size:24px;font-weight:800}.task{background:#232a35;padding:8px;margin:7px 0;border-radius:7px;cursor:pointer}.small{font-size:12px;color:#a8b0bd}button{padding:9px 14px;border:0;border-radius:7px;font-weight:700}.stop{background:#d84d4d;color:#fff}pre{white-space:pre-wrap;word-break:break-word}#dag{display:flex;flex-wrap:wrap;gap:6px}.node{background:#252d39;padding:5px 8px;border-radius:12px}</style></head><body>
-<header><div><b>CommerceOS Orchestrator</b><div id="state" class="small">Loading…</div></div><div><button id="resume">Resume</button> <button id="stop" class="stop">Stop gracefully</button></div></header>
-<main><div class="cards"><div class="card">Progress<div id="progress" class="big">—</div></div><div class="card">Ready<div id="ready" class="big">—</div></div><div class="card">Builders<div id="builders" class="big">—</div></div><div class="card">Reviewers<div id="reviewers" class="big">—</div></div><div class="card">Merge<div id="merge" class="big">—</div></div><div class="card">Blocked<div id="blocked" class="big">—</div></div></div>
-<div class="panel"><h3>Workflow</h3><div class="lanes"><div>Ready<div id="col-ready"></div></div><div>Active<div id="col-active"></div></div><div>Review<div id="col-review"></div></div><div>Merge<div id="col-merge"></div></div><div>Blocked<div id="col-blocked"></div></div></div></div>
-<div class="panel"><h3>DAG / progress</h3><div id="dag"></div></div><div class="panel"><h3>Task detail</h3><pre id="detail">Select a task.</pre></div><div class="panel"><h3>Recent activity</h3><pre id="events"></pre></div></main>
-<script>
-const $=id=>document.getElementById(id);const lane=t=>{const s=t.execution_state;if(['QUEUED','BUILDING','VERIFYING','FIX_REQUIRED'].includes(s))return'active';if(s==='REVIEWING')return'review';if(['MERGE_QUEUED','INTEGRATING'].includes(s))return'merge';if(['BLOCKED','HUMAN_REQUIRED'].includes(s))return'blocked';if(t.maturity==='Ready'&&t.lifecycle_state==='Backlog')return'ready';return'other'};
-function text(tag,value,cls){const e=document.createElement(tag);e.textContent=String(value??'');if(cls)e.className=cls;return e}function card(t){const e=text('div','',`task ${lane(t)}`);e.tabIndex=0;e.append(text('b',t.id),text('div',t.title),text('div',`${t.execution_state||t.maturity} · ${t.domain}`,'small'));const open=()=>detail(t.id);e.addEventListener('click',open);e.addEventListener('keydown',x=>{if(x.key==='Enter'){x.preventDefault();open()}});return e}
-function renderColumn(name,tasks){const nodes=tasks.filter(t=>lane(t)===name).map(card);$("col-"+name).replaceChildren(...(nodes.length?nodes:[text('div','None','small')]))}async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(JSON.stringify(d));$('state').textContent=`State: ${d.orchestrator_state}`;$('progress').textContent=`${d.progress.completed}/${d.progress.total} (${d.progress.percent}%)`;$('ready').textContent=d.ready_frontier.length;$('builders').textContent=d.active_builders;$('reviewers').textContent=d.active_reviewers;$('merge').textContent=d.merge_queue_length;$('blocked').textContent=d.blocker_count;['ready','active','review','merge','blocked'].forEach(x=>renderColumn(x,d.tasks));$('dag').replaceChildren(...d.tasks.map(t=>{const n=text('span',t.id,'node');n.title=`deps: ${t.depends_on.join(', ')}`;return n}));$('events').textContent=d.events.map(e=>`${e.created_at} ${e.task_id||'-'} ${e.kind} ${e.detail}`).join('\n')}catch(e){$('state').textContent='Dashboard error: '+e}}async function detail(id){const r=await fetch('/api/tasks/'+encodeURIComponent(id));$('detail').textContent=JSON.stringify(await r.json(),null,2)}async function control(path){await fetch(path,{method:'POST'});await refresh()}$('stop').addEventListener('click',()=>control('/api/stop'));$('resume').addEventListener('click',()=>control('/api/resume'));refresh();setInterval(refresh,1500);
-</script></body></html>'''
