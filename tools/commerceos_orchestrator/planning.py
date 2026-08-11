@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -67,9 +68,9 @@ Read, in repository order:
 - the current task spec at {spec} when it exists
 - relevant current domain/architecture/ADR artifacts required to judge the Ready gate
 
-Work only on planning artifacts in this task worktree. Do not implement application code and do
-not execute real cloud operations. Inspect the current repository state rather than assuming the
-candidate is ready because of numeric order.
+Work only on planning artifacts under docs/ and tasks/ in this task worktree. Do not implement
+application/harness code and do not execute real cloud operations. Inspect the current repository
+state rather than assuming the candidate is ready because of numeric order.
 
 Your job is to make the next planning decision for {task.id}. If existing accepted domain and
 technical artifacts are already sufficient, refine the task all the way to a detailed Ready
@@ -113,9 +114,9 @@ docs/agents/domain-architect.md, current product/domain baselines, product decis
 candidate task/spec ({spec}) where present.
 
 Resolve only business/domain gaps that can be resolved from already accepted product intent and
-repository evidence. Update canonical domain artifacts in this worktree. Do not implement code,
-choose AWS/persistence architecture, mark the task Ready, clear human gates, or invent missing
-business semantics. Do not execute real cloud operations.
+repository evidence. Update only planning/domain artifacts under docs/ and tasks/ in this
+worktree. Do not implement code, choose AWS/persistence architecture, mark the task Ready, clear
+human gates, or invent missing business semantics. Do not execute real cloud operations.
 
 If safe domain reconciliation is complete, end exactly with:
 DOMAIN_RESULT: UPDATED
@@ -144,8 +145,9 @@ docs/agents/technical-architect.md, current domain baselines, architecture rules
 and the candidate task/spec ({spec}) where present.
 
 Resolve only technical architecture gaps supported by accepted domain/product semantics. Update
-architecture/contracts/ADRs in this worktree as required. Do not implement feature code, mark the
-task Ready, clear human gates, invent business semantics, or execute real cloud operations.
+only architecture/planning artifacts under docs/ and tasks/ in this worktree. Do not implement
+feature/harness code, mark the task Ready, clear human gates, invent business semantics, or
+execute real cloud operations.
 
 If technical reconciliation is complete, end exactly with:
 TECHNICAL_RESULT: UPDATED
@@ -228,6 +230,8 @@ class PlanningPersistenceResult:
 class PlanningCoordinator:
     """Serial planning factory for the nearest dependency-satisfied non-Ready task."""
 
+    ALLOWED_CHANGE_PREFIXES = ("docs/", "tasks/")
+
     def __init__(
         self,
         root: Path,
@@ -249,14 +253,24 @@ class PlanningCoordinator:
 
     def next_candidate(self, snapshot: BacklogSnapshot) -> CanonicalTask | None:
         locally_blocked = {run.task_id for run in self.state.blocked_task_runs()}
-        for task in sorted(snapshot.tasks.values(), key=lambda item: item.id):
-            if task.id in locally_blocked:
-                continue
-            if task.maturity not in {"Outline", "Refined"} or task.lifecycle_state != "Backlog":
-                continue
-            if all(BacklogReader.dependency_satisfied(snapshot, dep) for dep in task.depends_on):
-                return task
-        return None
+        candidates = [
+            task
+            for task in snapshot.tasks.values()
+            if task.id not in locally_blocked
+            and task.maturity in {"Outline", "Refined"}
+            and task.lifecycle_state == "Backlog"
+            and all(
+                BacklogReader.dependency_satisfied(snapshot, dependency)
+                for dependency in task.depends_on
+            )
+        ]
+        # Refined work is closer to an implementation contract than Outline work. Task id is
+        # only a deterministic tie-breaker within the same maturity, never evidence of readiness.
+        return min(
+            candidates,
+            key=lambda task: (0 if task.maturity == "Refined" else 1, task.id),
+            default=None,
+        )
 
     def preview(self, snapshot: BacklogSnapshot) -> PlanningDecision:
         task = self.next_candidate(snapshot)
@@ -468,6 +482,19 @@ class PlanningCoordinator:
         integration_prepared = False
         try:
             self.workspace.ensure_committed(task, workspace)
+            changed_files = self.workspace.changed_files(workspace)
+            unsafe = [
+                path
+                for path in changed_files
+                if not path.startswith(self.ALLOWED_CHANGE_PREFIXES)
+            ]
+            if unsafe:
+                return PlanningPersistenceResult(
+                    False,
+                    "PLANNING_SCOPE_VIOLATION",
+                    "planning agents modified non-planning paths: " + ", ".join(unsafe),
+                )
+
             diff = self.workspace.diff_text(workspace)
             if not diff.strip():
                 return PlanningPersistenceResult(False)
@@ -522,20 +549,44 @@ class PlanningCoordinator:
             )
 
     @staticmethod
-    def _combined(result: AgentResult) -> str:
+    def _agent_output(result: AgentResult) -> str:
+        """Return assistant-generated text without trusting echoed prompt/input JSON events."""
+        texts: list[str] = []
+        parsed_json = False
+        for line in result.stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            parsed_json = True
+            if not isinstance(event, dict) or event.get("type") != "item.completed":
+                continue
+            item = event.get("item")
+            if not isinstance(item, dict) or item.get("type") != "agent_message":
+                continue
+            text = item.get("text")
+            if isinstance(text, str):
+                texts.append(text)
+        if texts:
+            return "\n".join(texts)
+        if parsed_json:
+            # Fail closed when structured Codex output contains no final agent message rather
+            # than scanning arbitrary JSON that may include echoed input/prompt content.
+            return result.stderr
+        # Fake/test runners return plain text rather than Codex JSONL.
         return f"{result.stdout}\n{result.stderr}"
 
     @classmethod
     def _marker(cls, result: AgentResult, prefix: str) -> str | None:
-        combined = cls._combined(result)
+        output = cls._agent_output(result)
         for value in ("UPDATED", "DOMAIN_REQUIRED", "HUMAN_REQUIRED"):
-            if f"{prefix}: {value}" in combined:
+            if f"{prefix}: {value}" in output:
                 return value
         return None
 
     @classmethod
     def _planner_marker(cls, result: AgentResult) -> str | None:
-        combined = cls._combined(result)
+        output = cls._agent_output(result)
         for value in (
             "DOMAIN_AND_TECHNICAL_REFINEMENT_REQUIRED",
             "DOMAIN_REFINEMENT_REQUIRED",
@@ -543,7 +594,7 @@ class PlanningCoordinator:
             "HUMAN_REQUIRED",
             "READY",
         ):
-            if f"PLANNING_RESULT: {value}" in combined:
+            if f"PLANNING_RESULT: {value}" in output:
                 return value
         return None
 
