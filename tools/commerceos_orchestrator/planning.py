@@ -7,7 +7,14 @@ from typing import Protocol
 
 from .agents import CodexRunner, PLANNING_CODEX_PROFILE
 from .backlog import BacklogReader, BacklogValidationError
-from .models import AgentResult, BacklogSnapshot, CanonicalTask, OrchestratorState, TaskExecutionState
+from .models import (
+    AgentResult,
+    BacklogSnapshot,
+    CanonicalTask,
+    OrchestratorState,
+    TaskExecutionState,
+    Workspace,
+)
 from .state import RunStateStore
 from .verification import VerificationRunner
 from .workspace import GitIntegrationManager, GitWorkspaceManager, IntegrationError, WorkspaceError
@@ -21,11 +28,17 @@ class PlanningOutcome(StrEnum):
 
 
 class PlanningAgentRunner(Protocol):
-    def run_backlog_planner(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult: ...
+    def run_backlog_planner(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult: ...
 
-    def run_domain_architect(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult: ...
+    def run_domain_architect(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult: ...
 
-    def run_technical_architect(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult: ...
+    def run_technical_architect(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult: ...
 
 
 class CodexPlanningAgentRunner:
@@ -39,7 +52,9 @@ class CodexPlanningAgentRunner:
             cloud_authorized=False,
         )
 
-    def run_backlog_planner(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult:
+    def run_backlog_planner(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult:
         spec = task.spec_path or "(no detailed task spec exists yet)"
         prompt = f"""Act as the CommerceOS Backlog Planner for {task.id}.
 
@@ -71,7 +86,7 @@ PLANNING_RESULT: TECHNICAL_REFINEMENT_REQUIRED
 If both kinds of work are required, end exactly with:
 PLANNING_RESULT: DOMAIN_AND_TECHNICAL_REFINEMENT_REQUIRED
 
-If a human decision/authorization/input is the remaining blocker, preserve that gate, record the
+If a human decision/authorization/input is the remaining blocker, preserve that gate, record only
 planning evidence that is safe to persist, and end exactly with:
 PLANNING_RESULT: HUMAN_REQUIRED
 
@@ -87,7 +102,9 @@ PLANNING_RESULT: READY
             attempt=attempt,
         )
 
-    def run_domain_architect(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult:
+    def run_domain_architect(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult:
         spec = task.spec_path or "(no detailed task spec exists yet)"
         prompt = f"""Act as the CommerceOS Domain Architect for planning candidate {task.id}.
 
@@ -116,7 +133,9 @@ DOMAIN_RESULT: HUMAN_REQUIRED
             attempt=attempt,
         )
 
-    def run_technical_architect(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult:
+    def run_technical_architect(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult:
         spec = task.spec_path or "(no detailed task spec exists yet)"
         prompt = f"""Act as the CommerceOS Technical Architect for planning candidate {task.id}.
 
@@ -167,19 +186,25 @@ class FakePlanningAgentRunner:
     def _result(text: str) -> AgentResult:
         return AgentResult(True, 0, text, "", "")
 
-    def run_backlog_planner(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult:
+    def run_backlog_planner(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult:
         self.calls.append("backlog-planner")
         if self.planner_results:
             return self.planner_results.pop(0)
         return self._result("PLANNING_RESULT: HUMAN_REQUIRED")
 
-    def run_domain_architect(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult:
+    def run_domain_architect(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult:
         self.calls.append("domain-architect")
         if self.domain_results:
             return self.domain_results.pop(0)
         return self._result("DOMAIN_RESULT: UPDATED")
 
-    def run_technical_architect(self, task: CanonicalTask, worktree: Path, *, attempt: int) -> AgentResult:
+    def run_technical_architect(
+        self, task: CanonicalTask, worktree: Path, *, attempt: int
+    ) -> AgentResult:
         self.calls.append("technical-architect")
         if self.technical_results:
             return self.technical_results.pop(0)
@@ -191,6 +216,13 @@ class PlanningDecision:
     task_id: str | None
     maturity: str | None
     gates: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlanningPersistenceResult:
+    persisted: bool
+    error_code: str | None = None
+    error_detail: str = ""
 
 
 class PlanningCoordinator:
@@ -247,7 +279,9 @@ class PlanningCoordinator:
                 branch=workspace.branch,
                 worktree=str(workspace.path),
             )
-            self.state.add_event(task.id, "PLANNING_STARTED", f"candidate maturity={task.maturity}")
+            self.state.add_event(
+                task.id, "PLANNING_STARTED", f"candidate maturity={task.maturity}"
+            )
         except WorkspaceError as exc:
             self._block(task, "PLANNING_WORKTREE_ERROR", str(exc))
             return PlanningOutcome.FAILED
@@ -260,7 +294,9 @@ class PlanningCoordinator:
         for _ in range(self.max_rounds):
             role_attempt += 1
             self.state.update_task(task.id, TaskExecutionState.BUILDING, attempt_delta=1)
-            planner = self.runner.run_backlog_planner(task, workspace.path, attempt=role_attempt)
+            planner = self.runner.run_backlog_planner(
+                task, workspace.path, attempt=role_attempt
+            )
             if not planner.success:
                 blocker_code = (
                     "EXTERNAL_ENVIRONMENT"
@@ -271,26 +307,18 @@ class PlanningCoordinator:
                 break
 
             marker = self._planner_marker(planner)
-            self.state.add_event(task.id, "PLANNING_DECISION", marker or "MISSING_MARKER")
+            self.state.add_event(
+                task.id, "PLANNING_DECISION", marker or "MISSING_MARKER"
+            )
             if marker == "READY":
                 try:
-                    planned = BacklogReader(workspace.path).load().tasks.get(task.id)
-                    if planned is None or planned.maturity != "Ready":
-                        raise BacklogValidationError(
-                            f"{task.id}: Planner returned READY without canonical maturity Ready"
-                        )
-                    if planned.lifecycle_state != "Backlog" or planned.gates:
-                        raise BacklogValidationError(
-                            f"{task.id}: Planner returned READY while lifecycle/gates still block execution"
-                        )
-                    if not all(
-                        BacklogReader.dependency_satisfied(
-                            BacklogReader(workspace.path).load(), dependency
-                        )
-                        for dependency in planned.depends_on
+                    planned_snapshot = BacklogReader(workspace.path).load()
+                    planned = planned_snapshot.tasks.get(task.id)
+                    if planned is None or not BacklogReader.is_dispatchable(
+                        planned_snapshot, planned, active_resources=set()
                     ):
                         raise BacklogValidationError(
-                            f"{task.id}: Planner returned READY with unsatisfied dependencies"
+                            f"{task.id}: Planner returned READY but canonical Ready gate is not dispatchable"
                         )
                 except BacklogValidationError as exc:
                     blocker_code = "PLANNER_READY_GATE_INVALID"
@@ -304,7 +332,9 @@ class PlanningCoordinator:
             if marker == "HUMAN_REQUIRED":
                 terminal = PlanningOutcome.HUMAN_REQUIRED
                 blocker_code = "PLANNING_HUMAN_DECISION_REQUIRED"
-                blocker_detail = "Backlog Planner identified an unresolved human gate/decision/input"
+                blocker_detail = (
+                    "Backlog Planner identified an unresolved human gate/decision/input"
+                )
                 break
 
             if marker == "DOMAIN_REFINEMENT_REQUIRED":
@@ -333,31 +363,50 @@ class PlanningCoordinator:
                 continue
 
             blocker_code = "BACKLOG_PLANNER_PROTOCOL_ERROR"
-            blocker_detail = "Backlog Planner returned no recognized PLANNING_RESULT marker"
+            blocker_detail = (
+                "Backlog Planner returned no recognized PLANNING_RESULT marker"
+            )
             break
         else:
-            terminal = PlanningOutcome.HUMAN_REQUIRED
+            terminal = PlanningOutcome.FAILED
             blocker_code = "PLANNING_REFINEMENT_LIMIT"
-            blocker_detail = f"planning did not converge within {self.max_rounds} Planner rounds"
+            blocker_detail = (
+                f"planning did not converge within {self.max_rounds} Planner rounds"
+            )
 
-        persisted = self._persist_planning_artifacts(task, workspace.path, workspace.branch, terminal)
-        if not persisted:
-            if terminal == PlanningOutcome.READY:
+        # Protocol/agent/non-convergence failure is never auto-integrated. Preserve the
+        # worktree for human inspection instead of publishing potentially unsafe planning edits.
+        if terminal == PlanningOutcome.FAILED:
+            self._block(task, blocker_code, blocker_detail)
+            return PlanningOutcome.FAILED
+
+        persisted = self._persist_planning_artifacts(task, workspace)
+        if persisted.error_code:
+            self._block(task, persisted.error_code, persisted.error_detail)
+            return PlanningOutcome.FAILED
+
+        if terminal == PlanningOutcome.READY:
+            if not persisted.persisted:
                 self._block(
                     task,
                     "PLANNING_PRODUCED_NO_DIFF",
                     "Planner claimed READY without inspectable repository planning changes",
                 )
                 return PlanningOutcome.FAILED
-            self._safe_cleanup(task)
-
-        if terminal == PlanningOutcome.READY and persisted:
             self.state.update_task(task.id, TaskExecutionState.COMPLETED)
-            self.state.add_event(task.id, "PLANNING_READY", "planning artifacts merged; Builder dispatch may proceed")
+            self.state.add_event(
+                task.id,
+                "PLANNING_READY",
+                "planning artifacts merged; Builder dispatch may proceed",
+            )
             return PlanningOutcome.READY
 
+        # HUMAN_REQUIRED may have useful, structurally valid decision evidence. Persist it when
+        # there is a verified diff, otherwise clean the unchanged worktree and retain the blocker.
+        if not persisted.persisted:
+            self._safe_cleanup(task)
         self._block(task, blocker_code, blocker_detail)
-        return terminal
+        return PlanningOutcome.HUMAN_REQUIRED
 
     def _run_domain(
         self, task: CanonicalTask, worktree: Path, attempt: int
@@ -400,8 +449,7 @@ class PlanningCoordinator:
         if marker == "UPDATED":
             return None
         if marker == "DOMAIN_REQUIRED":
-            domain = self._run_domain(task, worktree, attempt)
-            return domain
+            return self._run_domain(task, worktree, attempt)
         if marker == "HUMAN_REQUIRED":
             return (
                 PlanningOutcome.HUMAN_REQUIRED,
@@ -415,57 +463,63 @@ class PlanningCoordinator:
         )
 
     def _persist_planning_artifacts(
-        self,
-        task: CanonicalTask,
-        worktree: Path,
-        branch: str,
-        terminal: PlanningOutcome,
-    ) -> bool:
+        self, task: CanonicalTask, workspace: Workspace
+    ) -> PlanningPersistenceResult:
+        integration_prepared = False
         try:
-            self.workspace.ensure_committed(task, self.workspace.workspace_for(task))
-            diff = self.workspace.diff_text(self.workspace.workspace_for(task))
+            self.workspace.ensure_committed(task, workspace)
+            diff = self.workspace.diff_text(workspace)
             if not diff.strip():
-                return False
+                return PlanningPersistenceResult(False)
 
-            verification = self.verification.run(task, worktree, phase="planning")
+            verification = self.verification.run(
+                task, workspace.path, phase="planning"
+            )
             if not verification.success:
-                self._block(
-                    task,
+                return PlanningPersistenceResult(
+                    False,
                     "PLANNING_VERIFICATION_FAILED",
                     f"planning repository verification failed; log={verification.log_path}",
                 )
-                return False
 
             self.integration.prepare_main()
-            if not self.integration.branch_is_on_remote_main(branch):
-                if not self.integration.merge_branch(task, branch):
+            integration_prepared = True
+            if not self.integration.branch_is_on_remote_main(workspace.branch):
+                if not self.integration.merge_branch(task, workspace.branch):
                     conflicts = self.integration.conflicted_files()
                     self.integration.abort_merge()
-                    self._block(
-                        task,
+                    return PlanningPersistenceResult(
+                        False,
                         "PLANNING_MERGE_CONFLICT_REQUIRES_HUMAN",
                         f"planning artifacts conflicted with latest main: {conflicts}",
                     )
-                    return False
-                post = self.verification.run(task, self.root, phase="planning-post-integration")
+                post = self.verification.run(
+                    task, self.root, phase="planning-post-integration"
+                )
                 if not post.success:
                     self.integration.rollback_unpushed_main()
-                    self._block(
-                        task,
+                    return PlanningPersistenceResult(
+                        False,
                         "PLANNING_POST_INTEGRATION_VERIFICATION_FAILED",
                         f"log={post.log_path}",
                     )
-                    return False
                 self.integration.push_main()
+
             self._safe_cleanup(task)
-            return True
+            return PlanningPersistenceResult(True)
         except (WorkspaceError, IntegrationError, BacklogValidationError) as exc:
             try:
-                self.integration.rollback_unpushed_main()
-            except Exception:
-                pass
-            self._block(task, "PLANNING_INTEGRATION_ERROR", str(exc))
-            return False
+                if integration_prepared:
+                    self.integration.rollback_unpushed_main()
+                else:
+                    self.integration.abort_merge()
+            except Exception as rollback_error:
+                self.state.add_event(
+                    task.id, "PLANNING_ROLLBACK_WARNING", repr(rollback_error)
+                )
+            return PlanningPersistenceResult(
+                False, "PLANNING_INTEGRATION_ERROR", str(exc)
+            )
 
     @staticmethod
     def _combined(result: AgentResult) -> str:
@@ -506,11 +560,13 @@ class PlanningCoordinator:
         try:
             self.workspace.cleanup(task)
         except Exception as exc:
-            self.state.add_event(task.id, "PLANNING_CLEANUP_WARNING", repr(exc))
+            self.state.add_event(
+                task.id, "PLANNING_CLEANUP_WARNING", repr(exc)
+            )
 
 
 class PlanningAwareTaskOrchestrator:
-    """Wrapper that runs normal Ready work first, then invokes the planning factory when idle."""
+    """Runs normal Ready work first, then invokes the planning factory when idle."""
 
     def __init__(self, delegate, planning: PlanningCoordinator):
         self.delegate = delegate
@@ -528,8 +584,16 @@ class PlanningAwareTaskOrchestrator:
                 "maturity": decision.maturity,
                 "gates": list(decision.gates),
                 "model": PLANNING_CODEX_PROFILE.model if decision.task_id else None,
-                "reasoning_effort": PLANNING_CODEX_PROFILE.reasoning_effort if decision.task_id else None,
-                "service_tier": PLANNING_CODEX_PROFILE.service_tier if decision.task_id else None,
+                "reasoning_effort": (
+                    PLANNING_CODEX_PROFILE.reasoning_effort
+                    if decision.task_id
+                    else None
+                ),
+                "service_tier": (
+                    PLANNING_CODEX_PROFILE.service_tier
+                    if decision.task_id
+                    else None
+                ),
             }
         return value
 
