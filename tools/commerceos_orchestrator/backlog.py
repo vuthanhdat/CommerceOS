@@ -86,7 +86,7 @@ class BacklogReader:
                     owner_role=str(values["owner_role"]),
                     model_class=str(values["model_class"]),
                     cloud_verification=str(values["cloud_verification"]),
-                    spec_path=str(values["spec_path"]),
+                    spec_path="" if values["spec_path"] is None else str(values["spec_path"]),
                     lifecycle_state=str(meta.get("lifecycle_state", defaults.get("lifecycle_state", "Backlog"))),
                     exclusive_resources=tuple(str(x) for x in resources),
                     merge_policy=str(meta.get("merge_policy", defaults.get("merge_policy", "verified_serial_main"))),
@@ -224,7 +224,7 @@ class BacklogWriter:
         )
         if not source.is_file():
             raise BacklogValidationError(f"{task.id}: task spec missing at {task.spec_path}")
-        completed_relative = str(Path("tasks/completed") / source.name)
+        completed_relative = str(PurePosixPath("tasks/completed") / source.name)
         destination = self.root / completed_relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         text = source.read_text(encoding="utf-8")

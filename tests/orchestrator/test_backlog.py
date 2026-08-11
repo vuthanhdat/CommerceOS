@@ -34,6 +34,20 @@ class BacklogReaderTests(unittest.TestCase):
             snap = BacklogReader(root).load()
             self.assertEqual([t.id for t in BacklogReader.ready_frontier(snap, set())], ["TASK-0100"])
 
+    def test_outline_without_spec_path_is_valid(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100", maturity="Outline")], ready=[])
+            shard = root / "tasks/backlog-v2/00.yaml"
+            text = shard.read_text(encoding="utf-8").replace(
+                '"tasks/backlog/TASK-0100-spec.md"]', '""]'
+            )
+            shard.write_text(text, encoding="utf-8")
+
+            snapshot = BacklogReader(root).load()
+
+            self.assertEqual(snapshot.tasks["TASK-0100"].spec_path, "")
+
     def test_missing_dependency_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
