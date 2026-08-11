@@ -1,4 +1,4 @@
-# TASK-0094 — Deploy the AWS dev foundation and cost guardrails
+# TASK-0094 — Establish the LocalStack foundation lifecycle
 
 Status: Backlog
 Specification maturity: Refined
@@ -6,73 +6,86 @@ Execution permission: NO
 Owner: Builder — Platform Engineering
 Recommended model: Default implementation model
 Created: 2026-08-10
+Reconciled: 2026-08-11
 Roadmap phase: Phase 0
 Depends on: completed TASK-0003, TASK-0093
-Cloud verification: Required
+Infrastructure verification: Required
 
 ## Goal
 
-Preserve the useful Phase 0 outcome from legacy TASK-0004: prove that the existing cost-safe dev foundation can be deployed, inspected, destroyed, and redeployed from repository-owned CDK/configuration without hidden Console-created application infrastructure.
+Replace the obsolete real-AWS dev-foundation task with a LocalStack-only foundation task. Prove that the existing FoundationStack and repository tooling can start, bootstrap/deploy, inspect, reset, destroy when required, and redeploy against LocalStack without hidden manual resources or AWS-account dependencies.
 
-This task remains Refined because real cloud execution and account-specific inputs are intentionally not inferred by the Backlog Planner.
+This task remains Refined only because TASK-0093 is not yet Completed and the implementation details of the local lifecycle commands still need Builder execution. There is no human cloud authorization, AWS account, region-selection, Budget, IAM, OIDC, or cloud-cost gate.
 
 ## In scope
 
-- validate/document the selected dev AWS account and region plus CDK bootstrap/temporary-auth prerequisites;
-- deploy the existing `FoundationStack` using cost-safe environment configuration;
-- configure/verify AWS Budget or equivalent documented credit-spend notification guardrails at the approved thresholds/recipients;
-- inspect stack resources/tags/log retention and verify prohibited standing-cost services are absent;
-- record `cdk synth` / reviewed diff / deploy / smoke / destroy / redeploy evidence;
-- verify cleanup and any intentionally retained account/bootstrap resources.
+- establish/document the required LocalStack runtime prerequisites and supported edition/version assumptions;
+- define configuration for endpoint, synthetic credentials, region, account placeholder, task-instance/resource prefix, ports, and reset policy;
+- deploy the existing `FoundationStack` to LocalStack through repository-owned CDK-compatible tooling;
+- inspect stack resources/tags/log configuration where supported;
+- prove start -> readiness -> deploy/bootstrap -> smoke -> reset/destroy -> redeploy;
+- ensure no required application resource exists only through manual LocalStack setup;
+- document unsupported, partially supported, edition-dependent, or behaviorally different LocalStack features encountered by the foundation;
+- add/update harness checks needed to make the lifecycle reproducible.
 
 ## Out of scope
 
-- GitHub OIDC, preview or main-to-dev workflows (`TASK-0095`);
-- Cognito, business API/Lambda, module DynamoDB tables, queues/events/workflows, crawler schedules, storefront delivery, or other business infrastructure;
-- production infrastructure;
-- changing accepted architecture merely to make deployment easier.
+- real AWS account provisioning or validation;
+- AWS IAM deployment roles or GitHub OIDC federation;
+- AWS Budgets, Free Tier/credit controls, or cloud cost evidence;
+- real-cloud preview/staging environments;
+- Cognito/business API/Lambda/module DynamoDB tables/queues/events/workflows/crawler/storefront resources not already part of the FoundationStack;
+- changing business/domain semantics.
 
 ## Remaining Ready gates
 
-This task may not move to Ready until all are true:
+This task may move to Ready when:
 
 1. `TASK-0093` is Completed;
-2. explicit human/cloud execution authorization is recorded for the selected dev account;
-3. dev account/region and Budget-notification destination/threshold inputs are concrete enough for a Builder to execute without guessing.
+2. current architecture documents/ADR-012 are the accepted source of truth;
+3. no additional material architecture decision is discovered during refinement.
+
+No cloud authorization or account-specific input is required.
 
 ## Acceptance criteria once Ready
 
 ### AC01 — Reproducible declared foundation
 
-A clean checkout can synthesize and deploy the selected dev FoundationStack, and every application resource created by the task maps back to CDK/repository configuration.
+A clean checkout can start the required local infrastructure, synthesize and deploy the selected FoundationStack to LocalStack, and every required application resource maps back to repository-owned IaC/bootstrap configuration.
 
-### AC02 — Cost guardrails are real
+### AC02 — Configuration boundary is explicit
 
-Standard tags, bounded log retention, Budget/credit monitoring, and the absence of prohibited fixed-cost services are verified in the selected account.
+Endpoint, synthetic credentials, region/account placeholders, ports, instance/resource prefixes, and reset policy are configuration concerns. Domain/Application projects contain no LocalStack-specific dependency or branching.
 
-### AC03 — Reversible deployment
+### AC03 — Reversible lifecycle
 
-The dev foundation can be destroyed and redeployed successfully; intentionally retained CDK bootstrap/account-level guardrail resources are explicitly documented.
+The foundation can be reset/destroyed as specified and redeployed successfully from a known state. Hidden manually-created resources are not required.
 
 ### AC04 — Verification evidence is complete
 
-Repository harness/local IaC tests, reviewed CDK diff, real cloud smoke evidence, and teardown/redeploy result are recorded without claiming a green cloud result from synthesis alone.
+Repository harness/IaC tests, `cdk synth`, LocalStack deploy/smoke evidence, reset/redeploy evidence, and known emulator limitations are recorded.
 
-## Architecture/security/cost constraints
+### AC05 — Compatibility claims are bounded
 
-- Use AWS CDK/CloudFormation as source of truth.
-- Use temporary/SSO credentials for local execution; no long-lived keys committed.
+Any unsupported or behaviorally different LocalStack capability is explicitly documented. The task does not claim exact AWS compatibility and does not use a real AWS fallback.
+
+## Architecture/security constraints
+
+- ADR-012 is authoritative.
+- AWS CDK remains infrastructure source of truth under ADR-001 as amended.
+- Use only synthetic LocalStack credentials/configuration.
 - No business Tenant data is introduced.
-- No always-on compute, NAT Gateway, ALB, RDS/Aurora, Redis, OpenSearch, MSK, EKS, or another standing-cost service.
-- A deployment timeout is Unknown until CloudFormation state is inspected; do not retry blindly.
-- Expected normal monthly change from the empty foundation remains negligible; record any non-negligible actual cost before completion.
+- No LocalStack-specific types/configuration may leak into Domain/Application code.
+- Infrastructure state is operational/testing state, never business authority.
 
 ## Test plan once Ready
 
 - local harness and CDK assertion tests;
-- `cdk synth` and reviewed `cdk diff`;
-- real dev deploy and smoke inspection;
-- destroy and redeploy proof;
-- verify Budget/notification configuration and cleanup state.
+- `cdk synth`;
+- LocalStack start/readiness check;
+- deploy/bootstrap and smoke inspection;
+- reset/destroy and redeploy proof;
+- configuration-isolation check for a task instance;
+- limitations evidence for any unsupported/different feature.
 
-**Current gate: REFINED — not executable.**
+**Current gate: REFINED — waiting only on dependency/refinement, not cloud authorization.**
