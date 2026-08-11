@@ -16,7 +16,6 @@ class OrchestratorState(StrEnum):
 
 
 class TaskExecutionState(StrEnum):
-    PLANNING = "PLANNING"
     QUEUED = "QUEUED"
     BUILDING = "BUILDING"
     VERIFYING = "VERIFYING"
