@@ -64,6 +64,10 @@ class LocalStackConfig:
     def container_name(self) -> str:
         return f"{self.resource_prefix}-localstack"
 
+    @property
+    def cdk_environment(self) -> str:
+        return self.profile
+
     def as_dict(self) -> dict[str, object]:
         return {
             "profile": self.profile,
@@ -207,7 +211,12 @@ def stop_localstack(config: LocalStackConfig) -> int:
 
 
 def cdk_command(config: LocalStackConfig, action: str) -> int:
-    context = ["--context", f"environment=dev", "--context", f"instance={config.instance:04d}"]
+    context = [
+        "--context",
+        f"environment={config.cdk_environment}",
+        "--context",
+        f"instance={config.instance:04d}",
+    ]
     stack = f"{config.resource_prefix}-foundation"
     cdk = shutil.which("cdklocal.cmd" if os.name == "nt" else "cdklocal")
     if cdk is None:

@@ -50,6 +50,10 @@ class CommerceOsLauncherTests(unittest.TestCase):
 
         self.assertEqual("localstack-dev", config.profile)
         self.assertEqual("commerceos-localstack-dev-0094", config.resource_prefix)
+        self.assertEqual("localstack-dev", config.cdk_environment)
+
+        test_config = LocalStackConfig(94)
+        self.assertEqual("localstack-test", test_config.cdk_environment)
 
     @patch("tools.commerceos.shutil.which", return_value=None)
     def test_cdk_commands_fail_closed_without_cdklocal(self, _which):
@@ -63,6 +67,7 @@ class CommerceOsLauncherTests(unittest.TestCase):
         self.assertEqual("cdklocal", command[0])
         self.assertEqual("deploy", command[1])
         self.assertEqual("commerceos-localstack-test-0094-foundation", command[2])
+        self.assertIn("environment=localstack-test", command)
         self.assertEqual(LocalStackConfig(94), config)
 
     def test_lifecycle_environment_configures_s3_endpoint_for_cdklocal(self):
