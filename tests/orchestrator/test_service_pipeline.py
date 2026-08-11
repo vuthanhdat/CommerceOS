@@ -124,6 +124,37 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(agents.reviewer_calls, 2)
             self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.COMPLETED)
 
+    def test_non_builder_review_finding_routes_to_planning_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner(
+                review_results=[
+                    review(
+                        False,
+                        "FINDING F-001 STATUS: OPEN OWNER: DOMAIN_ARCHITECT ROUTE: PLANNING_REQUIRED "
+                        "TITLE: business invariant is unresolved\nREVIEW_RESULT: FIX_REQUIRED",
+                    )
+                ]
+            )
+            orch = TaskOrchestrator(
+                root,
+                state,
+                agents,
+                FakeVerificationRunner([True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, max_fix_attempts=2, poll_seconds=0.01),
+            )
+            orch.run()
+            run = state.task_run("TASK-0100")
+            self.assertEqual(run.blocker_code, "PLANNING_REQUIRED")
+            self.assertIn("Backlog Planner", run.blocker_detail)
+            self.assertEqual(agents.builder_calls, 1)
+            events = state.recent_events(limit=10)
+            self.assertTrue(any(event["kind"] == "REVIEW_ROUTED" for event in events))
+
     def test_repair_review_receives_the_previous_review_ledger_and_final_scope(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

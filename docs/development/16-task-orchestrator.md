@@ -245,6 +245,12 @@ The tool fails closed to `HUMAN_REQUIRED` for conditions such as:
 
 Explicit `resume` clears retryable local Blocked/Human Required claims; it does not silently change canonical gates or accepted semantics.
 
+Review findings use the shared contract in `17-review-scope-and-finding-ownership.md`. Builder
+findings return to the Builder repair loop. Domain, Technical, and Backlog Planner findings route
+first to the Backlog Planner, which owns planning convergence and the final Ready gate; the
+Orchestrator must not call an Architect directly. Orchestrator-owned findings go to the
+Orchestrator handler, and human-owned findings stop at the human decision gate.
+
 ## 12. Cloud safety
 
 The Orchestrator itself creates no AWS resources.

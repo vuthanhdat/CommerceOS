@@ -22,6 +22,7 @@ from .scheduler import Scheduler
 from .state import RunStateStore
 from .verification import VerificationRunner
 from .workspace import GitIntegrationManager, GitWorkspaceManager, IntegrationError, WorkspaceError
+from .review_contract import FindingOwner, FindingRoute, next_hop, parse_review_findings
 
 
 @dataclass(frozen=True)
@@ -309,6 +310,34 @@ class TaskOrchestrator:
                     "REVIEWER_ENVIRONMENT_UNAVAILABLE",
                     "Reviewer could not start or access the task worktree; no code finding was established. "
                     + review.findings[-20000:],
+                )
+                return
+
+            routed = tuple(
+                finding
+                for finding in parse_review_findings(review.findings)
+                if finding.status == "OPEN" and finding.owner != FindingOwner.BUILDER
+            )
+            if routed:
+                first = routed[0]
+                self.state.add_event(
+                    task.id,
+                    "REVIEW_ROUTED",
+                    "; ".join(
+                        f"{finding.finding_id} owner={finding.owner.value} route={finding.route.value}"
+                        for finding in routed
+                    ),
+                )
+                route_code = (
+                    "PLANNING_REQUIRED"
+                    if first.route == FindingRoute.PLANNING_REQUIRED
+                    else first.route.value
+                )
+                self._block(
+                    task,
+                    route_code,
+                    f"Review finding {first.finding_id} is owned by {first.owner.value}; "
+                    f"next hop: {next_hop(first)}. Do not dispatch Builder repair until that route resolves.",
                 )
                 return
 

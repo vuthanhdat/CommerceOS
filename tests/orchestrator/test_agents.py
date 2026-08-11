@@ -56,8 +56,11 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self._task(), review_context=".commerceos/orchestrator/review-context/TASK-0100.txt", final_review=True
         )
         self.assertIn("Definition of Done is the review authority", prompt)
+        self.assertIn("17-review-scope-and-finding-ownership.md", prompt)
         self.assertIn("missing `Status: Completed`", prompt)
         self.assertIn("stable IDs", prompt)
+        self.assertIn("OWNER: BUILDER", prompt)
+        self.assertIn("Domain/Technical findings route first", prompt)
         self.assertIn("Unrelated observations must be FOLLOW_UP", prompt)
         self.assertIn("FINDING F-001 STATUS", prompt)
 

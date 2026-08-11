@@ -45,6 +45,7 @@ REQUIRED_FILES = [
     "docs/development/14-codex-multi-agent-and-worktrees.md",
     "docs/development/15-planning-factory-and-task-maturity.md",
     "docs/development/16-task-orchestrator.md",
+    "docs/development/17-review-scope-and-finding-ownership.md",
     "docs/agents/domain-architect.md",
     "docs/agents/technical-architect.md",
     "docs/agents/backlog-planner.md",

@@ -13,6 +13,7 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - relevant domain/architecture docs and ADRs
 - full diff/PR
 - test/CI evidence
+- `docs/development/17-review-scope-and-finding-ownership.md`
 
 ## Responsibilities
 
@@ -28,6 +29,7 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - check cost/Free Tier implications;
 - evaluate test quality and missing regression/failure cases;
 - report findings by severity with concrete evidence.
+- assign exactly one owner and one route to every blocking finding using the shared contract.
 
 ## Must not
 
@@ -53,3 +55,4 @@ LOW — local quality improvement with limited risk
 ```
 
 Route architectural/product ambiguities back to planning rather than asking the Builder to guess.
+The Orchestrator is the routing root; Domain/Technical findings go first to Backlog Planner.

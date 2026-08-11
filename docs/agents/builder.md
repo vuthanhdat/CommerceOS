@@ -13,6 +13,7 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - this role document
 - exactly one Ready/Active task
 - relevant domain/architecture docs and ADRs referenced by that task
+- `docs/development/17-review-scope-and-finding-ownership.md`
 
 ## Responsibilities
 
@@ -23,6 +24,8 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - record implementation evidence, acceptance-criterion results, and remaining out-of-scope
   follow-ups in the Builder response or task-related notes; leave lifecycle bookkeeping to the
   Orchestrator.
+- produce evidence mapped to each applicable acceptance criterion; unresolved domain/technical
+  decisions are routed to planning rather than guessed.
 
 ## Must not
 
