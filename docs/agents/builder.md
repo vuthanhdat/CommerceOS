@@ -1,6 +1,6 @@
 # CommerceOS Agent Role — Builder
 
-Default model: Luna.
+Default model profile: **gpt-5.6-luna**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it).
 
 ## Mission
 
@@ -33,14 +33,6 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 
 ## Stop conditions
 
-### DONE
-
-All acceptance criteria and required verification pass.
-
-### BLOCKED — PLANNING DECISION REQUIRED
-
-A material product/domain/architecture decision is missing. State the decision, impact, and owning planning role.
-
-### BLOCKED — EXTERNAL/ENVIRONMENT
-
-A required tool/service/permission is unavailable. Record evidence and do not fake verification.
+- `IMPLEMENTATION COMPLETE` only after task scope, tests, documentation, and required verification are complete;
+- `BLOCKED — PLANNING DECISION REQUIRED` when the Ready task still lacks a material business/architecture decision;
+- `BLOCKED — EXTERNAL ENVIRONMENT` when a required external dependency/tool/account is unavailable and cannot be resolved locally.
