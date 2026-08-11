@@ -1,289 +1,139 @@
-# CommerceOS — Testing & Cloud Verification
+# CommerceOS — Testing & Infrastructure Verification
 
-_Last reviewed: 2026-08-09._
+_Last reviewed: 2026-08-11. ADR-012 is authoritative._
 
 ## 1. Purpose
 
-CommerceOS needs high confidence without making every code change depend on a full AWS deployment.
-
-The test strategy separates **business correctness** from **cloud-semantic correctness**.
+CommerceOS separates business correctness from infrastructure-sensitive correctness without using a real AWS account.
 
 ```text
 business/domain correctness
       ↓
-local tests
+fast local tests
       ↓
-cloud-sensitive correctness
+infrastructure-sensitive correctness
       ↓
-AWS integration tests
+LocalStack integration tests
       ↓
-release confidence
+local release confidence
 ```
 
----
+LocalStack results prove behavior against the declared emulator setup only. They do not prove exact AWS production behavior.
 
 ## 2. Test layers
 
 ### Unit tests
 
-Fast, deterministic, no AWS network calls.
-
-Primary targets:
-
-- domain invariants;
-- calculations;
-- state transitions;
-- validators;
-- accounting posting rules;
-- inventory reservation rules;
-- payment retry/reconciliation decisions;
-- event creation.
+Fast, deterministic, no infrastructure dependency. Cover domain invariants, calculations, state transitions, accounting rules, inventory concurrency logic, payment ambiguity/reconciliation decisions, and event creation.
 
 ### Architecture tests
 
-Mechanically enforce rules such as:
+Mechanically enforce:
 
-- Domain must not depend on AWS SDKs;
-- one domain cannot depend on another domain's Infrastructure implementation;
-- API/Infrastructure dependencies point inward rather than into domain internals;
-- tenant-owned types follow required scoping conventions;
-- event consumers use the project idempotency mechanism where applicable.
-
-Architecture rules should progressively move from prose to executable tests.
+- Domain must not depend on AWS SDKs, LocalStack packages, HTTP frameworks, or persistence implementations;
+- Application depends on project-owned ports/contracts rather than emulator details;
+- one module cannot depend on another module's Infrastructure/private persistence;
+- tenant scoping rules and contract direction remain intact.
 
 ### Contract tests
 
-Contracts include:
-
-- HTTP request/response schemas;
-- Mock Payment API;
-- webhook schema/signature contract;
-- domain event envelope/version;
-- queue message schemas;
-- crawler normalized product schema.
-
-Contract tests should not require live external product sites.
+Cover HTTP DTOs, Mock Provider APIs, event envelopes/versions, queue messages, and crawler normalized schemas without requiring live external sites.
 
 ### Local integration tests
 
-Use local/test implementations where they provide useful confidence:
+Use direct/local adapters where infrastructure semantics are not the subject of the test.
 
-- DynamoDB Local for repository/access-pattern behavior;
-- local API host/SAM for handler/request wiring where useful;
-- Mock Payment local process;
-- deterministic event/queue adapters;
-- filesystem/local object-storage adapter.
+### LocalStack integration tests
 
-### AWS cloud integration tests
+Use when correctness depends on an AWS-style infrastructure capability supported by the selected LocalStack setup, including:
 
-Required when correctness depends on real AWS behavior, including:
+- DynamoDB conditional writes/transactions/access patterns;
+- SQS retry/redrive/DLQ and duplicate delivery behavior;
+- EventBridge routing/version matching;
+- Step Functions retry/catch/wait/branch behavior where supported;
+- API Gateway/Lambda integration where supported;
+- Cognito delivery-edge behavior where sufficiently supported;
+- S3 integration;
+- CDK/CloudFormation-compatible deployment/redeployment to LocalStack.
 
-- IAM permissions and denials;
-- Cognito/JWT authorization;
-- API Gateway integration;
-- Lambda runtime/package deployment;
-- DynamoDB provisioned configuration and conditional operations;
-- SQS visibility/retry/DLQ behavior;
-- EventBridge rule matching/routing;
-- Step Functions retry/catch/wait/timeout execution;
-- S3 policies/events/lifecycle;
-- CloudWatch log/metric/alarm wiring;
-- CDK deployment behavior.
+IAM/control-plane fidelity, quotas, managed-service timing, and other unsupported/different behaviors must be recorded as limitations rather than assumed equivalent to AWS.
 
-### End-to-end tests
+## 3. Change matrix
 
-Keep E2E tests small and business-oriented.
+| Change | Required verification |
+|---|---|
+| Pure domain rule | unit + architecture as applicable |
+| API DTO/validation | local contract/integration |
+| DynamoDB key/access pattern | repository tests + LocalStack DynamoDB |
+| Lambda/API delivery wiring | build/unit + LocalStack where supported |
+| SQS/EventBridge behavior | contract/unit + LocalStack |
+| Step Functions definition | definition tests + LocalStack execution when supported |
+| CDK resource change | assertion + synth + LocalStack deployment when material |
+| Frontend-only styling | lint/unit/build |
+| Accounting invariant | unit + owned persistence integration |
 
-Examples:
-
-```text
-Merchant creates product
-      ↓
-publishes product
-      ↓
-storefront displays product
-```
-
-```text
-Customer places order
-      ↓
-stock reservation
-      ↓
-Mock Payment success
-      ↓
-order confirmed
-```
-
-```text
-Mock Payment timeout-after-commit
-      ↓
-order enters ambiguous state
-      ↓
-reconciliation queries provider
-      ↓
-order resolves once
-```
-
----
-
-## 3. Test matrix by change type
-
-| Change | Local check | AWS cloud verification |
-|---|---|---|
-| Pure domain rule | required | normally no |
-| API DTO/validation | required | selected smoke test |
-| DynamoDB key/access pattern | required | required before merge/release |
-| IAM policy | synth/static check | required |
-| Lambda packaging/runtime | build/unit | required |
-| SQS/EventBridge behavior | contract/unit | required |
-| Step Functions definition | definition/static tests | required |
-| CDK resource change | synth/diff | required for material changes |
-| Frontend-only styling | lint/unit | usually no |
-| Crawler parser | fixture tests | live/manual sampling only |
-| Accounting invariant | unit + integration | cloud only if infrastructure changed |
-
----
+No row requires real-AWS validation.
 
 ## 4. Failure-oriented tests
 
-Happy-path testing is not sufficient for CommerceOS.
+Cover duplicate/out-of-order delivery, timeout before/after external commit, retry then success, provider callback duplication, concurrent reservation, cross-tenant access, stale revisions, DLQ routing, idempotency replay, accounting duplicate source facts, unbalanced journals, and parser changes.
 
-The suite should deliberately cover:
+## 5. LocalStack lifecycle in tests
 
-- duplicate event/message delivery;
-- timeout before external commit;
-- timeout after external commit;
-- 5xx then success;
-- webhook duplication;
-- out-of-order callback where relevant;
-- inventory concurrent reservation;
-- cross-tenant access attempt;
-- stale version/optimistic concurrency failure;
-- DLQ routing after bounded retry;
-- idempotency key replay;
-- accounting duplicate source event;
-- accounting unbalanced journal rejection;
-- missing expected posting/reconciliation;
-- crawler parser changes/missing fields.
-
-Every production-relevant defect should prompt the question: **what automated test or guardrail should make this class of defect harder to repeat?**
-
----
-
-## 5. Crawler testing
-
-CI must not depend on Amazon, The Gioi Di Dong, Dien May Xanh, CellphoneS, or another live site being reachable.
-
-Store sanitized parser fixtures in the repository where legally/technically appropriate, for example:
+Infrastructure suites must be reproducible:
 
 ```text
-tests/fixtures/product-sources/
-  source-a/
-    normal.html
-    no-price.html
-    changed-layout.html
+start/wait LocalStack
+  ↓
+bootstrap/deploy declared infrastructure
+  ↓
+seed deterministic synthetic data
+  ↓
+run tests
+  ↓
+collect diagnostics
+  ↓
+logical reset or clean reset
 ```
 
-Test flow:
+Tests must not depend on manually-created emulator resources.
 
-```text
-fixture
-  ↓
-source parser
-  ↓
-normalized external product
-  ↓
-schema/assertions
-```
+## 6. Limitations rule
 
-Live crawling is a controlled dev/staging operation with rate limits and source kill switches.
+When the needed LocalStack feature is unsupported, partial, behaviorally different, or edition-dependent:
 
----
-
-## 6. Test data
-
-Use builders/factories so tests can create explicit tenant-scoped objects.
-
-Minimum synthetic identities:
-
-- Tenant A owner;
-- Tenant A salesperson;
-- Tenant A accountant;
-- Tenant B owner;
-- anonymous storefront customer.
-
-Cross-tenant tests must be first-class acceptance tests rather than incidental security checks.
-
----
+1. record the exact gap;
+2. test the project-owned capability contract at the nearest reliable layer;
+3. preserve production-portable Domain/Application boundaries;
+4. do not claim AWS-equivalence;
+5. do not require a real AWS fallback unless ADR-012 is explicitly superseded.
 
 ## 7. Verification commands
 
-The project should evolve toward one stable entry point.
-
-Target interface:
+The repository should evolve toward stable commands such as:
 
 ```text
 python tools/commerceos.py check --fast
-```
-
-Runs:
-
-- harness/document checks;
-- format/lint;
-- build;
-- unit tests;
-- architecture tests;
-- fast contract tests.
-
-```text
 python tools/commerceos.py check
+python tools/commerceos.py check --localstack --instance <id>
 ```
 
-Adds:
+The LocalStack mode adds infrastructure bootstrap plus selected integration/E2E checks and performs the reset policy declared by the task/profile.
 
-- local integration tests;
-- CDK synth;
-- security/static checks.
+Until implemented, `python3 scripts/harness_check.py` remains the repository verification entry point.
 
-```text
-python tools/commerceos.py check --cloud --env pr-123
-```
+## 8. Release gates
 
-Adds selected real-AWS deployment/integration checks and tears down ephemeral resources when appropriate.
-
-Until Phase 0 creates this command, `python3 scripts/harness_check.py` remains the repository harness entry point.
-
----
-
-## 8. Release quality gates
-
-A release candidate must not proceed merely because unit tests are green.
-
-Required gates are selected by task impact and include:
+Select gates by task impact:
 
 1. repository harness PASS;
 2. build/lint PASS;
-3. unit/architecture tests PASS;
+3. unit/architecture PASS;
 4. contract tests PASS;
-5. CDK synth PASS;
-6. cloud integration PASS for affected AWS semantics;
-7. E2E PASS for critical flow changes;
-8. no unexpected resource/cost increase in CDK diff;
-9. reviewer checks task acceptance criteria and failure paths.
+5. CDK synth/assertion PASS when infrastructure changes;
+6. LocalStack integration PASS for affected supported capabilities;
+7. E2E/failure tests PASS for critical flow changes;
+8. known emulator limitations documented;
+9. reviewer confirms acceptance criteria and failure paths.
 
----
-
-## 9. Free Tier testing policy
-
-Cloud tests must be cost-aware:
-
-- deploy only affected stacks;
-- avoid high-volume load tests during normal PR validation;
-- bound Step Functions executions/state transitions;
-- use tiny DynamoDB provisioned capacity profiles where practical;
-- keep SQS/event test volumes small;
-- destroy preview/staging resources promptly;
-- keep logs short-lived;
-- do not run crawler schedules continuously merely to exercise Scheduler.
-
-Load testing and fault-injection campaigns must define an estimated AWS cost before execution.
+There is no AWS cloud execution, AWS cost, AWS account, or cloud teardown gate.
