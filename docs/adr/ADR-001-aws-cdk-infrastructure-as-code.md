@@ -65,6 +65,14 @@ Trade-offs:
 - tenant isolation and authorization remain application concerns and are not relaxed by the emulator;
 - infrastructure code remains reviewable for delivery/persistence boundaries.
 
+## Reliability and operability impact
+
+- infrastructure topology is reproducible from repository-owned CDK rather than manual environment state;
+- `cdk synth`, LocalStack bootstrap/deploy, smoke verification, reset, and redeploy form the operational verification path;
+- infrastructure changes must fail visibly when LocalStack cannot reproduce a required capability instead of silently skipping it;
+- task/worktree resource naming and ports must support isolation or declare serialization where isolation is unavailable;
+- emulator limitations are operational constraints that must be recorded and must not be represented as proof of AWS control-plane behavior.
+
 ## Cost impact
 
 There is no AWS Free Tier, AWS Budget, or cloud-spend gate under ADR-012.
