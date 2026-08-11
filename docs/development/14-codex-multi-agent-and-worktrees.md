@@ -49,7 +49,7 @@ Escalate based on reasoning difficulty/risk, not task size alone. Architecture, 
 
 ## 4. Concurrency policy
 
-The repository default is **maximum 2 active Builder-style coding tasks in parallel**.
+The repository default is maximum **2 active Builder-style coding tasks in parallel**.
 
 That limit is a ceiling, not a target. Two Builder tasks may execute concurrently only when their dependencies, contracts, worktrees, and exclusive/mutable resources are sufficiently independent. Otherwise execution is serialized.
 
