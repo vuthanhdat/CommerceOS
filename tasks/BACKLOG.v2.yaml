@@ -2,7 +2,13 @@ schema_version: 1
 authority: tasks/BACKLOG.v2.yaml
 generated_by: TASK-0089
 generated_on: 2026-08-10
+reconciled_on: 2026-08-11
+runtime_target: localstack
+real_aws_execution: prohibited_unless_adr_012_superseded
 
+# `cloud_verification` is retained as a legacy schema field for orchestrator compatibility.
+# Under ADR-012 its values mean infrastructure-sensitive verification against LocalStack,
+# never authorization to deploy or validate in a real AWS account.
 task_fields:
   - id
   - maturity
@@ -30,8 +36,9 @@ execution_permission:
 ready_refinement_requirements:
   - Ready task has a current detailed spec_path
   - Ready task has explicit exclusive_resources metadata, even when the value is []
-  - every human/product/domain/architecture/security/cost/cloud gate required for execution is empty or satisfied
-  - cloud_verification required/conditional never grants cloud execution by itself
+  - every human/product/domain/architecture/security gate required for execution is empty or satisfied
+  - infrastructure verification required/conditional never grants real-AWS execution
+  - no task requires AWS account, IAM/OIDC, Budget/credit, cloud authorization, or real-cloud preview/staging under ADR-012
 
 execution_metadata:
   TASK-0090:
@@ -44,7 +51,7 @@ execution_metadata:
     merge_policy: verified_serial_main
   TASK-0094:
     lifecycle_state: Backlog
-    exclusive_resources: [aws-dev-foundation]
+    exclusive_resources: [localstack-foundation]
     merge_policy: verified_serial_main
   TASK-0167:
     lifecycle_state: Active
@@ -64,7 +71,9 @@ dispatch_policy:
   max_writable_builders: 2
   merge_lane_concurrency: 1
   numeric_order_is_not_readiness: true
-  cloud_requires_explicit_gate: true
+  cloud_requires_explicit_gate: false
+  localstack_infrastructure_verification_is_task_declared: true
+  real_aws_execution_is_not_a_valid_task_gate: true
   outline_or_refined_is_never_dispatchable: true
 
 integration_policy:
