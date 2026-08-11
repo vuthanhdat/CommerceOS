@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 
 from helpers import row, write_backlog
 from commerceos_orchestrator.dashboard import LocalDashboardServer
+from commerceos_orchestrator.live_feed import LiveAgentFeed
 from commerceos_orchestrator.models import OrchestratorState, TaskExecutionState
 from commerceos_orchestrator.state import RunStateStore
 
@@ -25,6 +26,8 @@ class DashboardTests(unittest.TestCase):
                     html = response.read().decode("utf-8")
                 self.assertNotIn("innerHTML", html)
                 self.assertNotIn("onclick=", html)
+                self.assertIn("Live Codex activity", html)
+                self.assertIn("EventSource", html)
                 with urlopen(server.url + "api/status", timeout=2) as response:
                     status = json.load(response)
                 self.assertEqual(status["ready_frontier"], ["TASK-0100"])
@@ -39,6 +42,40 @@ class DashboardTests(unittest.TestCase):
                     stopped = json.load(response)
                 self.assertTrue(stopped["accepted"])
                 self.assertEqual(state.control_state(), OrchestratorState.STOPPED)
+            finally:
+                server.shutdown()
+                thread.join(timeout=2)
+
+    def test_live_feed_is_exposed_as_loopback_sse(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            feed = LiveAgentFeed(state.path.parent / "logs")
+            feed.publish(
+                "TASK-0100",
+                "codex_started",
+                role="builder",
+                model="gpt-5.6-luna",
+                reasoning_effort="medium",
+                service_tier="standard",
+            )
+            server = LocalDashboardServer(root, state, port=0)
+            thread = server.serve_in_thread()
+            try:
+                with urlopen(server.url + "api/tasks/TASK-0100/stream", timeout=2) as response:
+                    self.assertTrue(
+                        response.headers.get_content_type() == "text/event-stream"
+                    )
+                    record = None
+                    for _ in range(6):
+                        line = response.readline().decode("utf-8")
+                        if line.startswith("data: "):
+                            record = json.loads(line.removeprefix("data: "))
+                            break
+                self.assertIsNotNone(record)
+                self.assertEqual(record["kind"], "codex_started")
+                self.assertEqual(record["model"], "gpt-5.6-luna")
             finally:
                 server.shutdown()
                 thread.join(timeout=2)

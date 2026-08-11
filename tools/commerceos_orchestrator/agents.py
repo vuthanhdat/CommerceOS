@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import os
+import json
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .live_feed import LiveAgentFeed
 from .models import AgentResult, CanonicalTask, ReviewResult
 
 
@@ -31,25 +33,26 @@ class AgentRunner(Protocol):
 
 
 @dataclass(frozen=True)
-class CodexModelRouting:
-    default_model: str | None = None
-    strong_model: str | None = None
+class CodexExecutionProfile:
+    model: str
+    reasoning_effort: str = "medium"
+    # Human-facing policy name. Codex CLI represents Standard/non-Fast as the
+    # default service tier, while Fast maps to fast/priority.
+    service_tier: str = "standard"
 
-    @classmethod
-    def from_environment(cls) -> "CodexModelRouting":
-        return cls(
-            default_model=os.environ.get("COMMERCEOS_CODEX_MODEL_DEFAULT") or None,
-            strong_model=os.environ.get("COMMERCEOS_CODEX_MODEL_STRONG") or None,
-        )
+    @property
+    def codex_service_tier(self) -> str:
+        return "default" if self.service_tier == "standard" else self.service_tier
 
-    def resolve(self, model_class: str) -> str | None:
-        if model_class == "strong":
-            return self.strong_model or self.default_model
-        return self.default_model
+
+# Human-approved CommerceOS model policy. Planning agents are documented to use
+# PLANNING_CODEX_PROFILE; the V1 Orchestrator executes coding/review/conflict roles only.
+PLANNING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-sol")
+CODING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-luna")
 
 
 class CodexRunner:
-    """Non-interactive Codex CLI adapter with a fixed executable/sandbox contract."""
+    """Non-interactive Codex CLI adapter with fixed role/model/sandbox boundaries."""
 
     EXECUTABLE = "codex"
 
@@ -57,14 +60,15 @@ class CodexRunner:
         self,
         root: Path,
         logs_root: Path,
-        routing: CodexModelRouting | None = None,
+        profile: CodexExecutionProfile | None = None,
         *,
         cloud_authorized: bool = False,
     ):
         self.root = root.resolve()
         self.logs_root = logs_root.resolve()
         self.logs_root.mkdir(parents=True, exist_ok=True)
-        self.routing = routing or CodexModelRouting.from_environment()
+        self.profile = profile or CODING_CODEX_PROFILE
+        self.live_feed = LiveAgentFeed(self.logs_root)
         self.cloud_authorized = cloud_authorized
 
     def run_builder(
@@ -137,6 +141,34 @@ CONFLICT_RESULT: RESOLVED
             attempt=0,
         )
 
+    def _build_command(
+        self,
+        executable: str,
+        *,
+        worktree: Path,
+        writable: bool,
+        prompt: str,
+    ) -> list[str]:
+        # Explicit overrides prevent the user's interactive TUI model/Fast selection from
+        # silently changing autonomous CommerceOS execution behavior.
+        return [
+            executable,
+            "exec",
+            "--json",
+            "--ephemeral",
+            "-C",
+            str(worktree),
+            "--sandbox",
+            "workspace-write" if writable else "read-only",
+            "-m",
+            self.profile.model,
+            "-c",
+            f'model_reasoning_effort="{self.profile.reasoning_effort}"',
+            "-c",
+            f'service_tier="{self.profile.codex_service_tier}"',
+            prompt,
+        ]
+
     def _run(
         self,
         task: CanonicalTask,
@@ -158,32 +190,124 @@ CONFLICT_RESULT: RESOLVED
                 marker="ENVIRONMENT_UNAVAILABLE",
             )
 
-        model = self.routing.resolve(task.model_class)
-        command = [
+        command = self._build_command(
             executable,
-            "exec",
-            "--json",
-            "--ephemeral",
-            "-C",
-            str(worktree),
-            "--sandbox",
-            "workspace-write" if writable else "read-only",
-        ]
-        if model:
-            command.extend(["-m", model])
-        command.append(prompt)
-
+            worktree=worktree,
+            writable=writable,
+            prompt=prompt,
+        )
         log_path = self.logs_root / f"{task.id}-{role}-{attempt}.log"
-        result = subprocess.run(command, text=True, capture_output=True, check=False)
-        log_path.write_text(
-            f"COMMAND: {' '.join(command[:-1])} <prompt>\n\nSTDOUT\n{result.stdout}\n\nSTDERR\n{result.stderr}",
-            encoding="utf-8",
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        self.live_feed.publish(
+            task.id,
+            "codex_started",
+            role=role,
+            attempt=attempt,
+            model=self.profile.model,
+            reasoning_effort=self.profile.reasoning_effort,
+            service_tier=self.profile.service_tier,
+            sandbox="workspace-write" if writable else "read-only",
+            model_class=task.model_class,
+        )
+
+        try:
+            process = subprocess.Popen(
+                command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
+                errors="replace",
+            )
+        except OSError as exc:
+            detail = repr(exc)
+            log_path.write_text(
+                f"COMMAND: {' '.join(command[:-1])} <prompt>\n\nSTART FAILED\n{detail}\n",
+                encoding="utf-8",
+            )
+            self.live_feed.publish(
+                task.id,
+                "codex_finished",
+                role=role,
+                attempt=attempt,
+                exit_code=127,
+                success=False,
+                error=detail,
+            )
+            return AgentResult(False, 127, "", detail, str(log_path), "ENVIRONMENT_UNAVAILABLE")
+
+        assert process.stdout is not None
+        assert process.stderr is not None
+
+        def drain_stderr() -> None:
+            for line in process.stderr:
+                stderr_lines.append(line)
+                text = line.rstrip("\r\n")
+                if text:
+                    self.live_feed.publish(
+                        task.id,
+                        "codex_stderr",
+                        role=role,
+                        attempt=attempt,
+                        text=text,
+                    )
+
+        stderr_thread = threading.Thread(
+            target=drain_stderr,
+            name=f"{task.id}-{role}-stderr",
+            daemon=True,
+        )
+        stderr_thread.start()
+
+        with log_path.open("w", encoding="utf-8", newline="\n", buffering=1) as log:
+            log.write(f"COMMAND: {' '.join(command[:-1])} <prompt>\n\nSTDOUT\n")
+            log.flush()
+            for line in process.stdout:
+                stdout_lines.append(line)
+                log.write(line)
+                log.flush()
+                text = line.rstrip("\r\n")
+                if not text:
+                    continue
+                try:
+                    event: object = json.loads(text)
+                except json.JSONDecodeError:
+                    event = {"type": "raw", "text": text}
+                self.live_feed.publish(
+                    task.id,
+                    "codex_event",
+                    role=role,
+                    attempt=attempt,
+                    event=event,
+                )
+
+            exit_code = process.wait()
+            stderr_thread.join(timeout=5)
+            if stderr_thread.is_alive():
+                stderr_lines.append("stderr drain thread did not finish within 5 seconds\n")
+            log.write("\nSTDERR\n")
+            for line in stderr_lines:
+                log.write(line)
+            log.flush()
+
+        stdout = "".join(stdout_lines)
+        stderr = "".join(stderr_lines)
+        success = exit_code == 0
+        self.live_feed.publish(
+            task.id,
+            "codex_finished",
+            role=role,
+            attempt=attempt,
+            exit_code=exit_code,
+            success=success,
         )
         return AgentResult(
-            success=result.returncode == 0,
-            exit_code=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
+            success=success,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             log_path=str(log_path),
         )
 

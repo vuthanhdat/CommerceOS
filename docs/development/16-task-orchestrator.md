@@ -1,35 +1,42 @@
 # CommerceOS — Local Task Orchestrator
 
-_Last reviewed: 2026-08-10._
+_Last reviewed: 2026-08-11._
 
 ## 1. Purpose
 
-The Task Orchestrator is a **local-only execution engine** for the canonical Backlog V2. It automates routine Harness Engineering execution after the Backlog Planner has already marked work `Ready`.
+The Task Orchestrator is a **local-only execution engine** for the canonical Backlog V2. It automates routine Harness Engineering execution after planning artifacts are repository-backed, and it may invoke a bounded Planning Factory when the Ready frontier is empty.
 
-It does not replace product, domain, technical-architecture, or backlog-planning authority. It consumes repository truth and fails closed when that truth is incomplete.
+It does not replace product, domain, technical-architecture, or backlog-planning authority. It consumes repository truth, writes planning results back as repository artifacts, and fails closed when a human decision is required.
 
 ```text
-Domain / Technical / Backlog planning
+canonical backlog / accepted baselines
               ↓
-       canonical Ready DAG
+       Task Orchestrator
               ↓
-      Task Orchestrator
-              ↓
- Builder → verify → Reviewer → merge
-              ↓
-       authoritative main
+     Ready work exists?
+       /             \
+     yes              no
+      ↓                ↓
+ Builder pipeline   Backlog Planner
+      ↓                ↓
+ authoritative main  architect(s) only if requested
+                       ↓
+                  Backlog Planner Ready gate
+                       ↓
+                    Ready task
 ```
 
 ## 2. Implementation shape
 
-V1 is intentionally small and local:
+The local implementation intentionally stays small:
 
 - Python standard library only for orchestration code;
 - SQLite for persisted local run/control state;
-- Git branches/worktrees for writable task isolation;
-- `codex exec` behind a centralized agent-runner adapter;
-- `python3 scripts/harness_check.py` as the default deterministic verification command;
+- Git branches/worktrees for writable task/planning isolation;
+- `codex exec --json` behind centralized runner adapters;
+- `python scripts/harness_check.py` through the exact interpreter that launched the Orchestrator as the deterministic verification entrypoint;
 - `ThreadingHTTPServer` for the loopback-only monitoring/control dashboard;
+- Server-Sent Events (SSE) for one-way live Codex activity streaming;
 - no Redis, RabbitMQ, Temporal, Kubernetes, remote worker fleet, network database, or AWS runtime service.
 
 Transient files are written under `.commerceos/orchestrator/` by default and must remain untracked.
@@ -39,63 +46,152 @@ Transient files are written under `.commerceos/orchestrator/` by default and mus
 Run from the repository root:
 
 ```bash
-python3 tools/orchestrator.py validate
-python3 tools/orchestrator.py plan
-python3 tools/orchestrator.py dry-run
-python3 tools/orchestrator.py status
+python tools/orchestrator.py validate
+python tools/orchestrator.py plan
+python tools/orchestrator.py dry-run
+python tools/orchestrator.py status
 
-python3 tools/orchestrator.py run
-python3 tools/orchestrator.py start
-python3 tools/orchestrator.py stop
-python3 tools/orchestrator.py resume
-python3 tools/orchestrator.py cleanup
-python3 tools/orchestrator.py ui
+python tools/orchestrator.py run
+python tools/orchestrator.py start
+python tools/orchestrator.py stop
+python tools/orchestrator.py resume
+python tools/orchestrator.py cleanup
+python tools/orchestrator.py ui
 ```
 
-`start` runs the scheduler and dashboard together. The dashboard binds to `127.0.0.1:8765` by default. V1 rejects non-loopback dashboard binding.
+`plan` remains a **mechanical DAG/scheduler preview**; it does not consume an LLM. `dry-run` shows normal dispatchable work and, when none exists, the next dependency-satisfied Outline/Refined planning candidate plus its Sol profile. `run` and `start` execute Ready work first and invoke the Planning Factory only when normal scheduling becomes idle.
 
-## 4. Codex runner
+`start` runs the scheduler and dashboard together. The dashboard binds to `127.0.0.1:8765` by default. Non-loopback binding is rejected.
 
-The real agent runner invokes the repository-approved `codex` executable non-interactively through a single adapter. Only model routing is configurable; the executable itself is intentionally fixed so environment input cannot redirect privileged task execution to an arbitrary program:
+## 4. Codex execution profiles
+
+The real agent runners invoke the repository-approved `codex` executable non-interactively. Interactive Codex TUI model/Fast selections are not inherited by autonomous CommerceOS execution.
+
+Human-facing **Standard** maps to Codex's default/non-Fast service tier at the CLI configuration boundary.
 
 ```text
-COMMERCEOS_CODEX_MODEL_DEFAULT
-COMMERCEOS_CODEX_MODEL_STRONG
+Planning roles
+  Backlog Planner
+  Domain Architect
+  Technical Architect
+      → gpt-5.6-sol / medium / Standard
+
+Execution roles
+  Builder
+  Reviewer
+  verification-oriented agent work
+  Conflict Resolver
+      → gpt-5.6-luna / medium / Standard
 ```
 
-If model variables are absent, Codex's configured default model is used. Tests use `FakeAgentRunner` and consume no Codex quota. Deterministic verification also uses the fixed repository-owned `python3 scripts/harness_check.py` entrypoint rather than an environment-supplied command.
+The Orchestrator never enables Fast/priority service implicitly. Planning agents receive no real-cloud authorization. Tests use fake agent/planning runners and consume no Codex quota.
 
-The Builder gets a writable task worktree. Reviewer runs read-only and must return an explicit pass/fix marker. Conflict Resolver is writable only in the serialized integration checkout and must return a safe-resolution marker; otherwise the task becomes Human Required. Builder/reviewer/conflict evidence is treated as untrusted data: diffs/conflict contents are inspected from Git rather than interpolated into privileged prompts, and prior verification/review feedback is written to ignored local evidence files that cannot override repository instructions.
+## 5. Live Codex observability
 
-## 5. Mechanical scheduling
+Codex automation uses `codex exec --json` with a streaming `subprocess.Popen` adapter. stdout JSONL is consumed while Codex is running, stderr is drained concurrently, and both are retained in audit logs.
 
-A task is eligible only when canonical metadata proves:
+```text
+codex exec --json
+      ↓
+  stdout JSONL ─────→ per-task live JSONL
+      ↓                     ↓
+ audit log              loopback SSE
+                             ↓
+                         dashboard
+```
+
+Task detail can show live role/model/activity events for Planner, architects, Builder and Reviewer. Agent output is untrusted display data and is rendered through safe text DOM APIs; the dashboard does not inject agent HTML.
+
+## 6. Mechanical scheduling
+
+A task is Builder-dispatchable only when canonical metadata proves:
 
 - maturity is `Ready`;
 - lifecycle is `Backlog`;
 - every dependency is Completed or a declared completed root;
 - gates are empty/satisfied;
 - no active task owns an overlapping `exclusive_resources` value;
-- Builder concurrency is below the V1 limit.
+- Builder concurrency is below the configured V1 limit.
 
 Numeric task order and Markdown detail never imply readiness.
 
-The canonical maximum is two writable task pipelines and one serialized merge lane. Local `BLOCKED`/`HUMAN_REQUIRED` task state prevents automatic redispatch until explicit operator resume/retry.
+The canonical maximum is two writable implementation pipelines and one serialized merge lane. Local `BLOCKED`/`HUMAN_REQUIRED` task state prevents automatic redispatch until explicit operator resume/retry.
 
-## 6. Execution and completion
+## 7. Planning Factory
 
-The automated happy path is:
+Planning is serial and runs only after normal Ready scheduling has no dispatchable work.
+
+The nearest planning candidate is selected deterministically from tasks that are:
+
+- `Outline` or `Refined`;
+- lifecycle `Backlog`;
+- dependency-satisfied.
+
+Unresolved gates do **not** become satisfied merely because planning starts; they are preserved for the Planner/human decision path.
+
+Every planning cycle enters through **Backlog Planner**:
+
+```text
+Backlog Planner — Sol/medium/Standard
+       ↓
+  ┌────┼───────────────────────────────┐
+  │    │                               │
+READY  DOMAIN_REFINEMENT_REQUIRED      TECHNICAL_REFINEMENT_REQUIRED
+  │    │                               │
+  │  Domain Architect                  Technical Architect
+  │     Sol/medium/Standard              Sol/medium/Standard
+  │    │                               │
+  └────┴──────────────→ Backlog Planner ←┘
+                         ↓
+                    final Ready gate
+```
+
+The Planner may also request both architects. Domain reconciliation runs before technical reconciliation when both are needed. If Technical Architect exposes a missing business/domain decision, control returns through Domain Architect and then back to Backlog Planner.
+
+Architects may update only their allowed repository artifacts and **cannot mark the candidate Ready**. The Backlog Planner is the final readiness authority for this automated planning loop.
+
+Recognized Planner outcomes are:
+
+```text
+PLANNING_RESULT: READY
+PLANNING_RESULT: DOMAIN_REFINEMENT_REQUIRED
+PLANNING_RESULT: TECHNICAL_REFINEMENT_REQUIRED
+PLANNING_RESULT: DOMAIN_AND_TECHNICAL_REFINEMENT_REQUIRED
+PLANNING_RESULT: HUMAN_REQUIRED
+```
+
+Planning is bounded. Missing protocol markers, repeated non-convergence, human product/architecture decisions, or unsafe semantic ambiguity become Human Required rather than being guessed.
+
+## 8. Planning artifact integration
+
+Planning roles communicate through the task worktree and repository artifacts, not private cross-agent memory.
+
+Safe planning artifacts are verified and integrated through the latest-main serialized checkout. This integration **does not perform task completion bookkeeping** because refining a task is not completing its implementation.
+
+For `PLANNING_RESULT: READY`, the candidate is accepted only if canonical validation proves it is now:
+
+- maturity `Ready`;
+- lifecycle `Backlog`;
+- ungated;
+- dependency-satisfied;
+- represented by a valid detailed Ready spec and consistent canonical `ready_frontier`.
+
+After planning artifacts are pushed to authoritative `main`, the scheduler reloads the DAG and the normal Luna Builder pipeline may claim the newly Ready task.
+
+## 9. Implementation execution and completion
+
+The automated implementation happy path is:
 
 ```text
 Ready
   ↓
 claim + isolated worktree
   ↓
-Builder
+Builder — Luna/medium/Standard
   ↓
 deterministic verification
   ↓
-independent Reviewer
+independent Reviewer — Luna/medium/Standard
   ↓
 serialized merge queue
   ↓
@@ -114,54 +210,50 @@ non-force push origin/main
 Completed
 ```
 
-The Orchestrator refuses to complete a task from an empty/no-op Builder diff. An agent claim, local commit, or green task branch is not authoritative completion.
+The Orchestrator refuses to complete a task from an empty/no-op Builder diff. An agent claim, local commit, green task branch, or planning result is not authoritative implementation completion.
 
-The manual PR/human-integration workflow documented in `14-codex-multi-agent-and-worktrees.md` remains valid for work not executed by this Orchestrator. Automated merge is an Orchestrator-controlled exception with stricter deterministic and independent-review gates; it does not grant a normal Builder permission to merge its own task.
+The manual PR/human-integration workflow documented in `14-codex-multi-agent-and-worktrees.md` remains valid for work not executed by this Orchestrator.
 
-## 7. Graceful Stop
+## 10. Graceful Stop
 
 `stop` and the dashboard Stop button share the same persisted control model.
 
 When Stop is accepted:
 
 1. persist stop intent;
-2. claim no fresh Ready task;
-3. mark every task already active as part of the drain set;
-4. allow those task(s) to finish their bounded Builder/fix/verification/review/integration lifecycle;
-5. do not dispatch tasks that become Ready during draining;
-6. transition to `STOPPED` after all drain-set tasks reach Completed, Blocked, or Human Required.
+2. claim no fresh Ready task or planning candidate;
+3. allow work already active at stop request, including the current bounded planning lifecycle, to drain safely;
+4. do not dispatch a newly Ready Builder after the drain;
+5. transition to `STOPPED` after active drain work reaches a safe terminal state.
 
-If two Builders are active, both drain. Stop is not a hard process kill.
+Stop is not a hard process kill. A stop request survives process restart.
 
-A stop request survives process restart. Starting without an explicit resume cannot silently consume newly Ready work while a persisted drain is in progress.
-
-## 8. Recovery and blockers
+## 11. Recovery and blockers
 
 Local SQLite state records attempts, execution state, blocker details, worktree/branch, drain intent, and a recent-event timeline.
-
-Recoverable pre-merge states conservatively rerun deterministic Builder/verification work in the existing worktree. `MERGE_QUEUED`/`INTEGRATING` states return to the merge lane instead of being reset to fresh queued work.
 
 The tool fails closed to `HUMAN_REQUIRED` for conditions such as:
 
 - product/domain/architecture/security/cost decision required;
 - cloud execution not authorized;
+- planning protocol/non-convergence failure;
 - repeated Builder/Reviewer repair exhaustion;
 - unsafe semantic merge conflict;
 - dirty/unclassifiable integration checkout;
 - invalid canonical backlog;
 - missing required external tooling.
 
-Independent Ready lanes may continue when their metadata/resources prove independence.
+Explicit `resume` clears retryable local Blocked/Human Required claims; it does not silently change canonical gates or accepted semantics.
 
-## 9. Cloud safety
+## 12. Cloud safety
 
 The Orchestrator itself creates no AWS resources.
 
-A canonical task marked `cloud_verification: required` is not dispatched for real-cloud execution unless the operator explicitly starts the Orchestrator with `--allow-cloud`, in addition to the task's repository gates already being satisfied.
+A canonical implementation task marked `cloud_verification: required` is not dispatched for real-cloud execution unless the operator explicitly starts with `--allow-cloud`, in addition to repository gates being satisfied.
 
-For `conditional` cloud verification, the task may proceed through local implementation while the Builder is explicitly told that real AWS execution is not authorized unless the run has `--allow-cloud`. The Orchestrator never infers permission to spend cloud credit.
+Planning roles never receive real-cloud authorization. They may refine cloud tasks and record required account/region/budget/human gates, but they may not spend cloud credit or treat planning as execution consent.
 
-## 10. Dashboard
+## 13. Dashboard
 
 The dashboard is a thin read/control client over Orchestrator Core. It shows:
 
@@ -172,14 +264,15 @@ The dashboard is a thin read/control client over Orchestrator Core. It shows:
 - workflow columns;
 - task metadata, branch/worktree, attempts and blockers;
 - DAG/progress summary;
-- recent event timeline;
+- recent state/planning events;
+- live Codex activity and retained log metadata;
 - graceful Stop and explicit Resume controls.
 
-The browser UI does not calculate readiness, mutate canonical YAML, resolve dependencies, decide retries, or perform Git integration directly.
+The browser UI does not calculate readiness, mutate canonical YAML, decide planning/architect routing, resolve dependencies, choose retries, or perform Git integration directly.
 
-## 11. Verification
+## 14. Verification
 
-The repository harness runs the Orchestrator Python test suite before the application toolchain checks. The suite covers at least:
+The repository harness runs the Orchestrator Python test suite before application toolchain checks. Coverage includes:
 
 - YAML/backlog validation and cycles/missing dependencies;
 - Ready scheduling and exclusive resources;
@@ -187,9 +280,12 @@ The repository harness runs the Orchestrator Python test suite before the applic
 - Builder verification/fix and Reviewer/fix loops using fake agents;
 - cloud fail-closed behavior;
 - real local Git worktree/merge primitives against a temporary bare repository;
-- loopback-only dashboard status/control and DOM rendering without dynamic `innerHTML`;
-- canonical shard/spec path containment so backlog metadata cannot escape repository-owned planning directories;
+- loopback-only dashboard status/control, SSE and DOM rendering without dynamic `innerHTML`;
+- canonical shard/spec path containment;
 - untrusted agent evidence isolation from privileged prompts;
+- live JSONL publication and audit retention;
+- Sol/Luna profile command construction;
+- Planner-first candidate selection and on-demand Domain/Technical routing using fake planning agents;
 - completion bookkeeping.
 
 The real Codex executable is intentionally not required by tests.

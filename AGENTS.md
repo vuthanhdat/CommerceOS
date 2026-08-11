@@ -104,12 +104,13 @@ These rules are mandatory unless an accepted ADR explicitly changes them.
 
 ## 3. Codex model and worktree policy
 
-CommerceOS uses a **Luna-first** Codex policy.
+CommerceOS uses explicit **role-based Codex profiles** so planning quality and routine implementation cost/throughput are predictable.
 
-- Use Luna by default for implementation, tests, routine refactoring, documentation, straightforward CDK work, and normal review.
-- Escalate to a stronger reasoning model for business/domain design, architecture/ADR decisions, security/tenant model design, accounting semantics, payment ambiguity/idempotency, difficult concurrency/distributed-system reasoning, or high-risk review.
-- Do not escalate simply because a task is large; escalate when reasoning difficulty or consequence of a wrong decision is high.
-- Prefer using expensive reasoning to define the decision/task/invariants once, then let Luna execute the encoded decision repeatedly.
+- **Planning roles** — Domain Architect, Technical Architect, and Backlog Planner — use `gpt-5.6-sol`, reasoning effort `medium`, service tier **Standard**.
+- **Coding/execution roles** — Builder and routine implementation-level Reviewer/Verification/Conflict Resolver work — use `gpt-5.6-luna`, reasoning effort `medium`, service tier **Standard**.
+- For Codex CLI automation, Standard means the normal/default non-Fast service tier. Do not inherit a user's interactive `/fast` selection into autonomous repository execution.
+- Do not enable Fast/priority service or a different model/reasoning profile unless the human explicitly changes the assignment or a later accepted repository policy does so.
+- Planning agents should encode difficult decisions, invariants, and implementation constraints into repository artifacts before Builder execution rather than pushing architecture reasoning into the coding model.
 
 Parallel writable work follows:
 
@@ -125,12 +126,12 @@ See `docs/development/14-codex-multi-agent-and-worktrees.md` for worktree creati
 
 Role contracts are stored under `docs/agents/`.
 
-- `domain-architect.md` — business/domain ownership and invariants; strong reasoning model.
-- `technical-architect.md` — module/contracts/persistence/integration/ADR decisions; strong reasoning model.
-- `backlog-planner.md` — task graph, maturity, dependency reconciliation; Luna unless deeper reasoning is needed.
-- `builder.md` — implement one Ready task; Luna by default.
-- `reviewer.md` — independent review; Luna, escalating for high-risk review.
-- `verification.md` — failure-oriented verification; Luna, escalating for complex distributed-system analysis.
+- `domain-architect.md` — business/domain ownership and invariants; Sol / medium / Standard.
+- `technical-architect.md` — module/contracts/persistence/integration/ADR decisions; Sol / medium / Standard.
+- `backlog-planner.md` — task graph, maturity, dependency reconciliation; Sol / medium / Standard.
+- `builder.md` — implement one Ready task; Luna / medium / Standard.
+- `reviewer.md` — independent implementation review; Luna / medium / Standard by default, while unresolved architecture/business findings are routed back to planning rather than guessed.
+- `verification.md` — failure-oriented verification; Luna / medium / Standard by default, escalating findings to the correct planning role when semantics are missing.
 
 A role may write only the artifact types allowed by its role contract unless the human explicitly changes the assignment.
 
