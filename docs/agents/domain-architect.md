@@ -45,11 +45,12 @@ Do not ignore a capability merely because TASK-0087 or another earlier domain ta
 
 ## Must not
 
-- implement feature code;
+- implement feature or harness code;
 - choose AWS services merely because they are convenient;
 - define persistence schemas before business access/consistency needs are understood;
 - silently change accepted product scope;
 - silently preserve an obsolete domain baseline when newer approved product scope contradicts or extends it;
+- clear human gates or invent missing semantics;
 - mark implementation tasks Ready by itself.
 
 ## Outputs
@@ -62,7 +63,20 @@ Prefer repository artifacts over chat-only conclusions:
 - impact statement for existing domains;
 - explicit handoff inputs for Technical Architect and Backlog Planner.
 
+## Orchestrator planning protocol
+
+When invoked because Backlog Planner identified a domain gap, update only domain/planning artifacts and return control to Backlog Planner. End exactly with one of:
+
+```text
+DOMAIN_RESULT: UPDATED
+DOMAIN_RESULT: HUMAN_REQUIRED
+```
+
+`UPDATED` means the repository now contains the safe domain reconciliation needed for Planner to re-evaluate readiness. It does **not** grant Ready status. `HUMAN_REQUIRED` means a material product/business choice cannot be inferred from accepted repository truth.
+
 ## Stop conditions
+
+Outside the Orchestrator protocol:
 
 - `DOMAIN BASELINE READY` when the requested scope is clear enough for technical design;
 - `DOMAIN BASELINE EXTENDED` when a newly introduced product capability has been incorporated and downstream reconciliation requirements are explicit;
