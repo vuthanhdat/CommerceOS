@@ -214,8 +214,16 @@ def check_development_strategy(errors: list[str]) -> None:
     cost_path = ROOT / "docs" / "development" / "13-free-tier-and-credit-guardrails.md"
     if cost_path.exists():
         text = cost_path.read_text(encoding="utf-8")
-        if "Free Tier" not in text or "USD 100" not in text:
-            fail("Free Tier guardrail doc must preserve the project credit constraint", errors)
+        lower = text.lower()
+        if (
+            "localstack" not in lower
+            or "adr-012" not in lower
+            or "no longer uses a real aws account" not in lower
+        ):
+            fail(
+                "Infrastructure cost/guardrail doc must preserve the LocalStack-only no-real-AWS policy",
+                errors,
+            )
 
     codex_path = ROOT / "docs" / "development" / "14-codex-multi-agent-and-worktrees.md"
     if codex_path.exists():
@@ -336,7 +344,7 @@ def main() -> int:
     print("Task/ADR structure checks: PASS")
     print("README/AGENTS local-link checks: PASS")
     print("Phase H0 definition check: PASS")
-    print("Environment/IaC/Free-Tier/Codex strategy checks: PASS")
+    print("Environment/IaC/LocalStack/Codex strategy checks: PASS")
     print("Planning factory/task-maturity/agent-role checks: PASS")
     print("Task Orchestrator tests: PASS")
     print("Application build/test/architecture/CDK checks: PASS")
