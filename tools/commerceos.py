@@ -235,7 +235,54 @@ def inspect_localstack(config: LocalStackConfig) -> int:
 
 
 def smoke_localstack(config: LocalStackConfig) -> int:
-    return 0 if localstack_ready(config) else 1
+    if not localstack_ready(config):
+        print("LocalStack is not ready", file=sys.stderr)
+        return 1
+    aws = shutil.which("aws.exe" if os.name == "nt" else "aws")
+    if aws is None:
+        print("AWS CLI is required for FoundationStack smoke checks.", file=sys.stderr)
+        return 1
+
+    environment = lifecycle_environment(config)
+    stack = f"{config.resource_prefix}-foundation"
+    common = ["--endpoint-url", config.endpoint, "--region", "us-east-1"]
+    stack_result = subprocess.run(
+        [aws, "cloudformation", "describe-stacks", "--stack-name", stack, *common, "--output", "json"],
+        check=False, capture_output=True, text=True, env=environment,
+    )
+    if stack_result.returncode != 0:
+        print("FoundationStack was not found in LocalStack.", file=sys.stderr)
+        if stack_result.stderr:
+            print(stack_result.stderr.strip(), file=sys.stderr)
+        return stack_result.returncode or 1
+    try:
+        stacks = json.loads(stack_result.stdout).get("Stacks", [])
+        status = stacks[0]["StackStatus"]
+    except (KeyError, IndexError, json.JSONDecodeError) as error:
+        print(f"Invalid CloudFormation smoke response: {error}", file=sys.stderr)
+        return 1
+    if status != "CREATE_COMPLETE":
+        print(f"FoundationStack is not healthy: {status}", file=sys.stderr)
+        return 1
+
+    log_group = f"/{config.resource_prefix}/foundation"
+    logs_result = subprocess.run(
+        [aws, "logs", "describe-log-groups", "--log-group-name-prefix", log_group, *common, "--output", "json"],
+        check=False, capture_output=True, text=True, env=environment,
+    )
+    if logs_result.returncode != 0:
+        print("Foundation log group was not found in LocalStack.", file=sys.stderr)
+        return logs_result.returncode or 1
+    try:
+        groups = json.loads(logs_result.stdout).get("logGroups", [])
+    except json.JSONDecodeError as error:
+        print(f"Invalid CloudWatch Logs smoke response: {error}", file=sys.stderr)
+        return 1
+    if not any(group.get("logGroupName") == log_group for group in groups):
+        print(f"Foundation log group is missing: {log_group}", file=sys.stderr)
+        return 1
+    print(json.dumps({"stack": stack, "status": status, "log_group": log_group}))
+    return 0
 
 
 def run_api(port: int) -> int:

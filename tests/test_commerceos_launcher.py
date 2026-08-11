@@ -73,6 +73,22 @@ class CommerceOsLauncherTests(unittest.TestCase):
         self.assertEqual("http://127.0.0.1:14660", environment["AWS_ENDPOINT_URL"])
         self.assertEqual(environment["AWS_ENDPOINT_URL"], environment["AWS_ENDPOINT_URL_S3"])
 
+    @patch("tools.commerceos.shutil.which", return_value="aws")
+    @patch("tools.commerceos.subprocess.run")
+    def test_smoke_checks_foundation_stack_and_log_group(self, run, _which):
+        from tools.commerceos import smoke_localstack
+
+        run.side_effect = [
+            Namespace(returncode=0, stdout='{"Stacks":[{"StackStatus":"CREATE_COMPLETE"}]}', stderr=""),
+            Namespace(returncode=0, stdout='{"logGroups":[{"logGroupName":"/commerceos-localstack-test-0094/foundation"}]}', stderr=""),
+        ]
+        with patch("tools.commerceos.localstack_ready", return_value=True):
+            result = smoke_localstack(LocalStackConfig(94))
+
+        self.assertEqual(0, result)
+        self.assertEqual("cloudformation", run.call_args_list[0].args[0][1])
+        self.assertEqual("logs", run.call_args_list[1].args[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()
