@@ -53,6 +53,10 @@ execution_metadata:
     lifecycle_state: Backlog
     exclusive_resources: [localstack-foundation]
     merge_policy: verified_serial_main
+  TASK-0095:
+    lifecycle_state: Backlog
+    exclusive_resources: [ci-localstack-infrastructure]
+    merge_policy: verified_serial_main
   TASK-0167:
     lifecycle_state: Active
     exclusive_resources: [repository-task-state, orchestrator-ui, codex-runner]
@@ -93,6 +97,7 @@ completed_roots:
   - [TASK-0089, tasks/completed/TASK-0089-backlog-readiness-and-skeleton-reconciliation.md]
   - [TASK-0091, tasks/completed/TASK-0091-subscription-billing-domain-baseline-extension.md]
   - [TASK-0092, tasks/completed/TASK-0092-subscription-billing-technical-architecture-reconciliation.md]
+  - [TASK-0093, tasks/completed/TASK-0093-architecture-test-contract-remediation.md]
 
 task_shards:
   - tasks/backlog-v2/00-foundation-tenancy.yaml
@@ -102,4 +107,4 @@ task_shards:
   - tasks/backlog-v2/04-hardening-future.yaml
 
 ready_frontier:
-  
+  - TASK-0094
