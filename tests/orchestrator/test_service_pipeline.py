@@ -49,6 +49,16 @@ def review(passed: bool, text: str) -> ReviewResult:
     return ReviewResult(passed, text, raw)
 
 
+def capacity_failure() -> AgentResult:
+    return AgentResult(
+        False,
+        1,
+        '{"type":"error","message":"Selected model is at capacity. Please try a different model."}\n',
+        "",
+        "",
+    )
+
+
 class PipelineTests(unittest.TestCase):
     def test_builder_verify_review_merge_and_bookkeeping(self):
         with tempfile.TemporaryDirectory() as td:
@@ -98,6 +108,71 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(agents.builder_calls, 2)
             self.assertEqual(agents.reviewer_calls, 2)
             self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.COMPLETED)
+
+    def test_model_capacity_is_retried_without_consuming_fix_budget_or_changing_model_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner(
+                builder_results=[capacity_failure(), AgentResult(True, 0, "", "", "")],
+                review_results=[review(True, "REVIEW_RESULT: PASS")],
+            )
+            orch = TaskOrchestrator(
+                root,
+                state,
+                agents,
+                FakeVerificationRunner([True, True, True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(
+                    max_builders=1,
+                    poll_seconds=0.01,
+                    max_capacity_retries=3,
+                    capacity_backoff_seconds=0,
+                ),
+            )
+            orch.run()
+            run = state.task_run("TASK-0100")
+            self.assertEqual(run.execution_state, TaskExecutionState.COMPLETED)
+            self.assertEqual(run.attempt, 2)
+            self.assertEqual(run.fix_attempt, 0)
+            self.assertEqual(agents.builder_calls, 2)
+            retry_events = [
+                event for event in state.recent_events(100)
+                if event["task_id"] == "TASK-0100" and event["kind"] == "MODEL_CAPACITY_RETRY"
+            ]
+            self.assertEqual(len(retry_events), 1)
+            self.assertIn("pinned_model_unchanged=true", retry_events[0]["detail"])
+
+    def test_model_capacity_exhaustion_becomes_retryable_blocked_not_human_task_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner(builder_results=[capacity_failure(), capacity_failure(), capacity_failure()])
+            orch = TaskOrchestrator(
+                root,
+                state,
+                agents,
+                FakeVerificationRunner(),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(
+                    max_builders=1,
+                    poll_seconds=0.01,
+                    max_capacity_retries=2,
+                    capacity_backoff_seconds=0,
+                ),
+            )
+            orch.run()
+            run = state.task_run("TASK-0100")
+            self.assertEqual(run.execution_state, TaskExecutionState.BLOCKED)
+            self.assertEqual(run.blocker_code, "MODEL_CAPACITY_EXHAUSTED")
+            self.assertEqual(run.attempt, 3)
+            self.assertEqual(agents.builder_calls, 3)
+            self.assertIn("model fallback is disabled by policy", run.blocker_detail)
+            self.assertEqual(state.control_state(), OrchestratorState.HUMAN_REQUIRED)
 
     def test_no_diff_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
