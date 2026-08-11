@@ -1,14 +1,12 @@
 # CommerceOS — Infrastructure as Code
 
-_Last reviewed: 2026-08-09._
+_Last reviewed: 2026-08-11. ADR-001 and ADR-012 are authoritative._
 
 ## 1. Decision
 
-**All CommerceOS AWS application infrastructure is defined and deployed as code using AWS CDK.**
+All CommerceOS AWS-style application infrastructure is defined as code using AWS CDK and deployed to LocalStack-compatible infrastructure tooling.
 
-The AWS Console is permitted for exploration, viewing logs/metrics, or emergency diagnosis, but not as the source of truth for application infrastructure.
-
-If an experiment proves useful, reproduce it in CDK and remove/reconcile the manually created resource.
+The repository is the source of truth. No real AWS account, AWS Console setup, AWS IAM/OIDC deployment role, AWS Budget, or AWS account bootstrap is required by the current architecture.
 
 ```text
 Git repository
@@ -21,152 +19,71 @@ Git repository
            CDK synth
               │
               ▼
-        CloudFormation
+  CloudFormation-compatible template
               │
               ▼
-             AWS
+          LocalStack
 ```
 
----
+## 2. Why this remains mandatory
 
-## 2. Why this is mandatory
+Infrastructure as Code provides reproducibility, reviewable architecture changes, deterministic local bootstrap/reset, agent-readable infrastructure context, automated policy checks, and a direct relationship between a Git commit and local deployed resources.
 
-CommerceOS is both a serverless-learning project and a Harness Engineering project.
-
-Infrastructure as Code provides:
-
-- reproducible environments;
-- reviewable architecture changes;
-- cost visibility before deployment;
-- deterministic teardown of preview/staging;
-- fewer undocumented Console changes;
-- agent-readable infrastructure context;
-- automated security/policy checks;
-- easier architecture audits;
-- a direct relationship between a Git commit and deployed resources.
-
----
-
-## 3. Proposed repository structure
-
-Phase 0 should establish a structure similar to:
+## 3. Repository structure
 
 ```text
 infra/
-  CommerceOS.Cdk/ or commerceos-cdk/
+  CommerceOS.Cdk/
     app
     config
     stacks
     constructs
     tests
-
 src/
   ...
-
 tools/
   commerceos.py
 ```
 
-The concrete CDK implementation language is selected in Phase 0 based on the final application/tooling choice. The architecture decision is **AWS CDK**, not a requirement to use a particular CDK language in this document.
-
----
+CDK remains the infrastructure definition system. LocalStack is the runtime target.
 
 ## 4. Stack strategy
 
-Start with a small number of operational stacks rather than one stack per domain.
+Use a small number of operational stacks rather than one stack per domain. Existing conceptual stack names such as IdentityStack, ApiStack, integration/async stacks, crawler/provider stacks, and FilesMedia resources remain operational boundaries only.
 
-Target shape:
+No stack is created merely to mirror a domain diagram. Infrastructure appears only for named Ready work.
 
-```text
-FoundationStack
-  shared configuration
-  shared event infrastructure when justified
-  baseline observability
+## 5. Environment configuration
 
-IdentityStack
-  Cognito
-
-CommerceStack
-  API Gateway HTTP API
-  Lambda APIs
-  DynamoDB
-
-WebStack
-  S3
-  CloudFront
-
-AsyncStack
-  SQS / DLQ
-  async Lambda workers
-  Step Functions when justified
-
-CrawlerStack
-  Scheduler
-  crawler queues/workers
-  raw snapshot lifecycle
-
-MockPaymentStack
-  independently deployed mock provider
-```
-
-A stack is an operational/deployment boundary, not automatically a DDD bounded context.
-
----
-
-## 5. Environment configuration as code
-
-Environment differences are explicit configuration, not hand-edited resources.
-
-Example conceptual profile:
+Profiles are local runtime configurations:
 
 ```text
 config/
-  dev
-  preview
-  staging
-  prod
+  localstack-dev
+  localstack-test
+  localstack-stage
 ```
 
-Each profile can define:
+Configuration may define:
 
-- account/region;
-- naming prefix;
-- removal policy;
-- log retention;
-- DynamoDB capacity profile;
-- Lambda concurrency limits;
-- crawler schedule/enablement;
-- failure-injection enablement;
-- backup/PITR behavior;
-- alarm profile;
-- cost tags.
+- LocalStack endpoint;
+- synthetic SDK credentials;
+- region;
+- account-id placeholder where tooling requires one;
+- resource naming prefix/task instance;
+- ports;
+- reset/persistence policy;
+- log retention/verbosity;
+- crawler/failure-injection flags;
+- LocalStack feature/edition switches.
 
-Application business logic must not contain arbitrary environment-specific infrastructure branching.
+Application business logic must not branch on LocalStack details.
 
----
+## 6. Naming and isolation
 
-## 6. Naming and tags
+Resources should carry stable project/environment/task-instance naming. Parallel worktrees derive unique prefixes and ports where needed.
 
-Every supported resource should carry consistent attribution tags where AWS supports them.
-
-Minimum intent:
-
-```text
-Project       = CommerceOS
-Environment   = dev | pr-123 | staging | prod
-ManagedBy     = CDK
-Owner         = personal-learning
-CostProfile   = free-tier | credit-funded | production
-Ephemeral     = true | false
-```
-
-Tags are part of cost governance and cleanup tooling.
-
----
-
-## 7. CDK workflow
-
-Developer/agent workflow:
+## 7. IaC workflow
 
 ```text
 change IaC
@@ -175,143 +92,64 @@ CDK unit/assertion tests
    ↓
 cdk synth
    ↓
-cdk diff <environment>
+review resource/contract changes
    ↓
-review resources / IAM / replacements / cost impact
+deploy to LocalStack
    ↓
-CI deployment role via OIDC
+smoke/integration verification
    ↓
-cdk deploy
-   ↓
-post-deploy verification
+reset/redeploy when relevant
 ```
 
-No pipeline should jump directly from source changes to `cdk deploy` without synthesis/tests/diff visibility appropriate to the environment.
+There is no AWS OIDC or account deployment step.
 
----
+## 8. Manual drift
 
-## 8. Prohibited manual drift
-
-Examples of unacceptable permanent setup:
-
-- creating a Lambda manually in Console and not defining it in CDK;
-- changing an SQS redrive policy only in Console;
-- adding an EventBridge rule manually;
-- changing DynamoDB capacity manually and forgetting the IaC definition;
-- giving a CI role AdministratorAccess as a shortcut;
-- creating a production bucket/table outside the stack and relying on tribal knowledge.
-
-If emergency/manual action is required:
-
-1. record why;
-2. determine whether IaC must change;
-3. reconcile or revert drift;
-4. add a guardrail if the same failure could repeat.
-
----
+Permanent manually-created LocalStack resources are prohibited when application/tests depend on them. Any useful experiment must be reproduced in CDK/bootstrap automation or removed.
 
 ## 9. Stateful resources
 
-IaC does not imply `destroy everything` for all environments.
+LocalStack state is synthetic learning/test state. Profiles may preserve or destroy it according to documented reset policy, but no business correctness may depend on hidden persistent emulator state.
 
-### Dev/preview
+## 10. Capability-first rule
 
-Many resources can use destroy/removal-friendly policies because data is synthetic.
+CDK constructs should express the required capability while keeping Domain/Application code independent of the infrastructure implementation.
 
-### Staging
+Examples:
 
-Policies depend on whether staging is ephemeral or persistent.
+- DynamoDB for conditional/transactional module persistence;
+- SQS/DLQ for retryable one-worker work;
+- EventBridge for named business-fact fan-out;
+- Step Functions for ADR-approved durable workflows;
+- S3 for managed object storage;
+- API Gateway/Lambda/Cognito only as delivery/runtime mappings where supported.
 
-### Production
+## 11. LocalStack limitation rule
 
-Stateful resources require explicit protection/migration thinking:
+Infrastructure verification must record unsupported, partially supported, behaviorally different, or edition-dependent features. Do not hide a limitation by weakening application contracts or by claiming exact AWS equivalence.
 
-- DynamoDB tables;
-- S3 buckets containing business files;
-- accounting state;
-- event/idempotency records where required.
+A real AWS account is not the fallback under the current architecture.
 
-Production deployments must surface replacements or destructive changes before execution.
+## 12. Security
 
----
+No real AWS credentials are required. Synthetic LocalStack credentials are configuration, not secrets of business value.
 
-## 10. Free Tier-aware IaC defaults
+Application authorization, tenant isolation, provider secret hygiene, and trusted execution-context rules remain unchanged.
 
-Non-production constructs should default to cost-safe values:
+## 13. Reproducibility criteria
 
-- no NAT Gateway;
-- no ALB unless accepted by ADR;
-- no EC2/RDS/OpenSearch/ElastiCache/MSK by default;
-- DynamoDB small provisioned profile where that fits the current Free Tier learning goal;
-- short CloudWatch log retention;
-- bounded Lambda reserved concurrency for crawler/bursty workers;
-- crawler schedules disabled or low cadence in dev/preview;
-- S3 lifecycle rules for raw crawler artifacts;
-- preview resources tagged ephemeral;
-- no high-frequency synthetic load by infrastructure defaults.
+An infrastructure profile is reproducible when:
 
-A reusable CDK construct should encode these defaults so agents do not have to remember them per stack.
+- a clean checkout can synthesize it;
+- LocalStack prerequisites are documented;
+- bootstrap/deploy creates every required resource;
+- tests do not rely on manually-created resources;
+- reset/redeploy is deterministic for affected state;
+- resource mappings trace back to version-controlled CDK definitions;
+- known LocalStack limitations are documented.
 
----
+## 14. References
 
-## 11. Cost-impact rule
-
-Adding a new AWS managed service, changing a capacity class, or introducing a resource with a non-trivial idle/base charge requires:
-
-1. task `Cost impact` section;
-2. `cdk diff` review;
-3. update to the cost/free-tier documentation when material;
-4. ADR if it changes architecture materially or creates a recurring base cost.
-
-The guiding question is not merely "can AWS do this?" but:
-
-> Can the required learning/business capability be achieved with a serverless/pay-per-use/free-tier-friendly service first?
-
----
-
-## 12. CI/CD identity
-
-CDK deployment from GitHub Actions uses OIDC federation to AWS IAM roles.
-
-No long-lived AWS deployment access keys should be stored in GitHub secrets.
-
-Deployment roles are separated by environment and use least privilege.
-
----
-
-## 13. Local deployment convenience
-
-Developers may run CDK locally against the dev account using an authenticated AWS CLI/SSO profile.
-
-Useful commands during development include:
-
-```text
-cdk synth
-cdk diff
-cdk deploy <selected-stack>
-cdk destroy <ephemeral-stack>
-```
-
-`cdk watch`/hotswap may be used for a personal development loop where appropriate, but normal CI/release deployments must use standard CloudFormation/CDK deployment behavior rather than hotswap semantics.
-
----
-
-## 14. Drift and reproducibility exit criteria
-
-An environment is considered reproducible when:
-
-- a clean repository checkout can synthesize its infrastructure;
-- required bootstrap/config prerequisites are documented;
-- deployment does not require hidden Console-created application resources;
-- an ephemeral environment can be created and removed through IaC;
-- IAM and environment parameters are reviewable;
-- the deployed resource set maps back to version-controlled CDK definitions.
-
----
-
-## 15. References
-
-- AWS CDK Developer Guide: https://docs.aws.amazon.com/cdk/v2/guide/home.html
-- CDK bootstrapping: https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html
-- CDK environments: https://docs.aws.amazon.com/cdk/v2/guide/environments.html
-- CDK watch: https://docs.aws.amazon.com/cdk/v2/guide/ref-cli-cmd-watch.html
+- `../adr/ADR-001-aws-cdk-infrastructure-as-code.md`
+- `../adr/ADR-012-localstack-only-infrastructure-runtime.md`
+- `../architecture/localstack-runtime-and-lifecycle.md`

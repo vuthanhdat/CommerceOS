@@ -2,84 +2,29 @@
 
 ## 1. Why every non-trivial change needs a task
 
-AI agents perform better when scope, business intent, constraints, and acceptance criteria are explicit and stored in the repository.
+A task is the repository contract between product intent and implementation. Use `tasks/TASK-TEMPLATE.md`.
 
-A task is the contract between product intent and implementation.
+A task should represent one logical scope. If implementation discovers unrelated work, record a follow-up task rather than silently expanding scope.
 
-Tasks live under:
+## 2. Required task content
 
-```text
-tasks/
-├── backlog/
-├── active/
-└── completed/
-```
+### Goal and business context
 
-Git does not preserve empty folders, so they are created naturally as tasks move through the workflow.
+State one observable outcome and the domain/business rules that matter.
 
-Use `tasks/TASK-TEMPLATE.md`.
+### Scope and acceptance criteria
 
----
-
-## 2. Task lifecycle
-
-```text
-backlog
-   ↓
-active
-   ↓
-implementation
-   ↓
-verification
-   ↓
-review
-   ↓
-completed
-```
-
-A task should move to `active` only when implementation is intended to begin.
-
-Only one logical scope should be represented by a task. If implementation discovers unrelated work, record a follow-up task instead of silently expanding scope.
-
----
-
-## 3. Required task sections
-
-### Goal
-
-One observable outcome, written from the system/user perspective.
-
-Bad:
-
-> Implement DynamoDB repository.
-
-Better:
-
-> Merchant staff can create a product owned by the authenticated tenant and retrieve it later.
-
-### Business context
-
-Explain why the capability exists and which domain rules matter.
-
-### In scope
-
-Explicit implementation boundary.
-
-### Out of scope
-
-Explicit anti-scope-creep boundary.
-
-### Acceptance criteria
-
-Prefer Given/When/Then or other deterministic statements that can become tests.
+Define explicit in-scope/out-of-scope boundaries and deterministic acceptance criteria that can become tests where practical.
 
 ### Architecture impact
 
-State whether domain boundaries, events, persistence, external contracts, workflows, or AWS infrastructure change.
+State whether the task changes module/domain boundaries, events, persistence, contracts, workflows, or infrastructure capabilities/mappings.
+
+Architecture should name the required capability before an AWS-style service mapping. Under ADR-012, infrastructure mappings target LocalStack only.
 
 ### Security and tenant impact
 
-Describe identity, authorization, tenant scoping, sensitive-data handling, and abuse concerns.
+Describe identity evidence, authorization, trusted Tenant scoping, sensitive-data handling, and abuse concerns.
 
 ### Reliability/idempotency impact
 
@@ -87,19 +32,28 @@ Required for async workflows, external calls, payments, queues, events, retries,
 
 ### Observability impact
 
-State required logs, metrics, traces, correlation IDs, or operational states.
+State required logs, metrics, traces, correlation IDs, and operational states.
 
-### Cost impact
+### Local runtime/resource impact
 
-State whether the task changes request volume, storage, compute duration, workflow transitions, network transfer, or introduces an AWS service.
+For infrastructure-sensitive work, state:
+
+- LocalStack capabilities/services involved;
+- endpoint/region/account-placeholder/port/resource-prefix configuration impact;
+- version/edition/feature assumptions;
+- bootstrap/reset/cleanup behavior;
+- material local/CI CPU, memory, disk, or runtime impact;
+- known emulator limitations or AWS-behavior gaps.
+
+Do not add AWS account, IAM/OIDC, Budget/Free Tier, cloud authorization, or real-cloud preview/staging gates under ADR-012.
 
 ### Test plan
 
-List unit/integration/architecture/IaC/manual verification expected.
+List unit, integration, architecture, contract, IaC, LocalStack, E2E/manual, failure, and reset/redeploy verification expected as applicable.
 
----
+When LocalStack cannot sufficiently reproduce a capability, identify the nearest reliable project-owned layer that will be tested and record the limitation explicitly.
 
-## 4. Acceptance-criteria quality
+## 3. Acceptance-criteria quality
 
 Prefer criteria that a machine can verify.
 
@@ -112,7 +66,7 @@ when they create a product
 then the persisted product is scoped to Tenant A.
 
 AC02
-A tenantId supplied in the request body cannot override the authenticated tenant.
+A tenantId supplied by the client cannot override trusted Tenant context.
 
 AC03
 Tenant B cannot retrieve Tenant A's product by guessing its productId.
@@ -124,23 +78,17 @@ AC05
 Repository verification passes.
 ```
 
-Avoid:
+Avoid vague statements such as `works correctly`, `secure`, `good performance`, or `follows best practices` unless converted into measurable behavior.
 
-- "works correctly";
-- "secure";
-- "good performance";
-- "follows best practices".
+## 4. Task completion record
 
-Those statements are too vague unless converted into measurable criteria.
-
----
-
-## 5. Task completion record
-
-When moving a task to `completed`, append a short completion section containing:
+Before moving a task to `completed`, record:
 
 - implementation summary;
-- verification result;
-- important architecture/security/cost decisions;
-- follow-up tasks intentionally left out;
-- harness improvement made, if any defect/friction revealed a reusable gap.
+- acceptance-criteria result;
+- repository/local verification result;
+- LocalStack verification/reset evidence when required;
+- known emulator limitations;
+- important architecture/security/runtime decisions;
+- follow-up tasks;
+- harness improvement, if any.

@@ -1,59 +1,32 @@
 # CommerceOS — Planning Factory & Task Maturity
 
-_Last reviewed: 2026-08-09._
+_Last reviewed: 2026-08-11. ADR-012 is authoritative for infrastructure/runtime planning._
 
 ## 1. Why this exists
 
-CommerceOS currently has a useful large candidate backlog, but a generated backlog is not automatically an implementation contract.
+A generated backlog is not automatically an implementation contract. A task can describe a plausible outcome while still depending on business/domain/architecture decisions that have not been made.
 
-A task can describe a plausible outcome while still depending on business/domain/architecture decisions that have not been made yet. Allowing a Builder to implement such a task would make the Builder silently become the architect.
-
-CommerceOS therefore separates **backlog generation** from **implementation readiness**.
+CommerceOS therefore separates backlog generation from implementation readiness.
 
 > A task may exist long before it is safe to implement.
 
-## 2. Recovery rule for the existing backlog
-
-The current implementation backlog under `tasks/backlog/` is retained. Do not delete or renumber it merely because it was generated early.
-
-Until individually refined, existing backlog tasks are treated as:
+## 2. Specification maturity
 
 ```text
-Specification maturity: Outline
-Execution permission: NO
+Outline -> Refined -> Ready -> Active -> Completed
 ```
-
-They are candidate work items and dependency hypotheses, not final implementation instructions.
-
-The Phase 0 codebase skeleton already present in the repository is also retained as **foundation scaffolding only**. It does not prove that business-domain boundaries, aggregates, contracts, DynamoDB access patterns, or workflow choices are implementation-ready.
-
-## 3. Specification maturity
-
-Every task uses one of these maturity states.
 
 ### Outline
 
-Purpose and rough outcome are known, but important design dependencies may still be unresolved.
-
-May contain:
-- candidate scope;
-- likely dependencies;
-- rough acceptance criteria;
-- architecture hypotheses.
-
-Must not be assigned to a Builder.
+Purpose and rough outcome are known, but important design dependencies may still be unresolved. Must not be assigned to a Builder.
 
 ### Refined
 
-Business behavior and major constraints are understood, but one or more implementation decisions/contracts are still pending.
-
-Must not be assigned to a Builder unless the remaining uncertainty is explicitly out of scope and cannot affect the implementation.
+Business behavior and major constraints are understood, but one or more implementation decisions/contracts/dependencies are still pending. Must not be assigned to a Builder.
 
 ### Ready
 
-The task is an implementation contract.
-
-A Builder may take it only when the Ready gate below passes.
+The task is an implementation contract. A Builder may take it only when the Ready gate below passes.
 
 ### Active
 
@@ -63,48 +36,52 @@ A Ready task has an assigned branch/worktree and Builder.
 
 Acceptance criteria, verification, review, and Definition of Done are satisfied.
 
-## 4. Ready gate
+## 3. Ready gate
 
-Before a task becomes `Ready`, the Backlog Planner verifies that all items relevant to the task are resolved or explicitly N/A:
+Before a task becomes `Ready`, the Backlog Planner verifies that all relevant items are resolved or explicitly N/A.
 
 ### Business/domain
 
 - owning domain/bounded context is explicit;
 - business outcome is unambiguous;
-- aggregate/entity/value-object ownership needed by the task is defined;
-- business invariants touched by the task are documented;
-- state transitions/error semantics needed by the task are documented;
+- required aggregate/entity/value-object ownership is defined;
+- touched invariants are documented;
+- required state transitions/error semantics are documented;
 - cross-domain facts and ownership are explicit.
 
 ### Architecture
 
 - module/layer ownership is explicit;
-- synchronous vs asynchronous interactions needed by the task are decided;
-- public/internal contracts needed by the task are defined or versioned;
+- synchronous vs asynchronous interactions are decided;
+- public/internal contracts are defined or versioned;
 - transaction/consistency boundary is defined where relevant;
-- persistence ownership and required access patterns are defined where relevant;
-- AWS service use follows accepted architecture/ADR rather than being invented by the Builder;
+- persistence ownership/access patterns are defined where relevant;
+- required infrastructure **capability** is explicit before selecting a service mapping;
+- AWS-style service mappings follow accepted architecture/ADR and target LocalStack under ADR-012;
+- LocalStack endpoint/credentials/region/account placeholders/ports/resource prefixes remain configuration concerns;
+- known LocalStack support/edition/behavior limitations that materially affect the task are understood;
 - new material architecture choices have an accepted ADR.
 
-### Security/reliability/cost
+### Security/reliability/infrastructure verification
 
 - tenant/authentication/authorization expectations are explicit;
 - idempotency/retry/timeout/duplicate-delivery behavior is explicit where relevant;
-- cloud verification need and teardown are explicit;
-- Free Tier/credit impact is understood.
+- LocalStack/infrastructure verification need is explicit;
+- bootstrap/reset/cleanup expectations are explicit when infrastructure state is involved;
+- unsupported/different LocalStack behavior has a planned nearest-reliable-layer verification path;
+- no real AWS account, IAM/OIDC, Budget/credit, cloud authorization, preview/staging, or cloud-cost gate is required under ADR-012.
 
 ### Execution
 
 - dependencies are completed or otherwise satisfied;
 - acceptance criteria are machine-testable where practical;
 - out-of-scope boundaries prevent scope creep;
+- exclusive local/LocalStack resources are declared where isolation cannot safely be achieved;
 - no unresolved decision remains that would force the Builder to choose product or architecture behavior.
 
 If any material item is missing, the task stays `Outline` or `Refined` and is routed back to the appropriate planning role.
 
-## 5. Planning Factory
-
-CommerceOS uses three planning roles before implementation.
+## 4. Planning Factory
 
 ```text
 Product intent / existing docs
@@ -113,7 +90,7 @@ DOMAIN ARCHITECT
 business model, invariants, ownership
           ↓
 TECHNICAL ARCHITECT
-module/contracts/persistence/integration/ADR
+module/contracts/persistence/integration/runtime/ADR
           ↓
 BACKLOG PLANNER
 reconcile task graph + maturity + dependencies
@@ -123,37 +100,32 @@ READY TASKS
 BUILDER
 ```
 
-The first planning pass may cover the whole product at medium depth, but only near-term tasks need implementation-level detail. Later tasks can remain Outline until their dependencies and lessons from earlier phases are known.
+Only near-term tasks require implementation-level detail. Later tasks remain Outline until their dependencies and lessons from earlier phases are known.
 
-## 6. Agent communication protocol
+## 5. Agent communication protocol
 
-Agents do not rely on private cross-thread conversation as the source of truth.
-
-They communicate through repository artifacts:
+Agents communicate through repository artifacts:
 
 ```text
 Domain Architect
-  → docs/domains/* / domain sections / decision notes
+  -> docs/domains/* / decision register
 
 Technical Architect
-  → docs/architecture/* / docs/adr/* / contracts
+  -> docs/architecture/* / docs/adr/* / contracts
 
 Backlog Planner
-  → tasks/BACKLOG.md / task files / dependency + maturity metadata
+  -> tasks/BACKLOG* / task files / dependency + maturity metadata
 
 Builder
-  → branch/worktree + commits + task completion summary + PR
+  -> branch/worktree + commits + completion summary
 
 Reviewer / Verification
-  → PR findings + CI/test evidence
-
-Builder
-  → fixes in the original task branch
+  -> findings + test evidence
 ```
 
-The repository and GitHub PR are the shared blackboard/message bus.
+The repository and GitHub history are the shared planning record.
 
-## 7. Builder stop rule
+## 6. Builder stop rule
 
 A Builder must not silently resolve an architectural or business ambiguity.
 
@@ -163,36 +135,23 @@ If implementation requires a decision not encoded in the Ready task or accepted 
 BLOCKED — PLANNING DECISION REQUIRED
 ```
 
-State:
-- the missing decision;
-- why it affects implementation;
-- which role should resolve it (Domain Architect or Technical Architect);
-- affected task/contract/ADR.
+State the missing decision, why it affects implementation, which planning role owns it, and the affected task/contract/ADR.
 
-## 8. Existing task reconciliation
+An emulator limitation is not automatically a planning decision. If architecture already defines the capability and the task defines the limitation-handling strategy, record/test the limitation according to ADR-012. If satisfying the task would require changing the capability/contract/business semantics, route back to Technical Architect or Domain Architect instead of inventing a workaround.
 
-The generated backlog is useful raw material. Reconciliation should not rewrite all 83 tasks in one expensive pass.
+## 7. Existing task reconciliation
 
 Process tasks by dependency frontier:
 
-1. keep all existing tasks as Outline candidates;
-2. establish/refresh domain and technical architecture baselines;
+1. retain existing task nodes unless obsolete;
+2. refresh domain and technical baselines;
 3. identify the first dependency frontier;
-4. refine only those tasks and their immediate prerequisites;
-5. mark individual tasks Ready;
-6. implement and learn;
-7. periodically revisit later Outline tasks as architecture and domain knowledge improve.
+4. refine only those tasks and immediate prerequisites;
+5. remove stale real-AWS gates before a task becomes Ready;
+6. mark individual tasks Ready;
+7. implement and learn;
+8. revisit later Outline tasks as architecture/domain knowledge improves.
 
-This preserves planning work without pretending distant implementation details are already known.
+## 8. Human role
 
-## 9. Initial execution freeze
-
-Until the planning baseline is reconciled, no new business implementation task in `tasks/backlog/` should be activated solely because its numeric predecessor completed.
-
-The exception is an explicitly human-approved foundation/recovery task whose scope cannot encode unresolved business design.
-
-## 10. Human role
-
-The human approves high-consequence product/architecture baselines and decides when a task/phase is worth executing.
-
-The human should not need to micromanage routine Builder implementation once a task is Ready.
+The human approves high-consequence product/architecture baselines and decides when a task/phase is worth executing. Routine Builder implementation should not require cloud-account permissions or repeated infrastructure decisions once the task is Ready.

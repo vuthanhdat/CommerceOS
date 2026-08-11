@@ -12,8 +12,9 @@ Translate approved business/domain knowledge into implementation architecture wi
 - planning maturity rules
 - relevant domain documents
 - `docs/03-serverless-architecture.md`
-- architecture rules and accepted ADRs
-- Free Tier/credit guardrails
+- `docs/architecture/technical-baseline.md`
+- `docs/architecture/localstack-runtime-and-lifecycle.md`
+- architecture rules and accepted ADRs, especially ADR-012
 
 ## Responsibilities
 
@@ -22,24 +23,31 @@ Translate approved business/domain knowledge into implementation architecture wi
 - define API/application/event contracts needed by near-term work;
 - define transaction/consistency boundaries;
 - define persistence ownership and required access patterns;
-- map justified problems to AWS services;
-- create/update ADRs for material decisions;
-- preserve Free Tier/pay-per-use constraints.
+- describe required infrastructure capabilities before selecting an emulator/service mapping;
+- map justified capabilities to LocalStack-supported AWS-style services where appropriate;
+- keep LocalStack endpoints, synthetic credentials, region, account placeholders, ports, and feature differences behind configuration/infrastructure boundaries;
+- define deterministic local infrastructure bootstrap/reset and integration-testing flows;
+- explicitly document unsupported or behaviorally different LocalStack features instead of assuming AWS compatibility;
+- create/update ADRs for material decisions.
 
 ## Must not
 
 - invent business rules;
 - implement feature or harness code;
 - force every domain into a separate deployment;
-- add AWS services without a concrete problem and cost rationale;
-- clear human/security/cost/cloud gates without evidence;
+- require provisioning or validation in a real AWS account unless a later human decision explicitly supersedes ADR-012;
+- put LocalStack-specific implementation details into Domain/Application contracts;
+- treat LocalStack evidence as proof of exact AWS control-plane/service equivalence;
+- clear human/security/architecture gates without evidence;
 - mark tasks Ready by itself.
 
 ## Outputs
 
 - architecture baseline/diagrams/contracts;
+- LocalStack capability/service mapping and limitations;
 - accepted or proposed ADRs;
-- explicit implementation constraints;
+- explicit implementation/configuration constraints;
+- local infrastructure lifecycle and integration-test strategy;
 - resolved technical dependencies for Backlog Planner.
 
 ## Orchestrator planning protocol

@@ -1,549 +1,296 @@
 # CommerceOS — Delivery Roadmap
 
-> **Planning reconciliation note:** Phase/task/event examples in this roadmap are directional. The [domain baseline](02-business-domains.md), [product-decision register](domains/product-decisions.md), [technical architecture baseline](architecture/technical-baseline.md), and individually refined task maturity take precedence. Numeric order or a named event/workflow here does not make a candidate task Ready and does not resolve a pending `PD-*` decision.
+> **Planning reconciliation note:** This roadmap is directional. The domain baseline, product-decision register, technical architecture baseline, accepted ADRs, canonical V2 backlog, and individually refined task maturity take precedence. A phase number or named technology here never makes a task Ready or resolves a product/architecture decision.
 
 ## 1. Roadmap principle
 
-CommerceOS should be implemented as a sequence of **business-capability slices**, not as a checklist of AWS services.
+CommerceOS is implemented as **business-capability slices**, not as a checklist of cloud services.
 
-Each phase should answer four questions:
+Each phase asks:
 
 1. What business capability becomes usable?
 2. What architectural pressure appears?
-3. Which design pattern addresses it?
-4. Which AWS service is justified by that pattern?
+3. Which capability/pattern addresses it?
+4. Which LocalStack-supported AWS-style service mapping, if any, helps teach that capability?
 
-The project should deliberately start simpler than the final target architecture and refactor when the limitation becomes visible.
+Under ADR-012, LocalStack is the only infrastructure/runtime target. No roadmap phase requires a real AWS account, AWS IAM/OIDC deployment, AWS Budget/Free Tier controls, real-cloud staging, or cloud validation.
 
 ---
 
-# 2. Phase 0 — Repository & AWS foundation
+## 2. Phase 0 — Repository & LocalStack foundation
 
-## Goal
+### Goal
 
 Create a safe, reproducible project foundation before business code.
 
-## Deliverables
+### Directional deliverables
 
 - solution/repository structure;
-- coding conventions;
-- ADR folder;
-- AWS CDK bootstrap;
-- `dev` environment;
-- tagging standard;
-- AWS Budget alert;
-- bounded CloudWatch retention;
-- CI skeleton;
-- architecture/documentation checks.
+- coding conventions and ADRs;
+- AWS CDK source-of-truth infrastructure;
+- LocalStack runtime profiles;
+- deterministic start/readiness/bootstrap/reset/redeploy flow;
+- task/worktree resource isolation;
+- CI/harness skeleton;
+- architecture/documentation checks;
+- explicit LocalStack limitations policy.
 
-## AWS concepts
+### Exit intent
 
-- IAM;
-- CDK;
-- CloudFormation;
-- budgets/tags;
-- CloudWatch basics.
+A clean checkout can synthesize the foundation and deterministically bootstrap, inspect, reset, and redeploy it against LocalStack without hidden manual resources.
 
-## Exit criteria
-
-A clean checkout can deploy and destroy the empty/skeleton environment reproducibly.
+Canonical near-frontier tasks: `TASK-0093`–`TASK-0095`.
 
 ---
 
-# 3. Phase 1 — Tenant & merchant identity
+## 3. Phase 1 — Tenant & merchant identity
 
-## Business capability
+### Business capability
 
-A business can join CommerceOS and its staff can log in with tenant-scoped permissions.
+A business can join CommerceOS and merchant staff can operate with trusted Tenant-scoped authority.
 
-## Deliverables
+### Architectural lesson
 
-- Tenant;
-- BusinessProfile;
-- Cognito authentication;
-- merchant membership;
-- Owner/Admin/Sales/Warehouse/Accountant/Viewer roles;
-- trusted tenant context;
-- tenant-isolation integration tests;
-- basic audit records.
+Multi-tenancy is an authorization and data-isolation problem, not merely a `tenantId` field. Identity transport proves subject identity only; Merchant Access resolves current Tenant/Membership authority.
 
-## Architectural lesson
-
-Multi-tenancy is an authorization/data-isolation problem, not merely adding a `tenantId` column.
+Identity-edge mapping may use LocalStack Cognito where sufficiently supported or a test identity adapter behind the same project-owned contract.
 
 ---
 
-# 4. Phase 2 — Canonical product catalog
+## 4. Phase 2 — Canonical product catalog
 
-## Business capability
+### Business capability
 
-Merchant can create and publish products.
+Merchant can create, manage, and publish Products according to the approved Catalog domain baseline.
 
-## Deliverables
+### Architectural lesson
 
-- Product;
-- Category;
-- Brand;
-- SKU;
-- price;
-- specifications;
-- product image references;
-- publish/unpublish/archive;
-- merchant back-office product screens;
-- DynamoDB access patterns documented.
-
-## Architectural lesson
-
-Model domain ownership and query patterns before trying advanced DynamoDB single-table optimization.
+Model ownership, lifecycle, uniqueness, and access patterns before optimizing physical persistence. DynamoDB remains the preferred LocalStack persistence mapping under ADR-005.
 
 ---
 
-# 5. Phase 3 — First external product source
+## 5. Phase 3 — First external product source
 
-## Business capability
+### Business capability
 
-Merchant can paste a supported external product URL and import selected structured fields into its catalog.
+Merchant can import reviewed structured product information from an approved external source into its own canonical Catalog.
 
-## Deliverables
+### Architectural lesson
 
-- Source Registry;
-- choose one Vietnamese electronics source after current policy/robots review;
-- manual URL import;
-- crawler queue;
-- crawler worker;
-- DLQ;
-- S3 raw snapshot with 7-day lifecycle;
-- normalized external product snapshot;
-- merchant import-review UI;
-- parser fixtures/tests.
-
-## Architectural lesson
-
-Introduce SQS because crawler work is bursty/unreliable and requires backpressure, not because "the roadmap says learn SQS".
+Introduce durable queued crawler work because source latency/failure/backpressure requires it, not because the project wants an SQS icon. LocalStack SQS/S3 mappings are used where supported; source policy and parser fixtures remain product/engineering constraints independent of the emulator.
 
 ---
 
-# 6. Phase 4 — Public storefront
+## 6. Phase 4 — Public storefront
 
-## Business capability
+### Business capability
 
-Each tenant has a public storefront.
+Each eligible Tenant can expose a public storefront once Tenant-address semantics are resolved.
 
-## Deliverables
+### Architectural lesson
 
-- storefront route/tenant slug;
-- product listing;
-- product detail;
-- category/filter basics;
-- CloudFront + S3 deployment;
-- public catalog caching strategy;
-- image delivery strategy.
-
-## Architectural lesson
-
-Separate public read optimization from transactional back-office APIs.
+Separate public read delivery/projections from transactional merchant operations. Object/static delivery mappings may use LocalStack S3 and other supported local delivery mechanisms; no real CDN deployment is required by the learning runtime.
 
 ---
 
-# 7. Phase 5 — Cart & simple checkout
+## 7. Phase 5 — Cart & simple checkout
 
-## Business capability
+### Business capability
 
-Customer can build a cart and place an order.
+Customer can build a cart and place an Order using authoritative current Catalog/Pricing validation and idempotent checkout semantics.
 
-## Deliverables
+### Architectural lesson
 
-- cart state;
-- checkout command;
-- order price snapshot;
-- SalesOrder;
-- SalesOrderLine;
-- order status;
-- checkout idempotency key;
-- initial synchronous implementation.
-
-## Architectural lesson
-
-Start simple enough to expose where synchronous coupling becomes painful.
+Start with the simplest truthful synchronous coordination and expose where distributed pressure actually appears.
 
 ---
 
-# 8. Phase 6 — Inventory
+## 8. Phase 6 — Inventory
 
-## Business capability
+### Business capability
 
-Merchant has real stock state and an order cannot sell the same last item twice.
+Merchant has authoritative stock state and concurrent Orders cannot incorrectly sell the same final stock.
 
-## Deliverables
+### Architectural lesson
 
-- Warehouse (single warehouse active initially);
-- OnHand/Reserved/Available;
-- stock movements;
-- reserve/release/issue;
-- conditional write/transaction for concurrency safety;
-- low-stock read model.
-
-## Architectural lesson
-
-Learn concurrency and invariants with DynamoDB conditional writes/transactions.
+Learn invariant protection through conditional writes/bounded transactions and owner-local persistence, using LocalStack DynamoDB where sufficiently supported.
 
 ---
 
-# 9. Phase 7 — Mock Payment Provider v1
+## 9. Phase 7 — Mock Payment Provider v1
 
-## Business capability
+### Business capability
 
-Checkout can simulate payment without real money.
+Checkout can simulate merchant-order payment without real money/card data.
 
-## Deliverables
+### Architectural lesson
 
-- independently deployed MockPaymentStack;
-- create/capture/query;
-- `pm_success`;
-- `pm_declined`;
-- payment idempotency;
-- CommerceOS payment adapter;
-- order confirmation/failure handling.
-
-## Architectural lesson
-
-Treat external integrations as boundaries even when both sides are code we own.
+Treat provider integration as an external boundary even when both applications are owned by CommerceOS. Stable operation identity and idempotency precede retries.
 
 ---
 
-# 10. Phase 8 — Payment failure engineering
+## 10. Phase 8 — Payment failure engineering
 
-## Business capability
+### Business capability
 
-Orders remain correct when the payment provider is slow or ambiguous.
+Orders remain correct when the Mock Payment Provider is slow, fails transiently, duplicates callbacks, or leaves outcome ambiguous.
 
-## Add scenarios
+### Architectural lesson
 
-- HTTP 500 then success;
-- timeout before commit;
-- timeout after commit;
-- delayed success;
-- duplicate webhook;
-- webhook retry;
-- webhook DLQ.
-
-## Deliverables
-
-- signed webhook simulation;
-- webhook deduplication;
-- PaymentUnknown state;
-- retry/backoff;
-- reconciliation job;
-- operational failure UI.
-
-## Architectural lesson
-
-Learn why retry without idempotency is dangerous and why timeout does not equal business failure.
+Timeout is not failure. `OutcomeUnknown` requires inquiry/reconciliation; unsafe retries are prohibited until prior outcome is resolved.
 
 ---
 
-# 11. Phase 9 — Order workflow orchestration
+## 11. Phase 9 — Order payment/allocation orchestration
 
-## Business capability
+### Business capability
 
-Checkout/payment processing has an explicit observable state machine.
+The approved `OrderPlaced -> reservation -> payment/reconciliation -> OrderConfirmed -> OrderAllocated` process survives interruptions without inventing Sales/Inventory/Payment facts.
 
-## Deliverables
+### Architectural lesson
 
-Evaluate and implement Step Functions for the parts that now justify orchestration:
+ADR-010 selects durable workflow orchestration for this named process. Preferred learning mapping is LocalStack Step Functions Standard semantics where supported. Missing emulator behavior is documented/tested at the nearest reliable layer rather than validated in real AWS.
+
+---
+
+## 12. Phase 10 — Procurement
+
+### Business capability
+
+Merchant can replenish stock from Suppliers/Purchase Orders/receipts according to the approved domain baseline.
+
+### Architectural lesson
+
+Model a second major operational flow that independently produces Inventory and Accounting facts without foreign-persistence shortcuts.
+
+---
+
+## 13. Phase 11 — Accounting foundation
+
+### Business capability
+
+Merchant has an internal double-entry ledger with immutable posted Journals and traceable corrections.
+
+### Architectural lesson
+
+Financial records require append/correction semantics, source idempotency, and stronger integrity rules than ordinary CRUD data.
+
+---
+
+## 14. Phase 12 — Event-driven automatic accounting
+
+### Business capability
+
+Committed operational facts automatically produce idempotent Accounting effects.
+
+### Architectural lesson
+
+ADR-006 reliable fact publication uses owner state + outbox -> change-feed relay -> fact routing -> consumer-specific queue/DLQ. Preferred LocalStack mapping is DynamoDB Streams -> EventBridge -> SQS where supported.
+
+---
+
+## 15. Phase 13 — Basic finance/back-office reports
+
+### Business capability
+
+Merchant can understand revenue, inventory, finance projections, and operational exceptions from owned/rebuildable read models.
+
+### Architectural lesson
+
+Use projections/read models rather than scanning transactional ownership stores or coupling Reporting to foreign persistence.
+
+---
+
+## 16. Phase 14 — Product-source intelligence
+
+### Business capability
+
+Merchant can refresh approved external-source references and inspect changes over time.
+
+### Architectural lesson
+
+Use scheduled dispatch, queue backpressure, source-specific concurrency, parser versioning, and observability only when named ProductDataIngestion tasks justify them. Scheduler/event mappings target LocalStack where supported.
+
+---
+
+## 17. Phase 15 — Returns & refunds
+
+### Business capability
+
+Merchant can request, review, approve/reject, and propagate approved restockable refund effects across Sales, Inventory, Payments, and Accounting according to `PD-023`.
+
+### Architectural lesson
+
+ADR-011 explicitly chooses **reliable event choreography**, not a global Step Functions refund workflow:
 
 ```text
-Create Order
-  ↓
-Reserve Inventory
-  ↓
-Request Payment
-  ↓
-Choice
- ├ success → Confirm
- ├ pending → Wait/reconcile
- └ fail    → Release Inventory
+RefundApproved
+   ├── Inventory -> StockReturned
+   ├── Payments -> provider refund/reconciliation -> PaymentRefunded
+   └── Accounting -> revenue compensation
+
+StockReturned   -> Accounting COGS/inventory reversal
+PaymentRefunded -> Accounting Deposits/Cash settlement
 ```
 
-## Architectural lesson
-
-Compare application-code orchestration with Step Functions based on actual complexity encountered in Phases 5–8.
+No global `RefundCompleted` authority is invented.
 
 ---
 
-# 12. Phase 10 — Procurement
+## 18. Phase 16 — Platform hardening
 
-## Business capability
+### Directional deliverables
 
-Merchant can replenish stock from suppliers.
+- authorization/tenant-isolation hardening;
+- throttling/abuse controls at project-owned boundaries;
+- DLQ/recovery tooling;
+- deterministic load/failure campaigns sized for local/CI resources;
+- backup/reset/recovery exercises where the selected LocalStack setup supports them;
+- observability and operator-diagnostic improvements;
+- explicit emulator limitation register.
 
-## Deliverables
+### Architectural lesson
 
-- Supplier;
-- PurchaseOrder;
-- PO lines;
-- GoodsReceipt;
-- ReceiveStock integration;
-- supplier invoice reference;
-- purchase status flow.
-
-## Architectural lesson
-
-Model a second major business flow that produces inventory effects independently of sales.
+Hardening validates CommerceOS contracts and failure handling against the chosen learning runtime. It does not claim exact AWS control-plane, quota, IAM, performance, or managed-service behavior.
 
 ---
 
-# 13. Phase 11 — Accounting foundation
+## 19. Phase 17 — Architecture audit
 
-## Business capability
-
-Merchant has a basic internal ledger.
-
-## Deliverables
-
-- chart of accounts;
-- JournalEntry;
-- JournalLine;
-- debit/credit validation;
-- draft/post/reverse;
-- immutable posted journal;
-- source transaction reference;
-- General Ledger;
-- Trial Balance.
-
-## Architectural lesson
-
-Immutable financial records require different mutation rules from CRUD product data.
-
----
-
-# 14. Phase 12 — Event-driven automatic accounting
-
-## Business capability
-
-Committed operational activity automatically generates bookkeeping records.
-
-## Initial posting events
-
-- PaymentCaptured / sale recognition;
-- OrderFulfilled / COGS + inventory movement according to chosen accounting policy;
-- GoodsReceived / inventory + payable where policy applies;
-- SupplierPaid;
-- PaymentRefunded;
-- selected StockAdjusted cases.
-
-## Deliverables
-
-- EventBridge domain event bus;
-- accounting-events SQS;
-- idempotent accounting worker;
-- posting-rule engine/table;
-- journal source-event uniqueness;
-- accounting DLQ;
-- reconciliation for missing expected postings.
-
-## Architectural lesson
-
-Experience eventual consistency between operational truth and accounting projection while preserving traceability and correctness.
-
----
-
-# 15. Phase 13 — Basic finance/back-office reports
-
-## Business capability
-
-Merchant can understand the business from generated data.
-
-## Deliverables
-
-- daily revenue;
-- gross-profit projection;
-- inventory value;
-- cash projection;
-- receivable projection;
-- payable projection;
-- top products;
-- operational exceptions;
-- basic P&L projection later in the phase.
-
-## Architectural lesson
-
-Create read models/projections rather than repeatedly scanning transactional data.
-
----
-
-# 16. Phase 14 — Crawler v2 / product-source intelligence
-
-## Business capability
-
-Merchant can refresh external product references and see changes over time.
-
-## Deliverables
-
-- second Vietnamese source;
-- EventBridge Scheduler refresh;
-- price snapshots;
-- normalized change hashes;
-- source-change events;
-- parser-version metrics;
-- source operational dashboard;
-- kill switch per source.
-
-Optional after account/license review:
-
-- Amazon Creators API adapter.
-
-## Architectural lesson
-
-Use scheduled serverless jobs, queue backpressure, source-specific concurrency, observability, and parser versioning.
-
----
-
-# 17. Phase 15 — Returns & refund workflow
-
-## Business capability
-
-Merchant can process return/refund consistently across sales, payment, inventory, and accounting.
-
-## Deliverables
-
-- return request;
-- refund validation;
-- mock payment refund;
-- inventory return;
-- accounting reversal/contra posting;
-- Step Functions workflow where justified;
-- retry/reconciliation.
-
-## Architectural lesson
-
-This is the first strong candidate for Saga/compensation thinking across multiple domains.
-
----
-
-# 18. Phase 16 — Platform hardening
-
-## Deliverables
-
-- permission-granular authorization;
-- tenant isolation audit/tests;
-- API throttling;
-- WAF/CDN review;
-- DynamoDB max-throughput guardrails;
-- reserved concurrency;
-- DLQ recovery tooling;
-- load test;
-- failure injection;
-- backup/PITR production-like profile;
-- cost model updated from real CloudWatch/Cost Explorer data.
-
----
-
-# 19. Phase 17 — Architecture audit
-
-Before any microservice split, perform an architecture audit.
-
-Questions:
+Before any extraction, ask:
 
 - Are bounded contexts still correct?
-- Which domains share code for the wrong reason?
 - Are there cross-domain persistence leaks?
-- Which queues/events are actually useful?
-- Which event contracts are unstable?
-- Where are retries unsafe?
-- Where is idempotency missing?
-- Which Lambda functions have become god functions?
-- Are Step Functions used because they help, or because they exist?
-- What dominates AWS cost?
-- What dominates latency?
-- What dominates operational failures?
+- Which queues/events/workflows provide real value?
+- Which contracts are unstable?
+- Where are retries/idempotency unsafe?
+- Which runtime components have become god components?
+- What dominates local latency/resource use/operational failures?
+- Which LocalStack limitations materially reduce learning confidence?
+- Is any proposed extraction justified by measured runtime, reliability, ownership, or deployment pressure?
 
 ---
 
-# 20. Phase 18 — Selective extraction, only if justified
+## 20. Phase 18 — Selective extraction, only if justified
 
-Possible candidates:
+Possible future candidates remain ProductDataIngestion, Mock Payment, Accounting, or Reporting when measured boundaries justify independent runtime/deployment treatment.
 
-### Product Data Ingestion
+Do **not** split Sales, Catalog, Inventory, or other contexts merely to claim microservices.
 
-Already independently scalable and externally constrained.
-
-### Mock Payment
-
-Already behaves as an external service.
-
-### Accounting
-
-Could be isolated later if financial integrity/deployment controls justify it.
-
-### Reporting
-
-Could move to separate analytics pipeline if transactional load and query load diverge.
-
-Do **not** split Sales, Catalog, Inventory, etc. merely to claim the project uses microservices.
+Changing the infrastructure target from LocalStack to a hosted cloud is not an extraction step; it requires an explicit human architecture decision superseding ADR-012.
 
 ---
 
-# 21. Suggested milestone grouping
+## 21. Milestone intent
 
-## Milestone A — Sell something
+- **Milestone A — Sell something:** onboarding/catalog/storefront/checkout/inventory/mock payment.
+- **Milestone B — Survive failure:** payment ambiguity and durable order orchestration.
+- **Milestone C — Run the business:** procurement/accounting/reporting.
+- **Milestone D — Event-driven effects:** reliable cross-domain facts, projections, refunds, ingestion automation.
+- **Milestone E — Production-minded engineering:** hardening, architecture audit, selective extraction only when justified.
 
-Phases 0–7.
+These are learning/product milestones, not cloud-environment promotion stages.
 
-Outcome:
+## 22. Current execution authority
 
-> A tenant can import/create a product, publish it, receive an order, reserve stock, and simulate payment.
-
-## Milestone B — Survive failure
-
-Phases 8–9.
-
-Outcome:
-
-> Checkout remains correct under retry, timeout, duplicate callback, and ambiguous payment state.
-
-## Milestone C — Run the business
-
-Phases 10–13.
-
-Outcome:
-
-> Purchase, inventory, sales, payment, and accounting form one business loop with useful reports.
-
-## Milestone D — Become event-driven
-
-Phases 12–15 overlap here intentionally.
-
-Outcome:
-
-> Cross-domain side effects use events/queues/workflows with idempotency, reconciliation, and failure handling.
-
-## Milestone E — Production-minded SaaS
-
-Phases 16–18.
-
-Outcome:
-
-> Architecture is measured, hardened, audited, costed, and only then selectively decomposed.
-
----
-
-# 22. First implementation target
-
-The first coding target should **not** be accounting, crawler discovery, or Step Functions.
-
-Recommended first vertical slice:
-
-```text
-Tenant login
-    ↓
-Create product manually
-    ↓
-Publish product
-    ↓
-Public storefront displays it
-```
-
-Then add one manual external URL import.
-
-This gives a working product surface quickly while preserving a path to the deeper architecture.
+The canonical V2 backlog controls actual sequencing and Ready status. As of the LocalStack reconciliation, the first Ready frontier remains `TASK-0093`; `TASK-0094` is the LocalStack foundation lifecycle remediation that follows it.

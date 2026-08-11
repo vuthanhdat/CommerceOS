@@ -27,6 +27,8 @@ Why is this capability needed? Which business/domain rules matter?
 - Sync/async interaction decision resolved? Yes/No/N/A — references:
 - Transaction/consistency boundary resolved? Yes/No/N/A — references:
 - Persistence ownership/access patterns resolved? Yes/No/N/A — references:
+- Infrastructure capability/mapping resolved? Yes/No/N/A — references:
+- LocalStack support/limitations understood? Yes/No/N/A — references:
 - Material ADRs accepted? Yes/No/N/A — references:
 - Remaining planning blockers:
 
@@ -60,7 +62,7 @@ Then ...
 - Domains touched:
 - Persistence impact:
 - Events/contracts impact:
-- AWS/IaC impact:
+- Infrastructure capability / LocalStack mapping impact:
 - ADR required? Yes/No — why:
 
 ## Security and tenant impact
@@ -88,15 +90,14 @@ Use `N/A` with a short reason when not applicable.
 - Traces/correlation:
 - Operational states/errors:
 
-## Cost impact
+## Local runtime/resource impact
 
-- Request/compute impact:
-- Storage impact:
-- Network impact:
-- New AWS resources/services:
-- Free Tier allowance relevant to this task:
-- Expected monthly cost change or `negligible` with rationale:
-- Estimated one-off cloud-test/load-test cost, if any:
+- LocalStack services/capabilities used:
+- LocalStack version/edition/feature assumptions:
+- Endpoint/region/account-placeholder/port/resource-prefix configuration impact:
+- CPU/memory/disk/CI runtime impact, if material:
+- Persistent local state/volume impact:
+- Known emulator limitations or AWS-behavior gaps:
 
 ## Test plan
 
@@ -106,13 +107,16 @@ Use `N/A` with a short reason when not applicable.
 - Contract:
 - IaC:
 - E2E/manual:
-- **Cloud verification required?** Yes/No — why:
-- AWS environment/stack(s) required:
-- Preview/staging teardown plan:
+- **LocalStack/infrastructure verification required?** Yes/No — why:
+- LocalStack profile/stack(s)/service(s) required:
+- Bootstrap/reset/cleanup plan:
+- Limitation fallback test layer, if applicable:
 
-A task that changes IAM, API Gateway integration, Lambda packaging/runtime configuration, Cognito, DynamoDB infrastructure/access behavior, SQS/EventBridge/Step Functions semantics, S3 policies/events/lifecycle, or material CDK resources should normally require selected real-AWS verification before it is considered release-ready.
+A task that changes API Gateway/Lambda delivery wiring, Cognito integration, DynamoDB infrastructure/access behavior, SQS/EventBridge/Step Functions semantics, S3 integration, or material CDK resources should normally require selected LocalStack verification when the required behavior is sufficiently supported.
 
-Do not deploy a full AWS preview merely because a task exists. Cloud verification must be proportional to the changed behavior and respect `docs/development/13-free-tier-and-credit-guardrails.md`.
+Do not treat LocalStack verification as proof of exact AWS behavior. Unsupported, partial, behaviorally different, or edition-dependent features must be documented and tested at the nearest reliable project-owned contract layer.
+
+Under ADR-012, a task must not require a real AWS account, AWS IAM/OIDC deployment, AWS Budget/Free Tier controls, cloud authorization, or real-cloud preview/staging verification unless a later accepted ADR explicitly supersedes that decision.
 
 ## Implementation notes
 
@@ -132,15 +136,16 @@ Fill before moving to `tasks/completed/`.
 
 - `python3 scripts/harness_check.py`: PASS/FAIL
 - local implementation checks:
-- cloud verification: PASS/FAIL/N/A — environment and evidence:
-- ephemeral resource teardown: PASS/N/A
+- LocalStack/infrastructure verification: PASS/FAIL/N/A — profile and evidence:
+- reset/cleanup: PASS/N/A
+- known emulator limitations:
 
 ### Acceptance criteria status
 
 - AC01: PASS/FAIL
 - AC02: PASS/FAIL
 
-### Architecture/security/cost notes
+### Architecture/security/runtime notes
 
 - ...
 
