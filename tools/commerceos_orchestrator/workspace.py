@@ -79,10 +79,14 @@ class GitWorkspaceManager:
         status = self._run(["status", "--porcelain"], cwd=workspace.path).stdout.strip()
         if status:
             self._run(["add", "-A"], cwd=workspace.path)
-            self._run(
-                ["commit", "-m", f"{task.id}: {task.title}"],
-                cwd=workspace.path,
-            )
+            staged = self._run(["diff", "--cached", "--quiet"], cwd=workspace.path, check=False)
+            if staged.returncode == 1:
+                self._run(
+                    ["commit", "-m", f"{task.id}: {task.title}"],
+                    cwd=workspace.path,
+                )
+            elif staged.returncode != 0:
+                raise WorkspaceError("could not determine whether task changes are staged")
         sha = self._run(["rev-parse", "HEAD"], cwd=workspace.path).stdout.strip()
         return sha
 
@@ -95,6 +99,43 @@ class GitWorkspaceManager:
             cwd=workspace.path,
         )
         return [line for line in result.stdout.splitlines() if line.strip()]
+
+    def restore_task_lifecycle(self, task: CanonicalTask, directory: Path) -> None:
+        """Discard Builder-owned lifecycle bookkeeping while preserving implementation work.
+
+        A Builder may write task-related documentation, but only the Orchestrator may move a
+        Ready task to completed or update canonical lifecycle indexes. Restore only those
+        narrow files from the task branch HEAD; implementation files remain untouched.
+        """
+        directory = directory.resolve()
+        repository_root = Path(self._run(["rev-parse", "--show-toplevel"], cwd=directory).stdout.strip()).resolve()
+        if repository_root != directory:
+            raise WorkspaceError(f"task lifecycle restore requires worktree root: {directory}")
+
+        lifecycle_paths = [
+            task.spec_path,
+            task.shard_path,
+            "tasks/BACKLOG.v2.yaml",
+            "tasks/BACKLOG.md",
+        ]
+        lifecycle_paths = [path for path in lifecycle_paths if path]
+        self._run(["restore", "--source=HEAD", "--", *lifecycle_paths], cwd=directory)
+
+        completed_relative = f"tasks/completed/{Path(task.spec_path).name}"
+        completed_path = (directory / completed_relative).resolve()
+        try:
+            completed_path.relative_to(directory)
+        except ValueError as exc:
+            raise WorkspaceError(f"unsafe completed task path: {completed_path}") from exc
+        tracked = self._run(
+            ["ls-files", "--error-unmatch", "--", completed_relative],
+            cwd=directory,
+            check=False,
+        )
+        if tracked.returncode == 0:
+            self._run(["restore", "--source=HEAD", "--", completed_relative], cwd=directory)
+        elif completed_path.is_file():
+            completed_path.unlink()
 
     def cleanup(self, task: CanonicalTask, force: bool = False) -> bool:
         branch = self._task_branch(task)

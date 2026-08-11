@@ -278,9 +278,11 @@ class LocalDashboardServer:
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Connection", "keep-alive")
                 self.end_headers()
-                deadline = time.monotonic() + 15.0
                 next_keepalive = time.monotonic()
-                while time.monotonic() < deadline:
+                # Keep the EventSource open while the task is running. The previous
+                # 15-second deadline made a healthy stream look frozen while the
+                # browser was repeatedly reconnecting between chunks of activity.
+                while True:
                     if path.is_file():
                         size = path.stat().st_size
                         if offset > size:

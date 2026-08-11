@@ -17,6 +17,11 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 ## Responsibilities
 
 - verify acceptance criteria and scope discipline;
+- use `docs/development/02-definition-of-done.md` as the review authority;
+- preserve stable finding IDs across repair reviews and explicitly mark each finding
+  `OPEN`, `RESOLVED`, or `FOLLOW_UP`;
+- on a bounded repair review, check tracked findings and regressions from the latest fix;
+  do not expand scope with unrelated observations;
 - check domain/module boundaries;
 - check tenant/security rules;
 - check reliability/idempotency/failure behavior;
@@ -32,6 +37,12 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - treat its own suggestions as accepted architecture changes.
 
 ## Output
+
+Repair reviews must keep the previous review ledger. New findings are allowed only when the
+latest fix introduced them or when they are a direct regression of a tracked finding. Unrelated
+observations are recorded as `FOLLOW_UP` and do not block completion. Missing `Status: Completed`
+or a completion summary is not a Builder finding: the Orchestrator adds completion bookkeeping
+after review passes and verifies it before pushing the integrated result.
 
 Use findings such as:
 

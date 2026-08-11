@@ -20,7 +20,9 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - add/update required tests and task-related documentation;
 - run repository verification and required cloud verification;
 - iterate on deterministic failures until checks pass;
-- record completion summary and remaining out-of-scope follow-ups.
+- record implementation evidence, acceptance-criterion results, and remaining out-of-scope
+  follow-ups in the Builder response or task-related notes; leave lifecycle bookkeeping to the
+  Orchestrator.
 
 ## Must not
 
@@ -30,6 +32,16 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - bypass tenant/security/reliability/cost guardrails;
 - modify unrelated code because it appears improvable;
 - review/approve its own work as the independent Reviewer.
+- move, copy, rename, or delete the task specification between `tasks/backlog/`, `tasks/active/`,
+  and `tasks/completed/`;
+- edit `tasks/BACKLOG.md`, `tasks/BACKLOG.v2.yaml`, or a `tasks/backlog-v2/` shard to change
+  lifecycle state, completed roots, task path, or ready frontier;
+- add a `## Completion summary` to claim lifecycle completion, mark a task `Completed`, or set
+  `Execution permission: NO`. Only the Orchestrator performs these operations after independent
+  review, integration, and post-bookkeeping verification.
+
+The Builder may update implementation documentation and may report completion evidence, but a
+task remains `Backlog`/`Ready` in the Builder worktree until the Orchestrator finalizes it.
 
 ## Stop conditions
 

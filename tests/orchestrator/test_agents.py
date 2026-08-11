@@ -51,6 +51,23 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         self.assertIn("git diff origin/main...HEAD", prompt)
         self.assertIn("untrusted evidence", prompt)
 
+    def test_reviewer_prompt_is_dod_centered_and_defers_bookkeeping(self):
+        prompt = CodexRunner._reviewer_prompt(
+            self._task(), review_context=".commerceos/orchestrator/review-context/TASK-0100.txt", final_review=True
+        )
+        self.assertIn("Definition of Done is the review authority", prompt)
+        self.assertIn("missing `Status: Completed`", prompt)
+        self.assertIn("stable IDs", prompt)
+        self.assertIn("Unrelated observations must be FOLLOW_UP", prompt)
+        self.assertIn("FINDING F-001 STATUS", prompt)
+
+    def test_builder_prompt_keeps_lifecycle_bookkeeping_with_orchestrator(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            prompt = CodexRunner(root, root / "logs")._builder_prompt(self._task(), None)
+        self.assertIn("Do not move the task specification into `tasks/completed/`", prompt)
+        self.assertIn("Task completion bookkeeping is owned by the", prompt)
+
     def test_role_profiles_are_pinned_to_human_approved_models(self):
         self.assertEqual(PLANNING_CODEX_PROFILE.model, "gpt-5.6-sol")
         self.assertEqual(PLANNING_CODEX_PROFILE.reasoning_effort, "medium")
@@ -78,6 +95,21 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self.assertIn("danger-full-access" if __import__("os").name == "nt" else "workspace-write", command)
             self.assertNotIn('service_tier="fast"', command)
             self.assertNotIn('service_tier="priority"', command)
+
+    def test_windows_reviewer_uses_compatible_process_sandbox(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runner = CodexRunner(root, root / "logs")
+            command = runner._build_command(
+                "codex",
+                worktree=root,
+                writable=False,
+                prompt="review prompt",
+            )
+            self.assertIn(
+                "danger-full-access" if __import__("os").name == "nt" else "read-only",
+                command,
+            )
 
     def test_codex_jsonl_is_published_before_process_wait_and_retained_in_audit_log(self):
         with tempfile.TemporaryDirectory() as td:
