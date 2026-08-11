@@ -46,8 +46,8 @@ class GitWorkspaceManager:
     def workspace_for(self, task: CanonicalTask) -> Workspace:
         self.ensure_repository()
         self.worktrees_root.mkdir(parents=True, exist_ok=True)
-        branch = f"agent/{task.id}-{task.slug}"
-        directory = self.worktrees_root / f"{task.id}-{task.slug}"
+        branch = self._task_branch(task)
+        directory = self._task_directory(task)
 
         existing = self._find_worktree(directory)
         if existing:
@@ -97,21 +97,40 @@ class GitWorkspaceManager:
         return [line for line in result.stdout.splitlines() if line.strip()]
 
     def cleanup(self, task: CanonicalTask, force: bool = False) -> bool:
-        branch = f"agent/{task.id}-{task.slug}"
-        directory = self.worktrees_root / f"{task.id}-{task.slug}"
+        branch = self._task_branch(task)
+        directory = self._task_directory(task)
         if not directory.exists():
             return False
         if not force and not self.is_clean(directory):
             raise WorkspaceError(f"refusing to remove dirty worktree: {directory}")
-        args = ["worktree", "remove", str(directory)]
+        args = ["worktree", "remove"]
         if force:
-            args.insert(2, "--force")
+            args.append("--force")
+        args.extend(["--", str(directory)])
         self._run(args)
         merged = self._run(["branch", "--merged", "main"]).stdout.splitlines()
         if any(line.strip().lstrip("* ") == branch for line in merged):
             self._run(["branch", "-d", branch], check=False)
         self._run(["worktree", "prune"], check=False)
         return True
+
+    @staticmethod
+    def _task_branch(task: CanonicalTask) -> str:
+        if not re.fullmatch(r"TASK-\d{4,}", task.id):
+            raise WorkspaceError(f"invalid canonical task id for Git workspace: {task.id}")
+        return f"agent/{task.id}-{task.slug}"
+
+    def _task_directory(self, task: CanonicalTask) -> Path:
+        # Worktree filesystem paths intentionally use only the canonical numeric task id,
+        # never the task title/slug. Validate again at the filesystem trust boundary and
+        # require the resolved path to be one direct child of the fixed sibling root.
+        if not re.fullmatch(r"TASK-\d{4,}", task.id):
+            raise WorkspaceError(f"invalid canonical task id for Git worktree path: {task.id}")
+        root = self.worktrees_root.resolve()
+        directory = (root / task.id).resolve()
+        if directory.parent != root:
+            raise WorkspaceError(f"unsafe task worktree path: {directory}")
+        return directory
 
     def _find_worktree(self, directory: Path) -> bool:
         result = self._run(["worktree", "list", "--porcelain"])

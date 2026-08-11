@@ -1,312 +1,307 @@
 from __future__ import annotations
 
-import json
-import threading
-import webbrowser
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import unquote, urlparse
+import re
+from dataclasses import replace
+from pathlib import Path, PurePosixPath
 
-from .backlog import BacklogReader, BacklogValidationError
-from .models import TaskExecutionState
-from .scheduler import Scheduler
-from .service import TaskOrchestrator
-from .state import RunStateStore
+from .models import BacklogSnapshot, CanonicalTask
+from .yaml_subset import parse_document, parse_inline_sequence, render_inline_sequence
 
 
-class DashboardReadModel:
-    def __init__(self, root: Path, state_store: RunStateStore):
+class BacklogValidationError(ValueError):
+    pass
+
+
+def _repo_path(root: Path, raw: str, *, label: str, roots: tuple[str, ...]) -> Path:
+    if not raw or "\\" in raw:
+        raise BacklogValidationError(f"{label} must be a non-empty repository-relative POSIX path")
+    value = PurePosixPath(raw)
+    if value.is_absolute() or any(part in {"", ".", ".."} for part in value.parts):
+        raise BacklogValidationError(f"{label} must not be absolute or contain traversal: {raw}")
+    relative = Path(*value.parts)
+    allowed = tuple(Path(*PurePosixPath(item).parts) for item in roots)
+    if not any(relative == prefix or prefix in relative.parents for prefix in allowed):
+        raise BacklogValidationError(f"{label} must stay under {', '.join(roots)}: {raw}")
+    resolved = (root / relative).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as exc:
+        raise BacklogValidationError(f"{label} escapes repository root: {raw}") from exc
+    return resolved
+
+
+class BacklogReader:
+    MASTER_PATH = Path("tasks/BACKLOG.v2.yaml")
+
+    def __init__(self, root: Path):
         self.root = root.resolve()
-        self.state = state_store
 
-    def status(self) -> dict[str, object]:
-        snapshot = BacklogReader(self.root).load()
-        runs = {run.task_id: run for run in self.state.task_runs()}
-        tasks: list[dict[str, object]] = []
-        maturity_counts: dict[str, int] = {}
-        lifecycle_counts: dict[str, int] = {}
-        lane_counts: dict[str, int] = {}
-        blockers = 0
-        completed = 0
+    def load(self) -> BacklogSnapshot:
+        master_path = self.root / self.MASTER_PATH
+        if not master_path.is_file():
+            raise BacklogValidationError(f"missing canonical backlog: {self.MASTER_PATH}")
+        master = parse_document(master_path.read_text(encoding="utf-8"))
+        fields = self._string_list(master.get("task_fields"), "task_fields", required=True)
+        shards = self._string_list(master.get("task_shards"), "task_shards", required=True)
+        defaults = master.get("task_defaults") or {}
+        metadata = master.get("execution_metadata") or {}
+        if not isinstance(defaults, dict) or not isinstance(metadata, dict):
+            raise BacklogValidationError("task_defaults/execution_metadata must be mappings")
 
-        for task in snapshot.tasks.values():
-            maturity_counts[task.maturity] = maturity_counts.get(task.maturity, 0) + 1
-            lifecycle_counts[task.lifecycle_state] = lifecycle_counts.get(task.lifecycle_state, 0) + 1
-            completed += int(task.lifecycle_state == "Completed")
-            run = runs.get(task.id)
-            execution_state = run.execution_state.value if run else None
-            if execution_state:
-                lane_counts[execution_state] = lane_counts.get(execution_state, 0) + 1
-            if run and run.execution_state in {
-                TaskExecutionState.BLOCKED,
-                TaskExecutionState.HUMAN_REQUIRED,
-            }:
-                blockers += 1
-            tasks.append(self._task_summary(task, run))
-
-        # Use the same runtime scheduler view as dispatch, so an already-active or
-        # locally Human-Required task does not misleadingly remain in the UI Ready list.
-        ready = Scheduler(self.state).plan(snapshot).dispatchable
-        return {
-            "orchestrator_state": self.state.control_state().value,
-            "progress": {
-                "completed": completed,
-                "total": len(snapshot.tasks),
-                "percent": round(completed / len(snapshot.tasks) * 100, 1) if snapshot.tasks else 100.0,
-            },
-            "ready_frontier": [task.id for task in ready],
-            "maturity_counts": maturity_counts,
-            "lifecycle_counts": lifecycle_counts,
-            "lane_counts": lane_counts,
-            "active_builders": sum(
-                count
-                for name, count in lane_counts.items()
-                if name in {"QUEUED", "BUILDING", "VERIFYING", "FIX_REQUIRED"}
-            ),
-            "active_reviewers": lane_counts.get("REVIEWING", 0),
-            "merge_queue_length": lane_counts.get("MERGE_QUEUED", 0)
-            + lane_counts.get("INTEGRATING", 0),
-            "blocker_count": blockers,
-            "tasks": tasks,
-            "events": self.state.recent_events(50),
-        }
-
-    def task_detail(self, task_id: str) -> dict[str, object] | None:
-        snapshot = BacklogReader(self.root).load()
-        task = snapshot.tasks.get(task_id)
-        if not task:
-            return None
-        run = self.state.task_run(task_id)
-        result = self._task_summary(task, run)
-        result["goal"] = task.goal
-        result["exclusive_resources"] = list(task.exclusive_resources)
-        result["merge_policy"] = task.merge_policy
-        result["events"] = [
-            event for event in self.state.recent_events(300) if event.get("task_id") == task_id
-        ]
-        result["logs"] = self._task_logs(task_id)
-        return result
-
-    def _task_logs(self, task_id: str) -> list[dict[str, object]]:
-        logs_root = self.state.path.parent / "logs"
-        if not logs_root.is_dir():
-            return []
-        logs = []
-        for path in logs_root.glob(f"{task_id}-*.log"):
-            stat = path.stat()
-            logs.append(
-                {
-                    "path": str(path),
-                    "name": path.name,
-                    "size_bytes": stat.st_size,
-                    "modified_at_epoch": stat.st_mtime,
-                }
+        tasks: dict[str, CanonicalTask] = {}
+        for shard_name in shards:
+            shard_path = _repo_path(
+                self.root,
+                shard_name,
+                label="backlog shard",
+                roots=("tasks/backlog-v2",),
             )
-        return sorted(logs, key=lambda item: float(item["modified_at_epoch"]), reverse=True)
+            if not shard_path.is_file():
+                raise BacklogValidationError(f"missing backlog shard: {shard_name}")
+            rows = parse_document(shard_path.read_text(encoding="utf-8")).get("tasks")
+            if not isinstance(rows, list):
+                raise BacklogValidationError(f"{shard_name}: tasks must be a list")
+            for row in rows:
+                if not isinstance(row, list) or len(row) != len(fields):
+                    raise BacklogValidationError(f"{shard_name}: malformed task row")
+                values = dict(zip(fields, row, strict=True))
+                task_id = str(values["id"])
+                if task_id in tasks:
+                    raise BacklogValidationError(f"duplicate canonical task id: {task_id}")
+                meta = metadata.get(task_id) or {}
+                if not isinstance(meta, dict):
+                    raise BacklogValidationError(f"execution metadata for {task_id} must be a mapping")
+                resources = meta.get("exclusive_resources", defaults.get("exclusive_resources", [])) or []
+                if not isinstance(resources, list):
+                    raise BacklogValidationError(f"exclusive_resources for {task_id} must be a list")
+                tasks[task_id] = CanonicalTask(
+                    id=task_id,
+                    maturity=str(values["maturity"]),
+                    type=str(values["type"]),
+                    domain=str(values["domain"]),
+                    title=str(values["title"]),
+                    goal=str(values["goal"]),
+                    depends_on=tuple(str(x) for x in (values["depends_on"] or [])),
+                    gates=tuple(str(x) for x in (values["gates"] or [])),
+                    owner_role=str(values["owner_role"]),
+                    model_class=str(values["model_class"]),
+                    cloud_verification=str(values["cloud_verification"]),
+                    spec_path=str(values["spec_path"]),
+                    lifecycle_state=str(meta.get("lifecycle_state", defaults.get("lifecycle_state", "Backlog"))),
+                    exclusive_resources=tuple(str(x) for x in resources),
+                    merge_policy=str(meta.get("merge_policy", defaults.get("merge_policy", "verified_serial_main"))),
+                    shard_path=shard_name,
+                )
+
+        completed = set()
+        for value in master.get("completed_roots") or []:
+            if not isinstance(value, list) or not value:
+                raise BacklogValidationError("completed_roots entries must be non-empty inline lists")
+            completed.add(str(value[0]))
+        policy = master.get("dispatch_policy") or {}
+        if not isinstance(policy, dict):
+            raise BacklogValidationError("dispatch_policy must be a mapping")
+        snapshot = BacklogSnapshot(
+            root=self.root,
+            tasks=tasks,
+            task_fields=tuple(fields),
+            completed_roots=frozenset(completed),
+            max_writable_builders=int(policy.get("max_writable_builders", 2)),
+            merge_lane_concurrency=int(policy.get("merge_lane_concurrency", 1)),
+            cloud_requires_explicit_gate=bool(policy.get("cloud_requires_explicit_gate", True)),
+            ready_frontier_declared=tuple(str(x) for x in (master.get("ready_frontier") or [])),
+            shard_paths=tuple(shards),
+            raw_master=master,
+        )
+        self.validate(snapshot)
+        return snapshot
 
     @staticmethod
-    def _task_summary(task, run) -> dict[str, object]:
-        return {
-            "id": task.id,
-            "title": task.title,
-            "domain": task.domain,
-            "maturity": task.maturity,
-            "lifecycle_state": task.lifecycle_state,
-            "execution_state": run.execution_state.value if run else None,
-            "depends_on": list(task.depends_on),
-            "gates": list(task.gates),
-            "spec_path": task.spec_path,
-            "owner_role": task.owner_role,
-            "model_class": task.model_class,
-            "cloud_verification": task.cloud_verification,
-            "branch": run.branch if run else None,
-            "worktree": run.worktree if run else None,
-            "attempt": run.attempt if run else 0,
-            "fix_attempt": run.fix_attempt if run else 0,
-            "blocker_code": run.blocker_code if run else None,
-            "blocker_detail": run.blocker_detail if run else None,
-            "drain_at_stop": run.drain_at_stop if run else False,
-            "updated_at": run.updated_at if run else None,
-        }
+    def _string_list(value, label: str, *, required: bool = False) -> list[str]:
+        if not isinstance(value, list) or (required and not value):
+            raise BacklogValidationError(f"{label} must be {'a non-empty ' if required else 'a '}list")
+        return [str(item) for item in value]
 
-
-class RuntimeController:
-    """Process-local control shared by dashboard and CLI start mode."""
-
-    def __init__(self, orchestrator: TaskOrchestrator):
-        self.orchestrator = orchestrator
-        self._lock = threading.Lock()
-        self._thread: threading.Thread | None = None
-
-    def start(self, *, resume: bool = False) -> bool:
-        with self._lock:
-            if self._thread and self._thread.is_alive():
-                if resume:
-                    self.orchestrator.state.clear_stop_and_run()
-                return False
-            self._thread = threading.Thread(
-                target=self.orchestrator.run,
-                kwargs={"resume": resume},
-                name="commerceos-orchestrator",
-                daemon=True,
+    def validate(self, snapshot: BacklogSnapshot) -> None:
+        metadata = snapshot.raw_master.get("execution_metadata") or {}
+        for task in snapshot.tasks.values():
+            if not re.fullmatch(r"TASK-\d{4,}", task.id):
+                raise BacklogValidationError(f"invalid task id: {task.id}")
+            if task.maturity not in {"Outline", "Refined", "Ready"}:
+                raise BacklogValidationError(f"{task.id}: unsupported maturity {task.maturity}")
+            if task.lifecycle_state not in {"Backlog", "Active", "Completed", "Blocked"}:
+                raise BacklogValidationError(f"{task.id}: unsupported lifecycle {task.lifecycle_state}")
+            spec = None
+            if task.spec_path:
+                spec = _repo_path(
+                    snapshot.root,
+                    task.spec_path,
+                    label=f"{task.id} spec_path",
+                    roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+                )
+            if task.maturity == "Ready":
+                if spec is None or not spec.is_file():
+                    raise BacklogValidationError(
+                        f"{task.id}: Ready task spec does not exist: {task.spec_path}"
+                    )
+                if task.id not in metadata:
+                    raise BacklogValidationError(f"{task.id}: Ready task needs explicit execution_metadata")
+            for dependency in task.depends_on:
+                if dependency not in snapshot.tasks and dependency not in snapshot.completed_roots:
+                    raise BacklogValidationError(f"{task.id}: missing dependency {dependency}")
+        self._validate_acyclic(snapshot)
+        computed = {task.id for task in self.ready_frontier(snapshot, set())}
+        declared = set(snapshot.ready_frontier_declared)
+        if computed != declared:
+            raise BacklogValidationError(
+                f"declared ready_frontier mismatch: declared={sorted(declared)} computed={sorted(computed)}"
             )
-            self._thread.start()
-            return True
 
-    def stop(self) -> list[str]:
-        return self.orchestrator.request_stop()
+    @staticmethod
+    def _validate_acyclic(snapshot: BacklogSnapshot) -> None:
+        visiting: set[str] = set()
+        visited: set[str] = set()
 
-    def resume(self) -> bool:
-        return self.start(resume=True)
-
-    @property
-    def running(self) -> bool:
-        return bool(self._thread and self._thread.is_alive())
-
-
-class LocalDashboardServer:
-    def __init__(
-        self,
-        root: Path,
-        state_store: RunStateStore,
-        *,
-        host: str = "127.0.0.1",
-        port: int = 8765,
-        runtime: RuntimeController | None = None,
-    ):
-        if host not in {"127.0.0.1", "localhost", "::1"}:
-            raise ValueError("V1 dashboard must bind to a local loopback interface")
-        self.root = root.resolve()
-        self.state = state_store
-        self.read_model = DashboardReadModel(self.root, self.state)
-        self.runtime = runtime
-        self.httpd = ThreadingHTTPServer((host, port), self._make_handler())
-        self.host = host
-        self.port = int(self.httpd.server_address[1])
-
-    @property
-    def url(self) -> str:
-        host = "127.0.0.1" if self.host in {"localhost", "::1"} else self.host
-        return f"http://{host}:{self.port}/"
-
-    def serve_forever(self, *, open_browser: bool = False) -> None:
-        if open_browser:
-            threading.Timer(0.2, lambda: webbrowser.open(self.url)).start()
-        self.httpd.serve_forever(poll_interval=0.25)
-
-    def serve_in_thread(self) -> threading.Thread:
-        thread = threading.Thread(
-            target=self.serve_forever, name="commerceos-dashboard", daemon=True
-        )
-        thread.start()
-        return thread
-
-    def shutdown(self) -> None:
-        self.httpd.shutdown()
-        self.httpd.server_close()
-
-    def _make_handler(self):
-        server = self
-
-        class Handler(BaseHTTPRequestHandler):
-            server_version = "CommerceOSOrchestrator/1"
-
-            def log_message(self, format: str, *args) -> None:  # noqa: A003
+        def visit(task_id: str) -> None:
+            if task_id in visited or task_id in snapshot.completed_roots:
                 return
+            if task_id in visiting:
+                raise BacklogValidationError(f"dependency cycle detected at {task_id}")
+            visiting.add(task_id)
+            for dependency in snapshot.tasks[task_id].depends_on:
+                if dependency in snapshot.tasks:
+                    visit(dependency)
+            visiting.remove(task_id)
+            visited.add(task_id)
 
-            def do_GET(self) -> None:  # noqa: N092
-                parsed = urlparse(self.path)
-                try:
-                    if parsed.path == "/":
-                        self._html(_DASHBOARD_HTML)
-                        return
-                    if parsed.path == "/api/status":
-                        self._json(server.read_model.status())
-                        return
-                    if parsed.path.startswith("/api/tasks/"):
-                        task_id = unquote(parsed.path.removeprefix("/api/tasks/"))
-                        detail = server.read_model.task_detail(task_id)
-                        if detail is None:
-                            self._json({"error": "task not found"}, HTTPStatus.NOT_FOUND)
-                        else:
-                            self._json(detail)
-                        return
-                    self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-                except BacklogValidationError as exc:
-                    self._json(
-                        {"error": "BACKLOG_INVALID", "detail": str(exc)}, HTTPStatus.CONFLICT
-                    )
-                except Exception as exc:
-                    self._json(
-                        {"error": "INTERNAL", "detail": repr(exc)},
-                        HTTPStatus.INTERNAL_SERVER_ERROR,
-                    )
+        for task_id in snapshot.tasks:
+            visit(task_id)
 
-            def do_POST(self) -> None:  # noqa: N802
-                parsed = urlparse(self.path)
-                try:
-                    if parsed.path == "/api/stop":
-                        ids = server.runtime.stop() if server.runtime else server.state.request_stop()
-                        self._json({"accepted": True, "draining": ids}, HTTPStatus.ACCEPTED)
-                        return
-                    if parsed.path == "/api/resume":
-                        if server.runtime:
-                            started = server.runtime.resume()
-                        else:
-                            server.state.clear_stop_and_run()
-                          started = False
-                        self._json(
-                           {"accepted": True, "scheduler_started": started},
-                            HTTPStatus.ACCEPTED,
-                        )
-                        return
-                    self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-                except Exception as exc:
-                    self._json(
-                        {"error": "CONTROL_FAILED", "detail": repr(exc)}, HTTPStatus.CONFLICT
-                    )
+    @staticmethod
+    def dependency_satisfied(snapshot: BacklogSnapshot, dependency: str) -> bool:
+        task = snapshot.tasks.get(dependency)
+        return dependency in snapshot.completed_roots or (
+            task is not None and task.lifecycle_state == "Completed"
+        )
 
-            def _json(self, value: object, status: HTTPStatus = HTTPStatus.OK) -> None:
-                payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(payload)
+    @classmethod
+    def is_dispatchable(
+        cls, snapshot: BacklogSnapshot, task: CanonicalTask, active_resources: set[str]
+    ) -> bool:
+        return (
+            task.maturity == "Ready"
+            and task.lifecycle_state == "Backlog"
+            and not task.gates
+            and all(cls.dependency_satisfied(snapshot, dep) for dep in task.depends_on)
+            and not (set(task.exclusive_resources) & active_resources)
+        )
 
-            def _html(self, value: str) -> None:
-                payload = value.encode("utf-8")
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(payload)
-
-        return Handler
+    @classmethod
+    def ready_frontier(
+        cls, snapshot: BacklogSnapshot, active_resources: set[str]
+    ) -> list[CanonicalTask]:
+        return [
+            task
+            for task in sorted(snapshot.tasks.values(), key=lambda item: item.id)
+            if cls.is_dispatchable(snapshot, task, active_resources)
+        ]
 
 
-_DASHBOARD_HTML = r'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CommerceOS Orchestrator</title><style>
-:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}body{margin:0;background:#101216;color:#e8ebf0}header{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;padding:18px 24px;background:#171a20;border-bottom:1px solid #2b3038}button{border:0;border-radius:9px;padding:10px 16px;cursor:pointer;font-weight:700}.stop{background:#e14b4b;color:#fff}.resume{background:#d6dde8;color:#111}main{padding:20px 24px;display:grid;gap:18px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}.card,.panel{background:#171a20;border:1px solid #2b3038;border-radius:12px;padding:14px}.big{font-size:26px;font-weight:800}.board{display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:12px;overflow:auto}.task{background:#20242c;margin:8px 0;padding:9px;border-radius:8px;cursor:pointer;border-left:4px solid #6d7684}.task.ready{border-color:#47b881}.task.active{border-color:#5794f2}.task.review{border-color:#e0a72f}.task.merge{border-color:#a879e8}.task.blocked{border-color:#e14b4b}.small{font-size:12px;color:#9da7b4}pre{white-space:pre-wrap;word-break:break-word}#dag{display:flex;flex-wrap:wrap;gap:7px}.node{padding:5px 8px;border-radius:16px;background:#242933;font-size:12px}.node.completed{opacity:.55}.node.ready{outline:1px solid #47b881}.node.active{outline:1px solid #5794f2}.node.blocked{outline:1px solid #e14b4b}@media(max-width:900px){.board{grid-template-columns:1fr 1fr}}
-</style></head><body>
-<header><div><strong>CommerceOS Orchestrator</strong><div id="state" class="small">Loading…</div></div><div><button id="resume-button" class="resume">Resume</button> <button id="stop-button" class="stop">Stop gracefully</button></div></header>
-<main><section class="cards">
-<div class="card"><div class="small">Progress</div><div id="progress" class="big">—</div></div><div class="card"><div class="small">Ready</div><div id="ready" class="big">—</div></div><div class="card"><div class="small">Builders</div><div id="builders" class="big">—</div></div><div class="card"><div class="small">Reviewers</div><div id="reviewers" class="big">—</div></div><div class="card"><div class="small">Merge queue</div><div id="merge" class="big">—</div></div><div class="card"><div class="small">Blocked</div><div id="blocked" class="big">—</div></div>
-</section><section class="panel"><h3>Workflow</h3><div class="board"><div><b>Ready</b><div id="col-ready"></div></div><div><b>Active</b><div id="col-active"></div></div><div><b>Review</b><div id="col-review"></div></div><div><b>Merge</b><div id="col-merge"></div></div><div><b>Blocked</b><div id="col-blocked"></div></div></div></section>
-<section class="panel"><h3>DAG / progress</h3><div id="dag"></div></section><section class="panel"><h3>Task detail</h3><pre id="detail" class="small">Select a task.</pre></section><section class="panel"><h3>Recent activity</h3><pre id="events" class="small"></pre></section></main>
-<script>
-const byId=id=>document.getElementById(id);const stateEl=byId('state'),progressEl=byId('progress'),readyEl=byId('ready'),buildersEl=byId('builders'),reviewersEl=byId('reviewers'),mergeEl=byId('merge'),blockedEl=byId('blocked'),dagEl=byId('dag'),eventsEl=byId('events'),detailEl=byId('detail');
-function lane(t){const s=t.execution_state;if(['QUEUED','BUILDING','VERIFYING','FIX_REQUIRED'].includes(s))return'active';if(s==='REVIEWING')return'review';if(['MERGE_QUEUED','INTEGRATING'].includes(s))return'merge';if(['BLOCKED','HUMAN_REQUIRED'].includes(s))return'blocked';if(t.maturity==='Ready'&&t.lifecycle_state==='Backlog')return'ready';return'other'}
-function textNode(tag,text,className){const el=document.createElement(tag);if(className)el.className=className;el.textContent=String(text??'');return el}
-function taskNode(t){const card=document.createElement('div');card.classList.add('task',lane(t));card.tabIndex=0;card.setAttribute('role','button');const id=textNode('b',t.id);const title=textNode('div',t.title);const meta=textNode('div',`${t.execution_state||t.maturity} · ${t.domain}`,'small');card.append(id,title,meta);const open=()=>detail(t.id);card.addEventListener('click',open);card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open()}});return card}
-function emptyNode(){return textNode('div','None','small')}
-function renderColumn(id,tasks){const target=byId('col-'+id);const nodes=tasks.filter(t=>lane(t)===id).map(taskNode);target.replaceChildren(...(nodes.length?nodes:[emptyNode()]))}
-function dagNode(t){const node=textNode('span',t.id,'node');node.classList.add(lane(t));if(t.lifecycle_state==='Completed')node.classList.add('completed');node.title=`deps: ${t.depends_on.join(', ')}`;return node}
-async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(JSON.stringify(d));stateEl.textContent=`State: ${d.orchestrator_state}`;progressEl.textContent=`${d.progress.completed}/${d.progress.total} (${d.progress.percent}%)`;readyEl.textContent=String(d.ready_frontier.length);buildersEl.textContent=String(d.active_builders);reviewersEl.textContent=String(d.active_reviewers);mergeEl.textContent=String(d.merge_queue_length);blockedEl.textContent=String(d.blocker_count);for(const id of ['ready','active','review','merge','blocked'])renderColumn(id,d.tasks);dagEl.replaceChildren(...d.tasks.map(dagNode));eventsEl.textContent=d.events.map(e=>`${e.created_at} ${e.task_id||'-'} ${e.kind} ${e.detail}`).join('\n')}catch(e){stateEl.textContent='Dashboard error: '+e}}
-async function detail(id){const r=await fetch('/api/tasks/'+encodeURIComponent(id));detailEl.textContent=JSON.stringify(await r.json(),null,2)}async function stopRun(){await fetch('/api/stop',{method:'POST'});await refresh()}async function resumeRun(){await fetch('/api/resume',{method:'POST'});await refresh()}
-byId('stop-button').addEventListener('click',stopRun);byId('resume-button').addEventListener('click',resumeRun);refresh();setInterval(refresh,1500);
-</script></body></html>'''
+class BacklogWriter:
+    """Lifecycle bookkeeping only; task semantics/maturity are never invented here."""
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def finalize_task(
+        self, snapshot: BacklogSnapshot, task: CanonicalTask, completion_summary: str
+    ) -> str:
+        source = _repo_path(
+            self.root,
+            task.spec_path,
+            label=f"{task.id} spec_path",
+            roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+        )
+        if not source.is_file():
+            raise BacklogValidationError(f"{task.id}: task spec missing at {task.spec_path}")
+        completed_relative = str(Path("tasks/completed") / source.name)
+        destination = self.root / completed_relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        text = source.read_text(encoding="utf-8")
+        text = re.sub(r"^Status:\s*.*$", "Status: Completed", text, count=1, flags=re.MULTILINE)
+        text = re.sub(
+            r"^Specification maturity:\s*.*$",
+            "Specification maturity: Completed",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        text = re.sub(
+            r"^Execution permission:\s*.*$",
+            "Execution permission: NO — completed",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if "## Completion summary" not in text:
+            text = text.rstrip() + "\n\n## Completion summary\n\n" + completion_summary.strip() + "\n"
+        destination.write_text(text, encoding="utf-8")
+
+        # Preserve a valid canonical snapshot at every observable step: create the
+        # new spec, repoint shard, update lifecycle/frontier, then remove old spec.
+        self._update_shard(task, completed_relative)
+        self._update_master(snapshot, task.id)
+        if destination != source:
+            source.unlink()
+        return completed_relative
+
+    def _update_shard(self, task: CanonicalTask, completed_relative: str) -> None:
+        path = _repo_path(
+            self.root,
+            task.shard_path,
+            label=f"{task.id} shard_path",
+            roots=("tasks/backlog-v2",),
+        )
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.lstrip().startswith("- [") and task.id in line:
+                prefix = line[: len(line) - len(line.lstrip())]
+                row = parse_inline_sequence(line.strip()[2:].strip())
+                row[-1] = completed_relative
+                lines[index] = f"{prefix}- {render_inline_sequence(row)}"
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                return
+        raise BacklogValidationError(f"{task.id}: canonical shard row not found")
+
+    def _update_master(self, snapshot: BacklogSnapshot, completed_task_id: str) -> None:
+        path = self.root / BacklogReader.MASTER_PATH
+        lines = path.read_text(encoding="utf-8").splitlines()
+        block = next(
+            (index for index, line in enumerate(lines) if line == f"  {completed_task_id}:"),
+            None,
+        )
+        if block is None:
+            raise BacklogValidationError(f"{completed_task_id}: execution_metadata block not found")
+        lifecycle = None
+        for index in range(block + 1, min(block + 8, len(lines))):
+            if lines[index].startswith("  ") and not lines[index].startswith("    "):
+                break
+            if lines[index].strip().startswith("lifecycle_state:"):
+                lifecycle = index
+                break
+        if lifecycle is None:
+            raise BacklogValidationError(f"{completed_task_id}: lifecycle_state not found")
+        lines[lifecycle] = "    lifecycle_state: Completed"
+
+        tasks = dict(snapshot.tasks)
+        tasks[completed_task_id] = replace(tasks[completed_task_id], lifecycle_state="Completed")
+        updated = replace(snapshot, tasks=tasks)
+        ready = [task.id for task in BacklogReader.ready_frontier(updated, set())]
+        start = next((i for i, line in enumerate(lines) if line == "ready_frontier:"), None)
+        if start is None:
+            raise BacklogValidationError("ready_frontier block not found")
+        end = start + 1
+        while end < len(lines) and lines[end].startswith("  - "):
+            end += 1
+        lines[start:end] = ["ready_frontier:", *[f"  - {task_id}" for task_id in ready]]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
