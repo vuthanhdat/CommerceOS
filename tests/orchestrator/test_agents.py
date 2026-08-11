@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import TOOLS
-from commerceos_orchestrator.agents import CodexRunner
+from commerceos_orchestrator.agents import (
+    CODING_CODEX_PROFILE,
+    PLANNING_CODEX_PROFILE,
+    CodexRunner,
+)
 from commerceos_orchestrator.models import CanonicalTask
 
 
@@ -43,6 +50,88 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         prompt = CodexRunner._reviewer_prompt(self._task())
         self.assertIn("git diff origin/main...HEAD", prompt)
         self.assertIn("untrusted evidence", prompt)
+
+    def test_role_profiles_are_pinned_to_human_approved_models(self):
+        self.assertEqual(PLANNING_CODEX_PROFILE.model, "gpt-5.6-sol")
+        self.assertEqual(PLANNING_CODEX_PROFILE.reasoning_effort, "medium")
+        self.assertEqual(PLANNING_CODEX_PROFILE.service_tier, "standard")
+        self.assertEqual(PLANNING_CODEX_PROFILE.codex_service_tier, "default")
+        self.assertEqual(CODING_CODEX_PROFILE.model, "gpt-5.6-luna")
+        self.assertEqual(CODING_CODEX_PROFILE.reasoning_effort, "medium")
+        self.assertEqual(CODING_CODEX_PROFILE.service_tier, "standard")
+        self.assertEqual(CODING_CODEX_PROFILE.codex_service_tier, "default")
+
+    def test_coding_command_overrides_interactive_model_reasoning_and_fast_tier(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runner = CodexRunner(root, root / "logs")
+            command = runner._build_command(
+                "codex",
+                worktree=root,
+                writable=True,
+                prompt="test prompt",
+            )
+            self.assertEqual(command[0:3], ["codex", "exec", "--json"])
+            self.assertIn("gpt-5.6-luna", command)
+            self.assertIn('model_reasoning_effort="medium"', command)
+            self.assertIn('service_tier="default"', command)
+            self.assertIn("workspace-write", command)
+            self.assertNotIn('service_tier="fast"', command)
+            self.assertNotIn('service_tier="priority"', command)
+
+    def test_codex_jsonl_is_published_before_process_wait_and_retained_in_audit_log(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            logs = root / "logs"
+            runner = CodexRunner(root, logs)
+            task = self._task()
+            feed_path = logs / "TASK-0100-live.jsonl"
+
+            class FakeProcess:
+                def __init__(self):
+                    self.stdout = io.StringIO(
+                        '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'
+                    )
+                    self.stderr = io.StringIO("warning from codex\n")
+
+                def wait(self):
+                    records = [
+                        json.loads(line)
+                        for line in feed_path.read_text(encoding="utf-8").splitlines()
+                    ]
+                    self.assert_event_already_streamed(records)
+                    return 0
+
+                @staticmethod
+                def assert_event_already_streamed(records):
+                    if not any(record["kind"] == "codex_event" for record in records):
+                        raise AssertionError("stdout event was not published before process.wait()")
+
+            with patch("commerceos_orchestrator.agents.shutil.which", return_value="codex"), patch(
+                "commerceos_orchestrator.agents.subprocess.Popen", return_value=FakeProcess()
+            ):
+                result = runner._run(
+                    task,
+                    role="builder",
+                    worktree=root,
+                    prompt="test prompt",
+                    writable=True,
+                    attempt=1,
+                )
+
+            self.assertTrue(result.success)
+            records = [
+                json.loads(line) for line in feed_path.read_text(encoding="utf-8").splitlines()
+            ]
+            kinds = [record["kind"] for record in records]
+            self.assertIn("codex_started", kinds)
+            self.assertIn("codex_event", kinds)
+            self.assertIn("codex_stderr", kinds)
+            self.assertEqual(kinds[-1], "codex_finished")
+            audit = Path(result.log_path).read_text(encoding="utf-8")
+            self.assertIn("item.completed", audit)
+            self.assertIn("warning from codex", audit)
+            self.assertNotIn("test prompt", audit)
 
 
 if __name__ == "__main__":
