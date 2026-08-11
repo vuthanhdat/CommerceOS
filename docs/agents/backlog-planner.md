@@ -1,6 +1,6 @@
 # CommerceOS Agent Role — Backlog Planner
 
-Default model: Luna for routine reconciliation; escalate for complex dependency/architecture ambiguity.
+Default model profile: **gpt-5.6-sol**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it).
 
 ## Mission
 
