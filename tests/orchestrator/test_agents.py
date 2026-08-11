@@ -168,6 +168,14 @@ class CodexPromptBoundaryTests(unittest.TestCase):
     def test_windows_sandbox_failure_is_not_reported_as_success_when_codex_exits_zero(self):
         self.assertTrue(
             CodexRunner._has_windows_sandbox_failure(
+                '{"type":"error","message":"CreateProcessAsUserW failed: 5"}',
+                "",
+            )
+        )
+
+    def test_nested_test_output_does_not_look_like_windows_sandbox_failure(self):
+        self.assertFalse(
+            CodexRunner._has_windows_sandbox_failure(
                 '{"type":"item.completed","item":{"aggregated_output":"CreateProcessAsUserW failed: 5"}}',
                 "",
             )

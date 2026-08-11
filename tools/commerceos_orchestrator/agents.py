@@ -347,12 +347,31 @@ CONFLICT_RESULT: RESOLVED
 
     @staticmethod
     def _has_windows_sandbox_failure(stdout: str, stderr: str) -> bool:
-        combined = f"{stdout}\n{stderr}".lower()
-        return (
-            "createprocessasuserw failed: 5" in combined
-            or "windows sandbox: runner failed during spawnchild" in combined
-            or "windows sandbox: runner error" in combined
+        # Do not scan arbitrary agent command output. A Reviewer may run tests whose
+        # fixtures deliberately contain these diagnostic strings; treating nested
+        # command output as a runner failure creates a false ENVIRONMENT_UNAVAILABLE.
+        signatures = (
+            "createprocessasuserw failed: 5",
+            "windows sandbox: runner failed during spawnchild",
+            "windows sandbox: runner error",
         )
+        if any(signature in stderr.lower() for signature in signatures):
+            return True
+
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                if any(signature in line.lower() for signature in signatures):
+                    return True
+                continue
+            # Only trust a top-level runner/error event. Strings nested in command
+            # results or aggregated test output are untrusted agent output.
+            if isinstance(event, dict) and event.get("type") in {"error", "turn.failed"}:
+                serialized = json.dumps(event).lower()
+                if any(signature in serialized for signature in signatures):
+                    return True
+        return False
 
     @staticmethod
     def _write_untrusted_feedback(
