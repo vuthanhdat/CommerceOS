@@ -10,6 +10,7 @@ from pathlib import Path
 from .agents import AgentRunner
 from .backlog import BacklogReader, BacklogWriter, BacklogValidationError
 from .models import (
+    AgentResult,
     CanonicalTask,
     OrchestratorState,
     TaskExecutionState,
@@ -27,6 +28,8 @@ class OrchestratorConfig:
     max_fix_attempts: int = 2
     poll_seconds: float = 0.5
     allow_cloud: bool = False
+    max_capacity_retries: int = 3
+    capacity_backoff_seconds: float = 15.0
 
 
 class TaskOrchestrator:
@@ -90,7 +93,6 @@ class TaskOrchestrator:
         snapshot = self.validate()
         current = self.state.control_state()
         if current in {OrchestratorState.STOP_REQUESTED, OrchestratorState.STOPPING}:
-            # A persisted graceful stop survives restart. Only recover/drain previously active tasks.
             if resume:
                 self.state.reset_retryable_terminal_runs()
                 self.state.clear_stop_and_run()
@@ -132,7 +134,6 @@ class TaskOrchestrator:
                     if task.id in self._futures:
                         continue
                     if task.cloud_verification.lower() == "required" and not self.config.allow_cloud:
-                        # Cloud permission is explicit runtime operator consent in addition to canonical task gates.
                         if self.state.claim_task(task.id):
                             self.state.update_task(
                                 task.id,
@@ -150,7 +151,6 @@ class TaskOrchestrator:
                     self._futures[task.id] = future
 
                 if not self._futures:
-                    # Reload once more because a completion may have changed canonical lifecycle/frontier.
                     snapshot = self.validate()
                     if not self.scheduler.plan(snapshot).dispatchable:
                         if self.state.blocked_task_runs():
@@ -194,7 +194,7 @@ class TaskOrchestrator:
             future = self._futures.pop(task_id)
             try:
                 future.result()
-            except Exception as exc:  # defensive fail-closed path
+            except Exception as exc:
                 run = self.state.task_run(task_id)
                 if run and run.execution_state not in {
                     TaskExecutionState.COMPLETED,
@@ -227,8 +227,6 @@ class TaskOrchestrator:
         if resume and prior_run:
             feedback = f"Resume safely after interrupted local state {prior_run.execution_state.value}. Inspect existing worktree before editing."
 
-        # Conservative recovery: integration states re-enter the merge lane; everything earlier re-runs
-        # Builder/verification deterministically in the existing worktree.
         if prior_run and prior_run.execution_state in {
             TaskExecutionState.MERGE_QUEUED,
             TaskExecutionState.INTEGRATING,
@@ -240,15 +238,11 @@ class TaskOrchestrator:
             self.state.update_task(
                 task.id,
                 TaskExecutionState.BUILDING,
-                attempt_delta=1,
                 fix_attempt_delta=1 if fix_round > 0 else 0,
             )
-            agent = self.agent_runner.run_builder(
-                task,
-                workspace.path,
-                attempt=(self.state.task_run(task.id) or run).attempt,
-                feedback=feedback,
-            )
+            agent = self._run_builder_with_capacity_retry(task, workspace.path, feedback=feedback)
+            if agent is None:
+                return
             if not agent.success:
                 code = "EXTERNAL_ENVIRONMENT" if agent.marker == "ENVIRONMENT_UNAVAILABLE" else "BUILDER_FAILED"
                 self._block(task, code, agent.stderr or agent.stdout)
@@ -303,6 +297,62 @@ class TaskOrchestrator:
             feedback = "Independent Reviewer findings:\n" + review.findings[-20000:]
             self.state.update_task(task.id, TaskExecutionState.FIX_REQUIRED)
 
+    def _run_builder_with_capacity_retry(
+        self,
+        task: CanonicalTask,
+        worktree: Path,
+        *,
+        feedback: str | None,
+    ) -> AgentResult | None:
+        """Retry transient model-capacity failures without changing the pinned model policy."""
+        for capacity_retry in range(self.config.max_capacity_retries + 1):
+            self.state.update_task(task.id, TaskExecutionState.BUILDING, attempt_delta=1)
+            current = self.state.task_run(task.id)
+            agent = self.agent_runner.run_builder(
+                task,
+                worktree,
+                attempt=current.attempt if current else capacity_retry + 1,
+                feedback=feedback,
+            )
+            if agent.success or not self._is_model_capacity_failure(agent):
+                return agent
+
+            detail = self._agent_failure_detail(agent)
+            if capacity_retry >= self.config.max_capacity_retries:
+                self.state.update_task(
+                    task.id,
+                    TaskExecutionState.BLOCKED,
+                    blocker_code="MODEL_CAPACITY_EXHAUSTED",
+                    blocker_detail=(
+                        f"Pinned coding model remained at capacity after {capacity_retry + 1} attempts. "
+                        f"Retry later; model fallback is disabled by policy. Last error: {detail}"
+                    )[-20000:],
+                )
+                return None
+
+            delay = self.config.capacity_backoff_seconds * (2**capacity_retry)
+            self.state.add_event(
+                task.id,
+                "MODEL_CAPACITY_RETRY",
+                f"attempt={capacity_retry + 1}; retry_in_seconds={delay:g}; pinned_model_unchanged=true",
+            )
+            time.sleep(delay)
+        raise AssertionError("unreachable capacity retry loop")
+
+    @staticmethod
+    def _agent_failure_detail(agent: AgentResult) -> str:
+        return (agent.stderr or agent.stdout or "Codex agent failed without output")[-20000:]
+
+    @staticmethod
+    def _is_model_capacity_failure(agent: AgentResult) -> bool:
+        if agent.marker == "MODEL_CAPACITY":
+            return True
+        combined = f"{agent.stdout}\n{agent.stderr}".lower()
+        return (
+            "selected model is at capacity" in combined
+            or ("model" in combined and "at capacity" in combined and "try a different model" in combined)
+        )
+
     def _integrate(self, task: CanonicalTask, branch: str, worktree: Path) -> None:
         with self._merge_lock:
             self.state.update_task(task.id, TaskExecutionState.INTEGRATING)
@@ -318,9 +368,7 @@ class TaskOrchestrator:
                         if not conflicted:
                             self.integration.abort_merge()
                             raise IntegrationError("merge failed without identifiable conflicted files")
-                        resolution = self.agent_runner.run_conflict_resolver(
-                            task, self.root, conflicted
-                        )
+                        resolution = self.agent_runner.run_conflict_resolver(task, self.root, conflicted)
                         unresolved = self.integration.conflicted_files()
                         combined = f"{resolution.stdout}\n{resolution.stderr}"
                         if (
@@ -340,11 +388,7 @@ class TaskOrchestrator:
                     post_merge = self.verification.run(task, self.root, phase="post-integration")
                     if not post_merge.success:
                         self.integration.rollback_unpushed_main()
-                        self._block(
-                            task,
-                            "POST_INTEGRATION_VERIFICATION_FAILED",
-                            f"log={post_merge.log_path}",
-                        )
+                        self._block(task, "POST_INTEGRATION_VERIFICATION_FAILED", f"log={post_merge.log_path}")
                         return
 
                     snapshot = BacklogReader(self.root).load()
@@ -355,9 +399,7 @@ class TaskOrchestrator:
                     summary = self._completion_summary(task)
                     BacklogWriter(self.root).finalize_task(snapshot, merged_task, summary)
                     self.integration.commit_bookkeeping(task)
-                    final_verification = self.verification.run(
-                        task, self.root, phase="post-bookkeeping"
-                    )
+                    final_verification = self.verification.run(task, self.root, phase="post-bookkeeping")
                     if not final_verification.success:
                         self.integration.rollback_unpushed_main()
                         self._block(
@@ -368,17 +410,13 @@ class TaskOrchestrator:
                         return
                     self.integration.push_main()
                 else:
-                    # Crash recovery after a previous successful push: verify authoritative main
-                    # and require lifecycle bookkeeping to already be complete or finish it safely.
                     snapshot = BacklogReader(self.root).load()
                     current_task = snapshot.tasks.get(task.id)
                     if current_task and current_task.lifecycle_state != "Completed":
                         summary = self._completion_summary(task)
                         BacklogWriter(self.root).finalize_task(snapshot, current_task, summary)
                         self.integration.commit_bookkeeping(task)
-                        final_verification = self.verification.run(
-                            task, self.root, phase="recovery-bookkeeping"
-                        )
+                        final_verification = self.verification.run(task, self.root, phase="recovery-bookkeeping")
                         if not final_verification.success:
                             self.integration.rollback_unpushed_main()
                             self._block(
