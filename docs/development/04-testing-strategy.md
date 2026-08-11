@@ -4,195 +4,118 @@
 
 Testing is part of the development harness, not a cleanup step after implementation.
 
-Use the cheapest test that can reliably detect the failure class, while ensuring critical boundaries are exercised end-to-end where unit tests are insufficient.
+Use the cheapest test that can reliably detect the failure class while exercising critical boundaries end-to-end when lower layers are insufficient.
 
----
+ADR-012 makes LocalStack the only infrastructure target. LocalStack evidence proves behavior against the declared emulator setup, not exact AWS production equivalence.
 
 ## 2. Test layers
 
 ### Unit tests
 
-Use for:
-
-- domain invariants;
-- value objects;
-- pricing/calculation rules;
-- journal balancing;
-- inventory state transitions;
-- order state transitions;
-- pure mapping/normalization logic.
-
-Unit tests should not require AWS or network access.
+Use for domain invariants, value objects, calculations, journal balancing, inventory/order state transitions, and pure mapping/normalization logic. Unit tests require no infrastructure or network access.
 
 ### Integration tests
 
-Use for:
+Use for persistence/access patterns, tenant scoping, API authorization boundaries, event/message serialization, duplicate/redelivery behavior, Mock Provider behavior, callback deduplication, and reconciliation flows.
 
-- DynamoDB access patterns and conditional writes;
-- tenant scoping;
-- API authorization boundaries;
-- event serialization/deserialization;
-- SQS duplicate/redelivery behavior;
-- Mock Payment API behavior;
-- webhook deduplication;
-- reconciliation flows.
-
-Prefer reproducible local/container/emulator or isolated AWS test environments depending on the service and fidelity required. The chosen method must be documented rather than hidden in developer setup.
+Prefer deterministic direct adapters when infrastructure semantics are irrelevant. Use LocalStack when an AWS-style capability is the behavior under test and the selected setup supports it sufficiently.
 
 ### Architecture tests
 
-Use for structural rules that humans/agents repeatedly risk violating:
-
-- dependency direction;
-- domain isolation;
-- forbidden framework/AWS dependencies in domain assemblies;
-- cross-domain reference constraints;
-- naming/event-contract conventions where valuable.
+Use for dependency direction, domain isolation, forbidden AWS SDK/LocalStack/framework dependencies in Domain/Application, cross-module reference constraints, and valuable contract conventions.
 
 ### Contract tests
 
-Use for boundaries whose compatibility matters independently:
-
-- Mock Payment Provider API/webhook contract;
-- domain-event schemas;
-- public API contracts;
-- crawler source-adapter normalized output.
+Use for Mock Provider APIs/callbacks, integration-event schemas, public HTTP contracts, and crawler normalized output.
 
 ### Infrastructure tests
 
 Use for:
 
-- CDK synth;
-- expected resources;
-- IAM constraints;
-- encryption/public-access defaults;
-- log retention;
-- queue DLQ/redrive policy;
-- reserved/max concurrency/throughput guardrails where configured.
+- CDK synth/assertions;
+- expected resources and source-of-truth checks;
+- LocalStack bootstrap/deploy/reset/redeploy;
+- DynamoDB conditional/transaction behavior;
+- queue DLQ/redrive behavior;
+- EventBridge routing;
+- Step Functions execution semantics where supported;
+- API Gateway/Lambda/Cognito/S3 integration where supported;
+- configuration isolation across task instances.
+
+IAM/control-plane fidelity, quotas, managed-service timing, and other unsupported/different emulator behaviors are recorded as limitations instead of being silently treated as equivalent to AWS.
 
 ### End-to-end tests
 
-Use sparingly for high-value business journeys:
-
-```text
-merchant onboarding
-→ create product
-→ publish
-→ storefront purchase
-→ inventory reservation
-→ mock payment
-→ order confirmation
-```
-
-Later add failure-oriented E2E journeys rather than only happy paths.
-
----
+Use sparingly for high-value business journeys and failure/recovery paths.
 
 ## 3. Mandatory scenario families
 
-### Multi-tenant scenarios
-
-For tenant-owned APIs:
+### Multi-tenant
 
 - Tenant A can access its own object;
-- Tenant B cannot access Tenant A object even with a known ID;
-- request-body/query `tenantId` cannot override authenticated tenant context;
-- privileged platform roles, if introduced, use explicit separate authorization.
+- Tenant B cannot access Tenant A data even with a known ID;
+- client-supplied Tenant selectors cannot override trusted Tenant context;
+- privileged platform contexts remain explicit and separate.
 
-### Event/queue scenarios
+### Event/queue
 
-For side-effecting consumers:
+- duplicate delivery;
+- temporary failure then retry;
+- poison/DLQ behavior;
+- out-of-order delivery where relevant;
+- unsupported/old contract version behavior.
 
-- same event delivered twice;
-- event delivered after temporary processing failure;
-- poison message behavior;
-- out-of-order event behavior when order matters;
-- old event version behavior when compatibility matters.
+### Payment/provider
 
-### Payment scenarios
-
-- success;
-- decline;
-- HTTP 500 then retry;
-- timeout before provider commit;
-- timeout after provider commit;
-- delayed success;
-- duplicate webhook;
-- webhook retry;
+- success/decline;
+- transient failure then retry;
+- timeout before/after provider commit;
+- delayed result;
+- duplicate callback;
 - refund;
-- same idempotency key repeated.
+- idempotency replay/reconciliation.
 
-### Accounting scenarios
+### Accounting
 
 - balanced journal accepted;
-- unbalanced journal rejected;
-- posted journal mutation rejected;
-- reversal creates auditable correction path;
-- duplicate source event does not duplicate logical posting.
+- unbalanced rejected;
+- posted mutation rejected;
+- reversal/correction remains auditable;
+- duplicate source fact does not duplicate a logical posting.
 
-### Inventory scenarios
+### Inventory
 
-- reservation with sufficient stock;
-- reservation with insufficient stock;
+- sufficient/insufficient reservation;
 - concurrent reservation of final units;
-- release after payment/order failure;
-- issue/fulfillment movement auditability.
-
----
+- release/issue/return semantics as approved;
+- movement auditability.
 
 ## 4. Regression rule
 
-For meaningful defects, add a regression test at the lowest reliable layer that reproduces the failure.
+For meaningful defects, add a regression test at the lowest reliable layer and then ask whether the same class deserves a reusable harness guardrail.
 
-Then ask whether the same class of defect deserves a broader harness guardrail.
+## 5. Infrastructure limitation rule
 
-Example:
+When required LocalStack behavior is unsupported, partial, behaviorally different, or edition-dependent:
 
-```text
-Bug: Tenant B can fetch Tenant A product
-   ↓
-Fix API/repository
-   ↓
-Add cross-tenant integration regression
-   ↓
-Improve reusable tenant test fixture / repository contract
-```
+1. record the exact gap;
+2. keep the architecture capability/project contract unchanged;
+3. test at the nearest reliable layer;
+4. do not add Domain/Application workarounds for the emulator;
+5. do not claim exact AWS equivalence;
+6. do not fall back to real AWS unless ADR-012 is explicitly superseded.
 
----
+## 6. Verification entry point
 
-## 5. Verification command evolution
+`python3 scripts/harness_check.py` remains the repository entry point. As implementation grows, it should orchestrate restore/install, format/lint, build/typecheck, unit/architecture/contract/integration tests, CDK checks, security/static checks, and selected LocalStack infrastructure verification where appropriate.
 
-H0 begins with:
+Agents and CI should call the same stable entry point whenever practical.
 
-```bash
-python3 scripts/harness_check.py
-```
+## 7. Test-quality rules
 
-As implementation arrives, the command should orchestrate stable project commands such as:
-
-```text
-restore/install
-format/lint
-build/typecheck
-unit tests
-architecture tests
-integration tests
-CDK synth/IaC checks
-security/static checks
-repository/document checks
-```
-
-The exact stack commands should be added once Phase 0 fixes the concrete solution/toolchain structure.
-
-Agents and CI should call the same verification entry point whenever practical to prevent "works locally but CI runs something different" drift.
-
----
-
-## 6. Test-quality rules
-
-- Test observable behavior/invariants rather than implementation trivia.
-- Do not weaken assertions just to make a refactor pass.
-- Avoid tests that depend on wall-clock sleeps when deterministic clocks/events can be injected.
-- Avoid nondeterministic random payment fixtures unless the seed/scenario is explicit.
-- Preserve useful failure messages; a harness is stronger when an agent can understand why it failed.
-- Keep failure-injection scenarios first-class as distributed architecture grows.
+- test observable behavior/invariants, not implementation trivia;
+- never weaken assertions merely to make a refactor/emulator pass;
+- avoid wall-clock sleeps when deterministic clocks/events can be injected;
+- make failure-injection scenarios deterministic;
+- preserve useful failure diagnostics;
+- keep distributed failure scenarios first-class as the architecture grows.
