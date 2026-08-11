@@ -176,6 +176,10 @@ CloudFormation/IAM/control-plane behavior is not evidence of exact AWS behavior;
 the lifecycle records the emulator health response and treats unsupported or
 edition-dependent capabilities as limitations. No real AWS fallback is used.
 
+The `synth`, `bootstrap`, `deploy`, `redeploy`, and `lifecycle` commands use the
+LocalStack-aware `cdklocal` wrapper. Install the repository's CDK CLI and wrapper
+globally before running them: `npm install --global aws-cdk-local aws-cdk`.
+
 A normal LocalStack lifecycle is:
 
 ```text

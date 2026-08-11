@@ -201,7 +201,10 @@ other task instance. The default image assumption is the pinned
 `COMMERCEOS_LOCALSTACK_IMAGE` when a different locally verified image is needed.
 
 The foundation's current supported mapping is CloudFormation-compatible CDK
-deployment plus CloudWatch Logs. LocalStack control-plane/IAM fidelity and exact
+deployment plus CloudWatch Logs. The repository uses the LocalStack-aware
+`cdklocal` wrapper for CDK commands; the wrapper is a host prerequisite and
+prevents the lifecycle from silently targeting a real AWS endpoint. LocalStack
+control-plane/IAM fidelity and exact
 AWS compatibility are not claimed; any later capability must be verified and
 recorded separately before being used by a Ready task. Newer `latest` images may
 require a LocalStack Pro auth token; auth tokens are not a CommerceOS prerequisite

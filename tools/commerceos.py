@@ -15,6 +15,10 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
+DEFAULT_LOCALSTACK_IMAGE = "localstack/localstack:4.8.1"
+DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,s3,iam,sts,ssm"
+
+
 def parse_instance(raw: str) -> int:
     if not raw.isdigit():
         raise argparse.ArgumentTypeError("instance must contain digits only, for example 0003")
@@ -72,7 +76,9 @@ class LocalStackConfig:
             "resource_prefix": self.resource_prefix,
             "container_name": self.container_name,
             "reset_policy": "clean-container",
-            "localstack_image": os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", "localstack/localstack:4.8.1"),
+            "localstack_image": os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", DEFAULT_LOCALSTACK_IMAGE),
+            "localstack_services": os.environ.get("COMMERCEOS_LOCALSTACK_SERVICES", DEFAULT_LOCALSTACK_SERVICES),
+            "localstack_debug": os.environ.get("COMMERCEOS_LOCALSTACK_DEBUG", "0"),
             "ports": self.ports,
         }
 
@@ -91,6 +97,7 @@ def lifecycle_environment(config: LocalStackConfig) -> dict[str, str]:
             "AWS_REGION": "us-east-1",
             "AWS_ACCOUNT_ID": "000000000000",
             "AWS_ENDPOINT_URL": config.endpoint,
+            "AWS_ENDPOINT_URL_S3": config.endpoint,
             "COMMERCEOS_INSTANCE": f"{config.instance:04d}",
             "COMMERCEOS_RESOURCE_PREFIX": config.resource_prefix,
             "COMMERCEOS_LOCALSTACK_ENDPOINT": config.endpoint,
@@ -134,7 +141,26 @@ def start_localstack(config: LocalStackConfig, timeout: int) -> int:
     docker = require_docker()
     if localstack_ready(config):
         return 0
-    image = os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", "localstack/localstack:4.8.1")
+    existing = subprocess.run(
+        [docker, "container", "inspect", config.container_name],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if existing.returncode == 0:
+        policy = subprocess.run(
+            [docker, "update", "--restart", "unless-stopped", config.container_name],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if policy.returncode != 0:
+            return policy.returncode
+        started = subprocess.run([docker, "start", config.container_name], check=False)
+        if started.returncode != 0:
+            return started.returncode
+        return wait_for_localstack(config, timeout)
+    image = os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", DEFAULT_LOCALSTACK_IMAGE)
     image_check = subprocess.run([docker, "image", "inspect", image], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if image_check.returncode != 0:
         print(
@@ -143,21 +169,22 @@ def start_localstack(config: LocalStackConfig, timeout: int) -> int:
             file=sys.stderr,
         )
         return 1
-    subprocess.run([docker, "rm", "-f", config.container_name], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     result = subprocess.run(
         [
             docker,
             "run",
             "-d",
+            "--restart",
+            "unless-stopped",
             "--name",
             config.container_name,
             "-p",
             f"{config.ports['localstack']}:4566",
             "-e",
-            "SERVICES=cloudformation,logs,s3,iam,sts,ssm",
+            f"SERVICES={os.environ.get('COMMERCEOS_LOCALSTACK_SERVICES', DEFAULT_LOCALSTACK_SERVICES)}",
             "-e",
-            "DEBUG=0",
-            os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", "localstack/localstack:4.8.1"),
+            f"DEBUG={os.environ.get('COMMERCEOS_LOCALSTACK_DEBUG', '0')}",
+            image,
         ],
         check=False,
     )
@@ -168,18 +195,33 @@ def start_localstack(config: LocalStackConfig, timeout: int) -> int:
 
 def stop_localstack(config: LocalStackConfig) -> int:
     docker = require_docker()
+    existing = subprocess.run(
+        [docker, "container", "inspect", config.container_name],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if existing.returncode != 0:
+        return 0
     return subprocess.call([docker, "rm", "-f", config.container_name])
 
 
 def cdk_command(config: LocalStackConfig, action: str) -> int:
     context = ["--context", f"environment=dev", "--context", f"instance={config.instance:04d}"]
     stack = f"{config.resource_prefix}-foundation"
-    cdk = "npx.cmd" if os.name == "nt" else "npx"
+    cdk = shutil.which("cdklocal.cmd" if os.name == "nt" else "cdklocal")
+    if cdk is None:
+        print(
+            "cdklocal is required for LocalStack CDK commands. Install it with "
+            "'npm install --global aws-cdk-local aws-cdk'.",
+            file=sys.stderr,
+        )
+        return 1
     if action == "synth":
-        return run([cdk, "cdk", "synth", stack, *context, "--quiet"], config)
+        return run([cdk, "synth", stack, *context, "--quiet"], config)
     if action == "bootstrap":
-        return run([cdk, "cdk", "bootstrap", *context, "--cloudformation-execution-policies", "arn:aws:iam::aws:policy/AdministratorAccess"], config)
-    return run([cdk, "cdk", "deploy", stack, *context, "--require-approval", "never"], config)
+        return run([cdk, "bootstrap", *context, "--cloudformation-execution-policies", "arn:aws:iam::aws:policy/AdministratorAccess"], config)
+    return run([cdk, "deploy", stack, *context, "--require-approval", "never"], config)
 
 
 def inspect_localstack(config: LocalStackConfig) -> int:
@@ -245,7 +287,9 @@ def main() -> int:
     if args.command == "smoke":
         return smoke_localstack(config)
     if args.command == "reset":
-        stop_localstack(config)
+        result = stop_localstack(config)
+        if result != 0:
+            return result
         return start_localstack(config, args.timeout)
     if args.command == "destroy":
         return stop_localstack(config)
