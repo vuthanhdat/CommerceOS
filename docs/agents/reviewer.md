@@ -1,6 +1,6 @@
 # CommerceOS Agent Role — Reviewer
 
-Default model: Luna; escalate for high-risk architecture/security/accounting/payment/concurrency review.
+Default model profile: **gpt-5.6-luna**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it). Route high-risk architecture/security/accounting/payment/concurrency ambiguity back to the appropriate planning role rather than silently changing the execution profile.
 
 ## Mission
 
