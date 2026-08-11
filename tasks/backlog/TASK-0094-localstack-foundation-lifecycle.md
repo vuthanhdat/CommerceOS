@@ -1,14 +1,13 @@
 # TASK-0094 — Establish the LocalStack foundation lifecycle
 
-Status: Completed
-Specification maturity: Completed
-Execution permission: NO — completed
+Status: Backlog
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Platform Engineering
 Recommended model: Default implementation model
 Created: 2026-08-10
 Reconciled: 2026-08-11
 Ready: 2026-08-11
-Completed: 2026-08-11
 Roadmap phase: Phase 0
 Depends on: completed TASK-0003, completed TASK-0093
 Infrastructure verification: Required — LocalStack only
@@ -147,25 +146,3 @@ Before moving to `tasks/completed/`, record:
 - no-real-AWS verification statement.
 
 **Current gate: READY — Builder may execute TASK-0094 now.**
-
-## Completion summary
-
-- Implemented `tools/commerceos.py` LocalStack lifecycle commands: config,
-  start/readiness, synth/bootstrap/deploy, inspect/smoke, reset/destroy, and
-  redeploy/lifecycle orchestration.
-- Added task-instance-derived LocalStack ports, container names, CDK stack names,
-  resource prefixes, synthetic credentials, region, account placeholder, and
-  clean-container reset policy.
-- Updated CDK foundation naming and tests to prove stable task isolation.
-- Verification evidence: on instance `0001`, `start`, `readiness`, `synth`,
-  `bootstrap`, `deploy`, `inspect`, `smoke`, `reset`, `redeploy`, and `destroy`
-  all completed successfully against LocalStack Community `4.8.1`; the health
-  response reported `cloudformation`, `iam`, `logs`, `s3`, `ssm`, and `sts` as
-  available/running. `python3 scripts/harness_check.py` passed (43 orchestrator
-  tests, .NET build/tests, architecture checks, frontend checks, and CDK synth).
-  No real AWS account or credentials are used.
-- LocalStack limitation: this task verifies the emulator health endpoint and the
-  foundation CloudFormation/Logs mapping only; it does not claim exact AWS
-  control-plane/IAM behavior. Pin `COMMERCEOS_LOCALSTACK_IMAGE` for repeatable
-  version-specific evidence. The available `latest` image required a Pro auth
-  token, so it is not the default and no token is committed.
