@@ -25,7 +25,7 @@ public sealed class FoundationStack : Stack
             "FoundationLogGroup",
             new LogGroupProps
             {
-                LogGroupName = $"/commerceos/{profile.Name}/foundation",
+                LogGroupName = $"/{profile.ResourcePrefix}/foundation",
                 Retention = profile.LogRetention
             });
 

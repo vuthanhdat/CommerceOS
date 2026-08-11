@@ -177,3 +177,32 @@ reset/redeploy verification when relevant
 Queue age, DLQ contents, workflow execution state, emulator logs, and local container state are operational evidence. They are never business authority.
 
 Provider timeout/Unknown semantics, idempotency, accounting immutability, tenant isolation, and cross-domain ownership rules remain unchanged regardless of emulator behavior.
+
+## 13. Foundation lifecycle commands
+
+The repository-owned launcher is the deterministic entry point for the foundation
+loop. It uses a task instance to allocate an isolated LocalStack edge port and
+resource/container prefix:
+
+```text
+python tools/commerceos.py config --instance 0001
+python tools/commerceos.py lifecycle --instance 0001
+python tools/commerceos.py inspect --instance 0001
+python tools/commerceos.py reset --instance 0001
+python tools/commerceos.py redeploy --instance 0001
+python tools/commerceos.py destroy --instance 0001
+```
+
+`lifecycle` performs start, readiness, CDK synth, CDK bootstrap, CDK deploy, and
+health smoke verification. `reset` removes the exact task-owned container and
+starts a clean instance. `destroy` removes that container without touching any
+other task instance. The default image assumption is the pinned
+`localstack/localstack:4.8.1` community-era image; override it with
+`COMMERCEOS_LOCALSTACK_IMAGE` when a different locally verified image is needed.
+
+The foundation's current supported mapping is CloudFormation-compatible CDK
+deployment plus CloudWatch Logs. LocalStack control-plane/IAM fidelity and exact
+AWS compatibility are not claimed; any later capability must be verified and
+recorded separately before being used by a Ready task. Newer `latest` images may
+require a LocalStack Pro auth token; auth tokens are not a CommerceOS prerequisite
+and must not be committed.

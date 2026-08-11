@@ -148,6 +148,34 @@ optional production-shaped local validation profile
 
 There is no real AWS DEV/STAGING/PROD path under the current architecture.
 
+### LocalStack foundation lifecycle
+
+The repository-owned lifecycle is exposed by `tools/commerceos.py`. It uses only
+synthetic credentials and derives the LocalStack port, container name, CDK stack
+name, and resource prefix from the task instance (`0000` through `0099`). Docker
+and a locally available LocalStack image are the only infrastructure prerequisites.
+
+```text
+python tools/commerceos.py lifecycle --instance 0001
+python tools/commerceos.py inspect --instance 0001
+python tools/commerceos.py reset --instance 0001
+python tools/commerceos.py redeploy --instance 0001
+python tools/commerceos.py destroy --instance 0001
+```
+
+Use `python tools/commerceos.py config --instance 0001` to inspect the complete
+configuration boundary. `localstack-dev` may preserve state during exploration;
+the default `localstack-test` lifecycle uses a clean container reset. No required
+resource may be created manually in LocalStack.
+
+The foundation currently deploys only the CDK log-group resource. The default
+image assumption is the pinned `localstack/localstack:4.8.1` community-era image;
+newer images may require a Pro auth token, which is not a CommerceOS prerequisite.
+LocalStack's
+CloudFormation/IAM/control-plane behavior is not evidence of exact AWS behavior;
+the lifecycle records the emulator health response and treats unsupported or
+edition-dependent capabilities as limitations. No real AWS fallback is used.
+
 A normal LocalStack lifecycle is:
 
 ```text

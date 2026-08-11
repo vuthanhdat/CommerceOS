@@ -146,3 +146,25 @@ Before moving to `tasks/completed/`, record:
 - no-real-AWS verification statement.
 
 **Current gate: READY — Builder may execute TASK-0094 now.**
+
+## Completion summary
+
+- Implemented `tools/commerceos.py` LocalStack lifecycle commands: config,
+  start/readiness, synth/bootstrap/deploy, inspect/smoke, reset/destroy, and
+  redeploy/lifecycle orchestration.
+- Added task-instance-derived LocalStack ports, container names, CDK stack names,
+  resource prefixes, synthetic credentials, region, account placeholder, and
+  clean-container reset policy.
+- Updated CDK foundation naming and tests to prove stable task isolation.
+- Verification evidence: on instance `0001`, `start`, `readiness`, `synth`,
+  `bootstrap`, `deploy`, `inspect`, `smoke`, `reset`, `redeploy`, and `destroy`
+  all completed successfully against LocalStack Community `4.8.1`; the health
+  response reported `cloudformation`, `iam`, `logs`, `s3`, `ssm`, and `sts` as
+  available/running. `python3 scripts/harness_check.py` passed (43 orchestrator
+  tests, .NET build/tests, architecture checks, frontend checks, and CDK synth).
+  No real AWS account or credentials are used.
+- LocalStack limitation: this task verifies the emulator health endpoint and the
+  foundation CloudFormation/Logs mapping only; it does not claim exact AWS
+  control-plane/IAM behavior. Pin `COMMERCEOS_LOCALSTACK_IMAGE` for repeatable
+  version-specific evidence. The available `latest` image required a Pro auth
+  token, so it is not the default and no token is committed.
