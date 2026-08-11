@@ -1,134 +1,101 @@
 # ADR-003 — First-Frontier Modular Runtime and Deployment Boundaries
 
-Status: Accepted
+Status: Accepted, amended by ADR-012
 Date: 2026-08-09
+Amended: 2026-08-11
 Decision owners: CommerceOS Technical Architecture
-Supersedes: N/A
-Superseded by: N/A
 
 ## Context
 
-TASK-0087 separates Tenant Management, Merchant Access, Catalog, Audit, and later commerce contexts by business ownership. It also requires merchant onboarding to produce one usable Active Tenant with an Active initial Owner Membership; completed success cannot expose an ownerless Tenant.
+TASK-0087 separates Tenant Management, Merchant Access, Catalog, Audit, and later commerce contexts by business ownership. ADR-002 accepts a modular-monolith repository with Domain/Application/Infrastructure layers but does not map contexts to implementation modules or initial runtime boundaries.
 
-ADR-002 accepts a modular-monolith repository with Domain/Application/Infrastructure layers but does not map the reconciled business contexts to implementation modules, define cross-module contract placement, or choose the first Lambda/CDK deployment boundaries.
+Treating every context as an independent service would make onboarding a premature distributed-consistency problem. Combining all contexts into `Platform` would erase ownership. Creating one deployable per bounded context would confuse logical and operational boundaries.
 
-Treating every context as an independent module/service would make the onboarding invariant a premature cross-module/distributed consistency problem. Combining all contexts into `Platform` would erase ownership. Creating one Lambda/stack/table per context would also confuse logical and operational boundaries and add packaging, IAM, observability, and delivery overhead before workload evidence exists.
+ADR-012 later changed the physical infrastructure target from real AWS to LocalStack only. This amendment preserves the module/runtime boundary decision while removing AWS account/region/IAM deployment assumptions.
 
 ## Decision
 
 ### Implementation modules
 
-- Create one `Tenancy` implementation module containing two explicitly separated model areas: Tenant Management and Merchant Access.
-- Preserve separate aggregates, namespaces, use cases, repository contracts, and business-fact ownership inside Tenancy. `Tenant` and `Membership` do not become one aggregate.
+- Create one `Tenancy` implementation module containing Tenant Management and Merchant Access as explicitly separated model areas.
+- Preserve separate aggregates, namespaces, use cases, repository contracts, and business-fact ownership inside Tenancy.
 - Create `Catalog` as a separate implementation module and persistence owner.
-- Keep `Platform` technical/foundation-only; it is not a shared business domain or common-model project.
-- Add Audit and every later context as its own implementation module only when a Ready task introduces it. Do not pre-create empty modules.
-- Keep the Mock Payment Provider a separate external-like application/deployment boundary when it is introduced.
+- Keep `Platform` technical/foundation-only.
+- Add Audit and later contexts only when a Ready task introduces them.
+- Keep Mock Payment Provider a separate external-like application/runtime boundary when introduced.
 
-Tenancy is the transaction boundary for the approved completed onboarding outcome. Its application coordinator can atomically persist Tenant Management and Merchant Access records without a cross-service workflow while preserving their business ownership internally.
+Tenancy remains the local transaction boundary for the approved completed onboarding outcome where that transaction is within Tenancy ownership. Cross-module Trial completion follows ADR-009.
 
 ### Layer and contract graph
 
-- Domain uses only the .NET base class library and references no project/package.
-- Application references its own Domain and owns use cases/ports.
-- Infrastructure references its own Application and implements persistence/AWS/external adapters.
-- Delivery/composition references module Application/Infrastructure projects and maps transport input; it contains no business rules.
-- Add a producer-owned `CommerceOS.<Module>.Contracts` project only when delivery or another module has a real contract consumer.
-- Contracts are immutable, transport-neutral, implementation-free, and contain no Domain entity, repository, AWS, HTTP framework, or DynamoDB type.
-- An Application project may reference an explicitly approved foreign Contracts project, but never a foreign Domain, Application implementation, or Infrastructure project.
+- Domain uses only approved base/cross-cutting types and has no AWS SDK, LocalStack, framework, persistence, or provider dependency.
+- Application references its Domain and owns use cases/ports.
+- Infrastructure references its Application and implements persistence/messaging/provider/runtime adapters.
+- Delivery/composition references module Application/Infrastructure and maps transport input; it contains no business rules.
+- Add producer-owned `CommerceOS.<Module>.Contracts` only when a real consumer exists.
+- Contracts are transport-neutral, implementation-free, and contain no Domain entity, repository, AWS/LocalStack, HTTP-framework, or persistence type.
+- Application may reference explicitly approved foreign Contracts, never foreign Domain/Application implementation/Infrastructure.
 
-Current architecture tests must be evolved before the first Contracts or new Domain project is implemented so the accepted graph is machine-enforced across all modules.
+### Initial runtime boundaries
 
-### Initial runtime and stacks
+The initial application runtime remains one shared .NET `commerce-api` serverless delivery composition hosting Tenancy and Catalog while preserving code/persistence ownership.
 
-- Package the protected/back-office application initially as one .NET `commerce-api` Lambda behind one API Gateway HTTP API.
-- Host Tenancy and Catalog in that runtime while retaining code and table ownership.
-- `IdentityStack` owns Cognito authentication resources.
-- `CommerceStack` owns API Gateway, the `commerce-api` Lambda, and module-owned table constructs as introduced.
-- `FoundationStack` remains bounded technical foundation and does not create an event bus by default.
-- `WebStack`, integration resources, `CrawlerStack`, and `MockPaymentStack` are created only with a Ready task and their named workload.
-- Run application writes in one initial Region, `ap-southeast-1`; CloudFront remains global when web delivery is introduced.
+Preferred LocalStack mappings when Ready and sufficiently supported:
 
-Split a function, stack, or deployable service only when measured scale, runtime, security/IAM isolation, reliability/blast radius, team ownership, or deployment-cadence pressure justifies it. A bounded context alone is not sufficient evidence.
+- HTTP/serverless delivery capability -> API Gateway + Lambda;
+- identity-edge capability -> Cognito;
+- module persistence -> DynamoDB;
+- web/integration/crawler/provider resources -> only when a named Ready task introduces them.
 
-## Alternatives considered
+`FoundationStack` remains bounded technical foundation and does not pre-create generic event infrastructure.
 
-### Option A — One implementation module and deployable service per bounded context
+There is **no fixed AWS Region/account target** under ADR-012. Region/account-id values used by SDK/CDK/LocalStack are configuration placeholders and are not business/runtime authority.
 
-- Benefits: maximal compile-time/IAM/deployment separation; independent scaling from the start.
-- Costs/risks: premature distributed onboarding, more packages/stacks/contracts, extra failure/observability burden, and greater risk of a distributed monolith before domain learning.
-
-### Option B — One Platform/business module and one shared data model
-
-- Benefits: smallest initial project count and simple in-process calls.
-- Costs/risks: erases source-of-truth ownership, encourages cross-domain entity/persistence shortcuts, makes later extraction difficult, and contradicts TASK-0087.
-
-### Option C — Tenancy + Catalog modules in one initial commerce runtime
-
-- Benefits: preserves ownership and compile-time boundaries, keeps onboarding atomic/local, avoids early network contracts, and retains later extraction paths through module-owned tables/contracts.
-- Costs/risks: one runtime role can access more than one table; deployment failures affect several modules; architecture tests and code review must enforce boundaries that IAM cannot yet enforce.
-
-Chosen: Option C.
+Split a function, stack, or deployable service only when measured runtime, security isolation, reliability/blast-radius, team ownership, or deployment-cadence pressure justifies it. A bounded context alone is not sufficient evidence.
 
 ## Consequences
 
 ### Positive
 
-- The first-frontier business boundaries have explicit technical homes.
-- Onboarding can satisfy the accepted all-or-nothing outcome without inventing a saga.
-- Catalog remains independently owned and cannot use Tenancy persistence.
-- Contracts appear only when a consumer makes them necessary.
-- The repository can remain a modular monolith while preserving credible future extraction seams.
-- Lambda/stack count follows runtime pressure rather than task or domain count.
+- first-frontier business boundaries have explicit technical homes;
+- Catalog ownership remains independent;
+- Contracts appear only when a consumer requires them;
+- modular-monolith learning remains intact;
+- LocalStack runtime can exercise serverless mappings without forcing real cloud deployment;
+- later extraction seams remain explicit.
 
-### Negative / trade-offs
+### Trade-offs
 
-- Tenant Management and Merchant Access require strong internal naming/ownership discipline inside one implementation module.
-- The shared commerce Lambda initially has a wider IAM/resource blast radius than one function per module.
-- Current architecture tests do not yet support Contracts or scan every future Domain assembly; a foundation follow-up is required before those shapes are implemented.
-- Single-region operation does not meet a future multi-region recovery/data-residency requirement without another ADR and migration.
+- shared runtime requires architecture tests/code review to prevent boundary erosion;
+- process-level isolation is coarser than module ownership;
+- LocalStack may not reproduce every Lambda/API Gateway/Cognito control-plane behavior exactly;
+- extraction still requires measured evidence and a focused ADR.
 
 ## Security and tenant impact
 
-- Tenant isolation: module repositories still require trusted tenant scope and use tenant-partitioned keys; a shared runtime does not permit shared/unscoped data access.
-- Authentication/authorization: Cognito remains external authentication; Merchant Access owns current Tenant authority. Details are ADR-004.
-- Sensitive data/secrets: no credential is shared through Contracts. Stack/function environment settings do not contain secrets by convenience.
-- IAM: the initial shared function receives explicit table/actions only; workers and later split functions receive narrower grants. Architecture tests and cross-tenant integration tests compensate for the initial coarser function boundary.
+- a shared runtime never permits unscoped/foreign persistence access;
+- identity-edge mapping proves identity only; Merchant Access remains current Tenant authority under ADR-004;
+- no LocalStack synthetic credential/endpoints belong in Domain/Application contracts;
+- authorization is tested at application boundaries rather than inferred from emulator infrastructure.
 
 ## Reliability and operability impact
 
-- Failure modes: a `commerce-api` deployment/runtime incident affects Tenancy and Catalog together; module bugs remain isolated by contracts/tests rather than process isolation.
-- Retry/recovery: first-frontier local commands use module transactions/idempotency; asynchronous consumers are not required for CRUD/onboarding.
-- Observability: logs/metrics identify module and operation inside the shared runtime; cost/latency can later justify extraction.
-- Operational burden: fewer functions/stacks/packages initially; explicit extraction criteria prevent indefinite accidental coupling.
-
-## Cost impact
-
-- Learning profile: TASK-0088 deploys nothing. The later single commerce function/API and module tables use the already-modeled Lambda/API Gateway/DynamoDB cost categories; fewer deployables do not create a new service charge.
-- Beta profile: shared runtime minimizes duplicate low-volume operational resources; requests/compute/storage still scale with use.
-- Larger-scale implication: a hot module may require function/table/deployment extraction. Module-owned persistence/contracts reduce migration scope, but a measured ADR and CDK migration plan are required.
-- Cost-model update required? No for this ADR. It changes boundaries, not the modeled service set or current runtime resources.
+- a shared runtime incident can affect multiple modules, while logical failures remain isolated by contracts/tests;
+- module-local commands use owned transactions/idempotency;
+- logs/metrics should identify module/operation where supported by the selected local runtime;
+- LocalStack runtime state is operational/testing state only.
 
 ## Reversibility / migration
 
-The code boundary is intentionally reversible.
-
-- Splitting Tenancy model areas into separate modules requires replacing the onboarding local transaction with an explicitly reliable coordination model while preserving the no-ownerless-success invariant.
-- Splitting a module into a Lambda/service requires contract hardening, IAM/resource separation, independent deployment/observability, timeout/retry semantics, and migration testing.
-- Moving tables requires dual-write/backfill/cutover or another explicit state migration; module ownership avoids unrelated-domain data in that migration.
-- Changing Region requires stateful data/object migration and recovery/data-residency review.
+- splitting Tenancy model areas into separate modules requires reliable coordination while preserving the no-ownerless-success invariant;
+- splitting a module into a separate runtime requires contract hardening, independent failure semantics, deployment isolation, and migration testing;
+- moving persistence requires explicit migration/cutover planning;
+- changing from LocalStack to real AWS requires a human architecture decision superseding ADR-012.
 
 ## Validation
 
-- Architecture tests enumerate every Domain assembly and reject framework/AWS/foreign-module dependencies.
-- Project-reference tests enforce Domain/Application/Contracts/Infrastructure/delivery rules.
-- Tenancy tests prove its two model areas retain separate aggregates/facts while onboarding commits one all-or-nothing result.
-- Catalog tests prove it cannot reference Tenancy Domain/Infrastructure or use Tenancy persistence.
-- CDK assertions show IdentityStack/CommerceStack responsibility and no speculative bus/queue/workflow resources.
-- Runtime logs/metrics can be grouped by module; extraction decisions cite measured evidence.
-
-## References
-
-- relevant task: [TASK-0088](../../tasks/completed/TASK-0088-technical-architecture-baseline-reconciliation.md)
-- domain baseline: [Tenant Management & Merchant Access](../domains/tenant-identity.md), [Catalog](../domains/catalog.md)
-- architecture docs: [Technical baseline](../architecture/technical-baseline.md), [ADR-002](ADR-002-phase-0-toolchain-and-repository-structure.md)
+- architecture tests enumerate Domain assemblies and reject framework/AWS/LocalStack/foreign-module dependencies;
+- project-reference tests enforce Domain/Application/Contracts/Infrastructure/delivery direction;
+- Tenancy and Catalog tests enforce ownership separation;
+- CDK assertions show no speculative bus/queue/workflow resources;
+- LocalStack tests validate selected runtime mappings where supported and document limitations where not.
