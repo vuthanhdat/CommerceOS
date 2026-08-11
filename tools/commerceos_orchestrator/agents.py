@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -151,6 +152,16 @@ CONFLICT_RESULT: RESOLVED
     ) -> list[str]:
         # Explicit overrides prevent the user's interactive TUI model/Fast selection from
         # silently changing autonomous CommerceOS execution behavior.
+        # Codex's Windows restricted runner currently cannot spawn the shell from
+        # CommerceOS sibling worktrees (CreateProcessAsUserW/WinError 5). Each task
+        # already runs in an isolated disposable Git worktree, so use the CLI's
+        # explicit full-access sandbox for the local automation boundary on Windows.
+        # Reviewers remain read-only; this only changes the writable agent lane.
+        sandbox = (
+            "danger-full-access"
+            if os.name == "nt" and writable
+            else ("workspace-write" if writable else "read-only")
+        )
         return [
             executable,
             "exec",
@@ -159,7 +170,7 @@ CONFLICT_RESULT: RESOLVED
             "-C",
             str(worktree),
             "--sandbox",
-            "workspace-write" if writable else "read-only",
+            sandbox,
             "-m",
             self.profile.model,
             "-c",
@@ -294,7 +305,9 @@ CONFLICT_RESULT: RESOLVED
 
         stdout = "".join(stdout_lines)
         stderr = "".join(stderr_lines)
-        success = exit_code == 0
+        environment_failure = self._has_windows_sandbox_failure(stdout, stderr)
+        success = exit_code == 0 and not environment_failure
+        marker = "ENVIRONMENT_UNAVAILABLE" if environment_failure else None
         self.live_feed.publish(
             task.id,
             "codex_finished",
@@ -309,6 +322,16 @@ CONFLICT_RESULT: RESOLVED
             stdout=stdout,
             stderr=stderr,
             log_path=str(log_path),
+            marker=marker,
+        )
+
+    @staticmethod
+    def _has_windows_sandbox_failure(stdout: str, stderr: str) -> bool:
+        combined = f"{stdout}\n{stderr}".lower()
+        return (
+            "createprocessasuserw failed: 5" in combined
+            or "windows sandbox: runner failed during spawnchild" in combined
+            or "windows sandbox: runner error" in combined
         )
 
     @staticmethod

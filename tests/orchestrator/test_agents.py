@@ -75,7 +75,7 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self.assertIn("gpt-5.6-luna", command)
             self.assertIn('model_reasoning_effort="medium"', command)
             self.assertIn('service_tier="default"', command)
-            self.assertIn("workspace-write", command)
+            self.assertIn("danger-full-access" if __import__("os").name == "nt" else "workspace-write", command)
             self.assertNotIn('service_tier="fast"', command)
             self.assertNotIn('service_tier="priority"', command)
 
@@ -132,6 +132,14 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self.assertIn("item.completed", audit)
             self.assertIn("warning from codex", audit)
             self.assertNotIn("test prompt", audit)
+
+    def test_windows_sandbox_failure_is_not_reported_as_success_when_codex_exits_zero(self):
+        self.assertTrue(
+            CodexRunner._has_windows_sandbox_failure(
+                '{"type":"item.completed","item":{"aggregated_output":"CreateProcessAsUserW failed: 5"}}',
+                "",
+            )
+        )
 
 
 if __name__ == "__main__":

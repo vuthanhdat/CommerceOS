@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 import webbrowser
@@ -16,6 +17,16 @@ from .models import TaskExecutionState
 from .scheduler import Scheduler
 from .service import TaskOrchestrator
 from .state import RunStateStore
+
+
+class _QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """Do not log normal browser disconnects as server failures on Windows."""
+
+    def handle_error(self, request, client_address):  # noqa: N802
+        exc_type, exc, _ = sys.exc_info()
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class DashboardReadModel:
@@ -170,7 +181,7 @@ class LocalDashboardServer:
         self.read_model = DashboardReadModel(self.root, self.state)
         self.live_feed = LiveAgentFeed(self.state.path.parent / "logs")
         self.runtime = runtime
-        self.httpd = ThreadingHTTPServer((host, port), self._handler())
+        self.httpd = _QuietThreadingHTTPServer((host, port), self._handler())
         self.host = host
         self.port = int(self.httpd.server_address[1])
 
@@ -228,7 +239,11 @@ class LocalDashboardServer:
                     self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
                 except BacklogValidationError as exc:
                     self._json({"error": "BACKLOG_INVALID", "detail": str(exc)}, HTTPStatus.CONFLICT)
-                except (BrokenPipeError, ConnectionResetError):
+                # Browsers and VS Code routinely close an EventSource connection while
+                # reconnecting or switching tasks. Windows reports that disconnect as
+                # ConnectionAbortedError (WinError 10053); it is a normal client-side
+                # disconnect and must not trigger a second error response on the dead socket.
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                     return
                 except Exception as exc:
                     self._json({"error": "INTERNAL", "detail": repr(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
