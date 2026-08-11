@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 from .models import CanonicalTask, VerificationResult
@@ -9,12 +10,13 @@ from .models import CanonicalTask, VerificationResult
 class VerificationRunner:
     """Runs the repository-owned deterministic verification entrypoint only."""
 
-    COMMAND = ("python3", "scripts/harness_check.py")
-
     def __init__(self, logs_root: Path):
         self.logs_root = logs_root.resolve()
         self.logs_root.mkdir(parents=True, exist_ok=True)
-        self.command = self.COMMAND
+        # Use the exact Python interpreter that launched the Orchestrator. This keeps
+        # the verification entrypoint fixed/trusted while remaining portable across
+        # Windows (`python`) and Unix-like environments (`python3`).
+        self.command = (sys.executable, "scripts/harness_check.py")
 
     def run(self, task: CanonicalTask, worktree: Path, *, phase: str) -> VerificationResult:
         log_path = self.logs_root / f"{task.id}-verify-{phase}.log"
