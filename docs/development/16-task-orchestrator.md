@@ -1,6 +1,6 @@
 # CommerceOS — Local Task Orchestrator
 
-_Last reviewed: 2026-08-10._
+_Last reviewed: 2026-08-11._
 
 ## 1. Purpose
 
@@ -27,9 +27,10 @@ V1 is intentionally small and local:
 - Python standard library only for orchestration code;
 - SQLite for persisted local run/control state;
 - Git branches/worktrees for writable task isolation;
-- `codex exec` behind a centralized agent-runner adapter;
-- `python3 scripts/harness_check.py` as the default deterministic verification command;
+- `codex exec --json` behind a centralized agent-runner adapter;
+- the active Python interpreter running `scripts/harness_check.py` as the deterministic verification command;
 - `ThreadingHTTPServer` for the loopback-only monitoring/control dashboard;
+- Server-Sent Events (SSE) for one-way local live Codex activity streaming;
 - no Redis, RabbitMQ, Temporal, Kubernetes, remote worker fleet, network database, or AWS runtime service.
 
 Transient files are written under `.commerceos/orchestrator/` by default and must remain untracked.
@@ -39,33 +40,50 @@ Transient files are written under `.commerceos/orchestrator/` by default and mus
 Run from the repository root:
 
 ```bash
-python3 tools/orchestrator.py validate
-python3 tools/orchestrator.py plan
-python3 tools/orchestrator.py dry-run
-python3 tools/orchestrator.py status
+python tools/orchestrator.py validate
+python tools/orchestrator.py plan
+python tools/orchestrator.py dry-run
+python tools/orchestrator.py status
 
-python3 tools/orchestrator.py run
-python3 tools/orchestrator.py start
-python3 tools/orchestrator.py stop
-python3 tools/orchestrator.py resume
-python3 tools/orchestrator.py cleanup
-python3 tools/orchestrator.py ui
+python tools/orchestrator.py run
+python tools/orchestrator.py start
+python tools/orchestrator.py stop
+python tools/orchestrator.py resume
+python tools/orchestrator.py cleanup
+python tools/orchestrator.py ui
 ```
 
 `start` runs the scheduler and dashboard together. The dashboard binds to `127.0.0.1:8765` by default. V1 rejects non-loopback dashboard binding.
 
-## 4. Codex runner
+## 4. Codex runner and model profiles
 
-The real agent runner invokes the repository-approved `codex` executable non-interactively through a single adapter. Only model routing is configurable; the executable itself is intentionally fixed so environment input cannot redirect privileged task execution to an arbitrary program:
+The real agent runner invokes the repository-approved `codex` executable non-interactively through a single adapter. It intentionally uses `codex exec --json`, not an embedded interactive TUI/PTY session, so process exit, sandbox scope, output parsing, restart behavior, and concurrent agents remain deterministic.
+
+CommerceOS uses fixed role profiles:
 
 ```text
-COMMERCEOS_CODEX_MODEL_DEFAULT
-COMMERCEOS_CODEX_MODEL_STRONG
+Planning: Domain Architect / Technical Architect / Backlog Planner
+  model:     gpt-5.6-sol
+  reasoning: medium
+  service:   Standard (normal/default non-Fast tier)
+
+Coding/execution: Builder / implementation Reviewer / Conflict Resolver
+  model:     gpt-5.6-luna
+  reasoning: medium
+  service:   Standard (normal/default non-Fast tier)
 ```
 
-If model variables are absent, Codex's configured default model is used. Tests use `FakeAgentRunner` and consume no Codex quota. Deterministic verification also uses the fixed repository-owned `python3 scripts/harness_check.py` entrypoint rather than an environment-supplied command.
+The Orchestrator explicitly passes the Luna model, medium reasoning, and the Codex `default` service-tier config value for autonomous coding/execution turns. This prevents a user's interactive `/model` or `/fast` selection from silently changing repository automation. Planning remains outside Orchestrator V1; the Sol planning profile is encoded in `AGENTS.md` and the planning role contracts for current/future planning-agent launchers.
+
+Tests use `FakeAgentRunner` and consume no Codex quota. Deterministic verification remains repository-owned rather than environment-command configurable.
 
 The Builder gets a writable task worktree. Reviewer runs read-only and must return an explicit pass/fix marker. Conflict Resolver is writable only in the serialized integration checkout and must return a safe-resolution marker; otherwise the task becomes Human Required. Builder/reviewer/conflict evidence is treated as untrusted data: diffs/conflict contents are inspected from Git rather than interpolated into privileged prompts, and prior verification/review feedback is written to ignored local evidence files that cannot override repository instructions.
+
+### Live activity
+
+`codex exec --json` emits newline-delimited JSON. The runner now reads stdout as it arrives, writes each line to the retained audit log immediately, and appends structured records to a per-task live JSONL feed under `.commerceos/orchestrator/logs/`. stderr is drained concurrently to avoid pipe deadlock and is retained in the final audit log.
+
+The dashboard subscribes to that local feed over a loopback-only SSE endpoint. Browser reconnects replay from the last byte-offset event id. Live output is display-only, treated as untrusted text, and cannot change scheduler, Git, or canonical backlog state.
 
 ## 5. Mechanical scheduling
 
@@ -173,9 +191,10 @@ The dashboard is a thin read/control client over Orchestrator Core. It shows:
 - task metadata, branch/worktree, attempts and blockers;
 - DAG/progress summary;
 - recent event timeline;
+- near-real-time Codex Builder/Reviewer activity with model/reasoning/service profile;
 - graceful Stop and explicit Resume controls.
 
-The browser UI does not calculate readiness, mutate canonical YAML, resolve dependencies, decide retries, or perform Git integration directly.
+The browser UI does not calculate readiness, mutate canonical YAML, resolve dependencies, decide retries, or perform Git integration directly. Dynamic agent content is rendered using text-only DOM APIs rather than HTML injection.
 
 ## 11. Verification
 
@@ -187,7 +206,9 @@ The repository harness runs the Orchestrator Python test suite before the applic
 - Builder verification/fix and Reviewer/fix loops using fake agents;
 - cloud fail-closed behavior;
 - real local Git worktree/merge primitives against a temporary bare repository;
-- loopback-only dashboard status/control and DOM rendering without dynamic `innerHTML`;
+- loopback-only dashboard status/control, SSE activity delivery, and DOM rendering without dynamic `innerHTML`;
+- pinned Sol/Luna medium/Standard role profiles;
+- JSONL activity publication before Codex process completion and retained stdout/stderr audit evidence;
 - canonical shard/spec path containment so backlog metadata cannot escape repository-owned planning directories;
 - untrusted agent evidence isolation from privileged prompts;
 - completion bookkeeping.
