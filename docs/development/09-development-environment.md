@@ -1,286 +1,144 @@
 # CommerceOS — Development Environment Strategy
 
-_Last reviewed: 2026-08-09._
+_Last reviewed: 2026-08-11. ADR-012 is authoritative._
 
 ## 1. Goal
 
-CommerceOS uses many AWS managed/serverless services, but development must keep a fast feedback loop and remain compatible with an AWS Free Tier / approximately USD 100 credit learning budget.
-
-The project therefore uses a **hybrid development model**:
+CommerceOS uses a **LocalStack-only infrastructure strategy**. No real AWS account is used for development, staging, validation, or deployment exercises.
 
 ```text
-LOCAL
-fast, deterministic, cheap
-    │
-    ▼
-AWS DEV / SANDBOX
-real AWS service semantics
-    │
-    ▼
-STAGING
-production-like verification
-    │
-    ▼
-PROD
-only when the project is ready
+local-fast
+   ↓
+localstack-dev
+   ↓
+localstack-test
+   ↓
+localstack-stage (when production-shaped local validation is useful)
 ```
 
-We deliberately do **not** attempt to reproduce all of AWS locally.
+These are local configuration profiles, not cloud accounts.
 
-Local development validates application/domain behavior. AWS dev validates cloud semantics such as IAM, Lambda packaging/runtime, API Gateway authorization, SQS delivery/retry, EventBridge routing, Step Functions execution, Cognito behavior, and CDK deployments.
+## 2. Profiles
 
----
-
-## 2. Environment model
-
-### `local`
+### `local-fast`
 
 Purpose:
 
-- fastest agent/developer inner loop;
-- unit and architecture tests;
-- deterministic integration tests;
-- frontend development;
-- parser fixture tests;
-- mock-payment failure simulation.
+- fastest inner loop;
+- unit/architecture/contract tests;
+- frontend work;
+- parser fixtures;
+- Mock Payment failure simulation;
+- direct application host where infrastructure semantics are irrelevant.
 
-Expected components:
+No network dependency is required for normal domain development.
 
-```text
-Frontend                 localhost
-.NET application logic   local process / test host
-Mock Payment             local process
-DynamoDB                 DynamoDB Local where persistence integration is needed
-Lambda/API               SAM/local host only when useful
-Events/queues             in-memory/test adapters for most tests
-Crawler                   fixtures by default; no live crawling in CI
-```
-
-Local adapters must implement the same application ports/contracts used by AWS adapters. Domain code must not depend directly on AWS SDKs.
-
-### `dev`
+### `localstack-dev`
 
 Purpose:
 
-- persistent personal learning environment;
-- verify real AWS semantics;
-- integration testing;
-- manual exploration;
-- CloudWatch/operability learning.
+- developer learning/exploration;
+- deploy AWS-style infrastructure locally;
+- inspect queues/events/workflows/logs;
+- synthetic integration data.
 
-Characteristics:
+State may persist between runs, but all required resources must still be reproducible from repository-owned IaC/bootstrap commands.
 
-- one shared/personal dev environment initially;
-- low-volume synthetic data;
-- small provisioned/usage limits;
-- destructive removal policy is acceptable for non-critical resources;
-- short log retention;
-- crawler disabled or manual by default;
-- failure injection enabled for Mock Payment;
-- no production secrets/data.
-
-### `preview` / PR sandbox
+### `localstack-test`
 
 Purpose:
 
-- cloud verification for changes that actually require AWS;
-- isolation from persistent `dev`.
+- deterministic infrastructure-sensitive integration tests;
+- failure/retry/idempotency tests;
+- destructive reset and repeatability checks.
 
-Preview environments are **not created for every PR by default** because the project is credit-constrained.
+The test profile should be disposable or reset before suites.
 
-They are created only when one of these conditions applies:
-
-- IaC changed materially;
-- IAM/authorization changed;
-- SQS/EventBridge/Step Functions behavior changed;
-- Lambda runtime/package integration changed;
-- a task explicitly requires cloud acceptance criteria.
-
-Preview resources must:
-
-- use `pr-<number>` naming/tags;
-- deploy only required stacks/resources;
-- have bounded concurrency/capacity;
-- be destroyed automatically after tests or by TTL cleanup;
-- never create NAT Gateway, ALB, EC2, RDS, or another always-on resource without an accepted ADR.
-
-### `staging`
+### `localstack-stage`
 
 Purpose:
 
-- production-like end-to-end validation;
-- release candidate verification;
-- failure/recovery tests;
-- deployment rehearsal.
+- production-shaped local E2E validation when a distinct stage adds value;
+- deployment/redeployment rehearsal;
+- failure/recovery scenarios using isolated local resources.
 
-During the Free Tier learning period, staging is **ephemeral or on-demand**, not permanently duplicated infrastructure.
+There is no AWS staging account and no production AWS target under the current decision.
 
-Suggested behavior:
+## 3. Inner and outer loops
 
-```text
-release candidate
-      ↓
-cdk deploy staging
-      ↓
-E2E + failure verification
-      ↓
-collect diagnostics
-      ↓
-cdk destroy staging
-```
-
-As the project matures, staging may become persistent if cost/operational value justifies it.
-
-### `prod`
-
-Production is intentionally deferred. A separate production AWS account is preferred once CommerceOS handles real users/data.
-
----
-
-## 3. Inner loop vs outer loop
-
-### Inner loop — local
-
-Target: seconds, not minutes.
+### Inner loop
 
 ```text
-edit
- ↓
-build
- ↓
-unit tests
- ↓
-architecture tests
- ↓
-local contract/integration tests
- ↓
-repeat
+edit -> build -> unit -> architecture -> contract -> repeat
 ```
 
-No network dependency should be required for normal domain development.
-
-### Outer loop — AWS
-
-Target: run only when cloud semantics matter.
+### Infrastructure loop
 
 ```text
 local checks PASS
       ↓
+start/wait LocalStack
+      ↓
 CDK synth
       ↓
-CDK deploy selected stack(s)
+deploy selected stacks to LocalStack
       ↓
-cloud integration tests
+integration/E2E/failure checks
       ↓
-inspect logs/metrics
-      ↓
-destroy preview if ephemeral
+reset or preserve state according to profile
 ```
 
-A task may not claim cloud-related acceptance criteria are complete based only on local emulation.
+A task may claim only the semantics actually demonstrated by the selected LocalStack setup. LocalStack evidence is not automatically evidence of exact AWS behavior.
 
----
+## 4. Capability test strategy
 
-## 4. AWS service test strategy
-
-| AWS capability | Local strategy | Source of truth before release |
+| Capability | Fast strategy | Infrastructure strategy |
 |---|---|---|
-| Lambda business logic | direct invocation/unit tests | real Lambda in dev/staging |
-| API Gateway | local HTTP/SAM where useful | real HTTP API |
-| DynamoDB | DynamoDB Local + repository tests | real DynamoDB for IAM/capacity/conditional behavior |
-| Cognito | fake/auth test context | real Cognito |
-| SQS | in-memory adapter/contract tests | real SQS including retry/DLQ |
-| EventBridge | in-memory event bus/contract tests | real EventBridge routing |
-| Step Functions | workflow definition tests; individual logic tests | real Step Functions execution |
-| S3 | filesystem/in-memory abstraction for unit tests | real S3 policy/event/lifecycle tests |
-| CloudWatch | logging interfaces | real logs/metrics/alarms |
-| IAM | cannot be faithfully emulated | real AWS only |
+| serverless handlers | direct invocation/unit | LocalStack Lambda/API Gateway where supported |
+| persistence | repository tests | LocalStack DynamoDB |
+| identity edge | test principal adapter | LocalStack Cognito where sufficiently supported |
+| work queue | deterministic adapter | LocalStack SQS/DLQ |
+| fact routing | contract adapter | LocalStack EventBridge |
+| durable workflow | definition/task tests | LocalStack Step Functions where supported |
+| object storage | filesystem/in-memory port | LocalStack S3 |
+| observability | logging interfaces | CloudWatch-style LocalStack APIs where useful |
 
-Do not make LocalStack or another full-cloud emulator a mandatory dependency. It may be evaluated later, but AWS remains the integration source of truth.
+Unsupported, partial, edition-dependent, or behaviorally different features must be documented as limitations. Do not silently assume AWS compatibility and do not fall back to real AWS by default.
 
----
+## 5. Configuration contract
 
-## 5. Environment configuration contract
-
-Infrastructure receives an explicit environment profile rather than scattering environment checks through application code.
-
-Example conceptual configuration:
+Runtime differences are configuration concerns. Infrastructure/delivery configuration may include:
 
 ```text
 EnvironmentConfig
 - name
-- awsAccount
-- awsRegion
-- isProduction
-- removalPolicy
-- logRetentionDays
+- serviceEndpoint
+- region
+- syntheticAccessKey
+- syntheticSecretKey
+- accountIdPlaceholder
+- resourcePrefix
+- instanceId
+- ports
+- localStackFeatureFlags
+- resetPolicy
 - enableCrawler
 - enableFailureInjection
-- enablePitr
-- lambdaReservedConcurrency
-- dynamodbCapacityProfile
-- costProfile
 ```
 
-Example intent:
+Domain/Application code must not contain LocalStack-specific branching.
 
-```text
-local
-  crawler: fixture-only
-  payment failure injection: enabled
+## 6. Data rules
 
-dev
-  crawler: manual
-  payment failure injection: enabled
-  low capacity/bounded concurrency
+All profiles use synthetic/generated data. No real card data is used because CommerceOS uses Mock Payment providers.
 
-staging
-  crawler: controlled
-  payment failure injection: enabled for explicit tests
+Persistent `localstack-dev` data is convenience state, never a prerequisite hidden from bootstrap scripts.
 
-prod
-  crawler: scheduled
-  failure injection: disabled by default
-  stronger retention/protection
-```
+## 7. Parallel task isolation
 
----
-
-## 6. Data rules per environment
-
-### Local
-
-Use deterministic fixtures and generated tenants/orders.
-
-### Dev
-
-Use synthetic tenants and small imported/crawled sample data.
-
-### Staging
-
-Use generated production-shaped data, never a casual copy of real production data.
-
-### Production
-
-Real business data only after security/operational hardening.
-
-No environment may depend on real card data because CommerceOS uses the Mock Payment Provider.
-
----
-
-## 7. Free Tier implications
-
-Development must prefer monthly-free/pay-per-use services and bounded workloads.
-
-Persistent dev is acceptable for resources with no meaningful idle cost (for example Lambda functions, SQS queues, EventBridge rules, DynamoDB within intended free/provisioned allowance), but resources that accumulate cost through logs, storage, custom metrics, excessive workflow transitions, or data transfer must have explicit limits.
-
-See `13-free-tier-and-credit-guardrails.md` for the service budget policy.
-
----
+Task/worktree instances derive distinct ports and resource prefixes. Shared mutable LocalStack resources are treated as exclusive only when configuration cannot isolate them safely.
 
 ## 8. References
 
-- AWS Lambda testing guidance: https://docs.aws.amazon.com/lambda/latest/dg/testing-guide.html
-- DynamoDB Local: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html
-- Step Functions local testing limitations: https://docs.aws.amazon.com/step-functions/latest/dg/sfn-local.html
-- AWS CDK environments: https://docs.aws.amazon.com/cdk/v2/guide/environments.html
+- `../adr/ADR-012-localstack-only-infrastructure-runtime.md`
+- `../architecture/localstack-runtime-and-lifecycle.md`
