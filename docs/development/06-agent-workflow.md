@@ -2,7 +2,7 @@
 
 ## 1. Goal
 
-The default workflow separates **intent, implementation, verification, and review** so that AI output is constrained by repository evidence rather than confidence.
+The default workflow separates **intent, implementation, verification, and review** so AI output is constrained by repository evidence rather than confidence.
 
 ```text
 Human/product intent
@@ -22,142 +22,68 @@ Human product validation
 Merge
 ```
 
----
-
 ## 2. Builder workflow
 
 ### Step 1 — Resolve scope
 
-Read the active task and relevant product/domain/architecture docs.
-
-Restate internally:
-
-- goal;
-- acceptance criteria;
-- in-scope/out-of-scope;
-- invariants at risk.
-
-Do not start by searching for files to edit before understanding the task.
+Read the active task and relevant product/domain/architecture docs. Understand goal, acceptance criteria, in/out-of-scope boundaries, and invariants before editing.
 
 ### Step 2 — Inspect current implementation
 
-Identify:
-
-- owning domain;
-- existing contracts/patterns;
-- tests closest to the behavior;
-- relevant ADRs;
-- existing reusable fixtures/tools.
-
-Prefer extending an existing coherent pattern over inventing a parallel one.
+Identify owning domain, existing contracts/patterns, closest tests, relevant ADRs, and reusable fixtures/tools. Prefer extending a coherent pattern over inventing a parallel one.
 
 ### Step 3 — Plan the smallest vertical change
 
-The implementation should make the acceptance criteria true with the least architecture change necessary.
-
-If a new architectural mechanism is required, trigger the ADR process.
+Make the acceptance criteria true with the least architecture change necessary. If a material architectural mechanism is missing, return to Technical Architect/ADR rather than deciding it silently as Builder.
 
 ### Step 4 — Implement
 
-Keep business rules in the owning domain/application layer and AWS/framework concerns at infrastructure/delivery boundaries.
+Keep business rules in Domain/Application. Keep persistence, AWS SDK usage, LocalStack endpoints/configuration, transport, and emulator-specific concerns at Infrastructure/Delivery boundaries.
 
-Do not bypass tenant, idempotency, accounting, inventory, or event rules for expedience.
+Do not bypass tenant, idempotency, accounting, inventory, event, or provider-ambiguity rules for expedience.
 
 ### Step 5 — Verify continuously
 
-Run focused tests while developing, then run the repository verification command before completion.
+Run focused tests while developing, then the repository verification command before completion. Run task-declared LocalStack verification when infrastructure semantics are affected.
 
 ### Step 6 — Self-review
 
 Review the diff against:
 
-1. acceptance criteria;
-2. out-of-scope boundary;
-3. domain ownership/dependency rules;
-4. tenant isolation and authorization;
-5. failure/retry/idempotency semantics;
-6. accounting/inventory invariants when applicable;
-7. observability;
-8. cost/infrastructure impact;
-9. unnecessary complexity/dead code;
-10. documentation/ADR requirements.
+1. acceptance criteria and scope;
+2. domain/module ownership;
+3. tenant isolation/authorization;
+4. failure/retry/idempotency/Unknown semantics;
+5. accounting/inventory invariants;
+6. observability;
+7. infrastructure capability and LocalStack configuration boundaries;
+8. bootstrap/reset/resource isolation when relevant;
+9. known LocalStack limitations and unsupported behavior;
+10. unnecessary complexity/dead code;
+11. documentation/ADR requirements.
 
 ### Step 7 — Completion summary
 
-Report:
-
-- what changed;
-- tests/checks run;
-- acceptance criteria status;
-- architecture/security/cost implications;
-- intentional follow-up work.
-
----
+Report what changed, verification evidence, acceptance criteria, architecture/security/runtime implications, LocalStack limitations/reset evidence where applicable, and intentional follow-up work.
 
 ## 3. Reviewer workflow
 
-The reviewer should assume the builder may have made a locally reasonable but systemically wrong decision.
+The reviewer assumes the Builder may have made a locally reasonable but systemically wrong decision.
 
-Review in this order:
+Review product correctness, scope, invariants, distributed failure behavior, operability, security, architecture/runtime boundaries, test quality, and emulator limitations.
 
-### A. Product correctness
+For distributed/external operations ask what happens on timeout, duplicate/out-of-order delivery, partial completion, retry, poison message, process restart, and reconciliation.
 
-Does the diff satisfy the task's business goal and acceptance criteria?
-
-### B. Scope correctness
-
-Did the builder expand the task or introduce infrastructure/refactoring not required?
-
-### C. Invariants
-
-Check tenant isolation, accounting, inventory, payment, event, and domain-boundary invariants relevant to the change.
-
-### D. Failure behavior
-
-For distributed/external operations ask:
-
-- what happens on timeout?
-- duplicate delivery?
-- partial completion?
-- retry?
-- poison message?
-- process restart?
-- reconciliation?
-
-### E. Operability
-
-Can failures be diagnosed? Are logs/metrics/statuses meaningful?
-
-### F. Cost and security
-
-Did resource/request/storage/security posture change unexpectedly?
-
-### G. Test quality
-
-Would the tests still pass if the implementation contained the most plausible regression?
-
----
+For infrastructure changes ask whether the capability is justified, LocalStack-specific details are confined to configuration/adapters, lifecycle is reproducible, and exact AWS compatibility is not overclaimed.
 
 ## 4. Human role
 
-Human review should increasingly focus on:
+Human review should focus increasingly on product value, architecture trade-offs, learning goals, and sequencing rather than manually rediscovering structural rules the harness can enforce.
 
-- whether we are building the right product capability;
-- whether trade-offs match learning/product goals;
-- whether a new architecture decision is justified;
-- whether scope and sequencing remain sensible.
-
-Humans should not have to manually rediscover every structural rule if the harness can enforce it mechanically.
-
----
+Any future return to real AWS is a human architecture decision under ADR-012, not a Builder convenience choice.
 
 ## 5. No silent guardrail bypass
 
-If a check blocks implementation:
+If a check blocks implementation, understand the guardrail and fix the implementation when the rule is valid. If the rule is obsolete, change it explicitly with rationale and relevant architecture/harness documentation.
 
-- do not remove/disable the check by default;
-- understand why it exists;
-- fix implementation when the rule is valid;
-- if the rule is obsolete, change it explicitly with rationale and relevant ADR/harness documentation.
-
-A green pipeline obtained by weakening the harness without justification is a failed task.
+A green pipeline obtained by unjustifiably weakening the harness is a failed task.
