@@ -1,0 +1,307 @@
+from __future__ import annotations
+
+import re
+from dataclasses import replace
+from pathlib import Path, PurePosixPath
+
+from .models import BacklogSnapshot, CanonicalTask
+from .yaml_subset import parse_document, parse_inline_sequence, render_inline_sequence
+
+
+class BacklogValidationError(ValueError):
+    pass
+
+
+def _repo_path(root: Path, raw: str, *, label: str, roots: tuple[str, ...]) -> Path:
+    if not raw or "\\" in raw:
+        raise BacklogValidationError(f"{label} must be a non-empty repository-relative POSIX path")
+    value = PurePosixPath(raw)
+    if value.is_absolute() or any(part in {"", ".", ".."} for part in value.parts):
+        raise BacklogValidationError(f"{label} must not be absolute or contain traversal: {raw}")
+    relative = Path(*value.parts)
+    allowed = tuple(Path(*PurePosixPath(item).parts) for item in roots)
+    if not any(relative == prefix or prefix in relative.parents for prefix in allowed):
+        raise BacklogValidationError(f"{label} must stay under {', '.join(roots)}: {raw}")
+    resolved = (root / relative).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as exc:
+        raise BacklogValidationError(f"{label} escapes repository root: {raw}") from exc
+    return resolved
+
+
+class BacklogReader:
+    MASTER_PATH = Path("tasks/BACKLOG.v2.yaml")
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def load(self) -> BacklogSnapshot:
+        master_path = self.root / self.MASTER_PATH
+        if not master_path.is_file():
+            raise BacklogValidationError(f"missing canonical backlog: {self.MASTER_PATH}")
+        master = parse_document(master_path.read_text(encoding="utf-8"))
+        fields = self._string_list(master.get("task_fields"), "task_fields", required=True)
+        shards = self._string_list(master.get("task_shards"), "task_shards", required=True)
+        defaults = master.get("task_defaults") or {}
+        metadata = master.get("execution_metadata") or {}
+        if not isinstance(defaults, dict) or not isinstance(metadata, dict):
+            raise BacklogValidationError("task_defaults/execution_metadata must be mappings")
+
+        tasks: dict[str, CanonicalTask] = {}
+        for shard_name in shards:
+            shard_path = _repo_path(
+                self.root,
+                shard_name,
+                label="backlog shard",
+                roots=("tasks/backlog-v2",),
+            )
+            if not shard_path.is_file():
+                raise BacklogValidationError(f"missing backlog shard: {shard_name}")
+            rows = parse_document(shard_path.read_text(encoding="utf-8")).get("tasks")
+            if not isinstance(rows, list):
+                raise BacklogValidationError(f"{shard_name}: tasks must be a list")
+            for row in rows:
+                if not isinstance(row, list) or len(row) != len(fields):
+                    raise BacklogValidationError(f"{shard_name}: malformed task row")
+                values = dict(zip(fields, row, strict=True))
+                task_id = str(values["id"])
+                if task_id in tasks:
+                    raise BacklogValidationError(f"duplicate canonical task id: {task_id}")
+                meta = metadata.get(task_id) or {}
+                if not isinstance(meta, dict):
+                    raise BacklogValidationError(f"execution metadata for {task_id} must be a mapping")
+                resources = meta.get("exclusive_resources", defaults.get("exclusive_resources", [])) or []
+                if not isinstance(resources, list):
+                    raise BacklogValidationError(f"exclusive_resources for {task_id} must be a list")
+                tasks[task_id] = CanonicalTask(
+                    id=task_id,
+                    maturity=str(values["maturity"]),
+                    type=str(values["type"]),
+                    domain=str(values["domain"]),
+                    title=str(values["title"]),
+                    goal=str(values["goal"]),
+                    depends_on=tuple(str(x) for x in (values["depends_on"] or [])),
+                    gates=tuple(str(x) for x in (values["gates"] or [])),
+                    owner_role=str(values["owner_role"]),
+                    model_class=str(values["model_class"]),
+                    cloud_verification=str(values["cloud_verification"]),
+                    spec_path=str(values["spec_path"]),
+                    lifecycle_state=str(meta.get("lifecycle_state", defaults.get("lifecycle_state", "Backlog"))),
+                    exclusive_resources=tuple(str(x) for x in resources),
+                    merge_policy=str(meta.get("merge_policy", defaults.get("merge_policy", "verified_serial_main"))),
+                    shard_path=shard_name,
+                )
+
+        completed = set()
+        for value in master.get("completed_roots") or []:
+            if not isinstance(value, list) or not value:
+                raise BacklogValidationError("completed_roots entries must be non-empty inline lists")
+            completed.add(str(value[0]))
+        policy = master.get("dispatch_policy") or {}
+        if not isinstance(policy, dict):
+            raise BacklogValidationError("dispatch_policy must be a mapping")
+        snapshot = BacklogSnapshot(
+            root=self.root,
+            tasks=tasks,
+            task_fields=tuple(fields),
+            completed_roots=frozenset(completed),
+            max_writable_builders=int(policy.get("max_writable_builders", 2)),
+            merge_lane_concurrency=int(policy.get("merge_lane_concurrency", 1)),
+            cloud_requires_explicit_gate=bool(policy.get("cloud_requires_explicit_gate", True)),
+            ready_frontier_declared=tuple(str(x) for x in (master.get("ready_frontier") or [])),
+            shard_paths=tuple(shards),
+            raw_master=master,
+        )
+        self.validate(snapshot)
+        return snapshot
+
+    @staticmethod
+    def _string_list(value, label: str, *, required: bool = False) -> list[str]:
+        if not isinstance(value, list) or (required and not value):
+            raise BacklogValidationError(f"{label} must be {'a non-empty ' if required else 'a '}list")
+        return [str(item) for item in value]
+
+    def validate(self, snapshot: BacklogSnapshot) -> None:
+        metadata = snapshot.raw_master.get("execution_metadata") or {}
+        for task in snapshot.tasks.values():
+            if not re.fullmatch(r"TASK-\d{4,}", task.id):
+                raise BacklogValidationError(f"invalid task id: {task.id}")
+            if task.maturity not in {"Outline", "Refined", "Ready"}:
+                raise BacklogValidationError(f"{task.id}: unsupported maturity {task.maturity}")
+            if task.lifecycle_state not in {"Backlog", "Active", "Completed", "Blocked"}:
+                raise BacklogValidationError(f"{task.id}: unsupported lifecycle {task.lifecycle_state}")
+            spec = None
+            if task.spec_path:
+                spec = _repo_path(
+                    snapshot.root,
+                    task.spec_path,
+                    label=f"{task.id} spec_path",
+                    roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+                )
+            if task.maturity == "Ready":
+                if spec is None or not spec.is_file():
+                    raise BacklogValidationError(
+                        f"{task.id}: Ready task spec does not exist: {task.spec_path}"
+                    )
+                if task.id not in metadata:
+                    raise BacklogValidationError(f"{task.id}: Ready task needs explicit execution_metadata")
+            for dependency in task.depends_on:
+                if dependency not in snapshot.tasks and dependency not in snapshot.completed_roots:
+                    raise BacklogValidationError(f"{task.id}: missing dependency {dependency}")
+        self._validate_acyclic(snapshot)
+        computed = {task.id for task in self.ready_frontier(snapshot, set())}
+        declared = set(snapshot.ready_frontier_declared)
+        if computed != declared:
+            raise BacklogValidationError(
+                f"declared ready_frontier mismatch: declared={sorted(declared)} computed={sorted(computed)}"
+            )
+
+    @staticmethod
+    def _validate_acyclic(snapshot: BacklogSnapshot) -> None:
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(task_id: str) -> None:
+            if task_id in visited or task_id in snapshot.completed_roots:
+                return
+            if task_id in visiting:
+                raise BacklogValidationError(f"dependency cycle detected at {task_id}")
+            visiting.add(task_id)
+            for dependency in snapshot.tasks[task_id].depends_on:
+                if dependency in snapshot.tasks:
+                    visit(dependency)
+            visiting.remove(task_id)
+            visited.add(task_id)
+
+        for task_id in snapshot.tasks:
+            visit(task_id)
+
+    @staticmethod
+    def dependency_satisfied(snapshot: BacklogSnapshot, dependency: str) -> bool:
+        task = snapshot.tasks.get(dependency)
+        return dependency in snapshot.completed_roots or (
+            task is not None and task.lifecycle_state == "Completed"
+        )
+
+    @classmethod
+    def is_dispatchable(
+        cls, snapshot: BacklogSnapshot, task: CanonicalTask, active_resources: set[str]
+    ) -> bool:
+        return (
+            task.maturity == "Ready"
+            and task.lifecycle_state == "Backlog"
+            and not task.gates
+            and all(cls.dependency_satisfied(snapshot, dep) for dep in task.depends_on)
+            and not (set(task.exclusive_resources) & active_resources)
+        )
+
+    @classmethod
+    def ready_frontier(
+        cls, snapshot: BacklogSnapshot, active_resources: set[str]
+    ) -> list[CanonicalTask]:
+        return [
+            task
+            for task in sorted(snapshot.tasks.values(), key=lambda item: item.id)
+            if cls.is_dispatchable(snapshot, task, active_resources)
+        ]
+
+
+class BacklogWriter:
+    """Lifecycle bookkeeping only; task semantics/maturity are never invented here."""
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def finalize_task(
+        self, snapshot: BacklogSnapshot, task: CanonicalTask, completion_summary: str
+    ) -> str:
+        source = _repo_path(
+            self.root,
+            task.spec_path,
+            label=f"{task.id} spec_path",
+            roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+        )
+        if not source.is_file():
+            raise BacklogValidationError(f"{task.id}: task spec missing at {task.spec_path}")
+        completed_relative = str(Path("tasks/completed") / source.name)
+        destination = self.root / completed_relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        text = source.read_text(encoding="utf-8")
+        text = re.sub(r"^Status:\s*.*$", "Status: Completed", text, count=1, flags=re.MULTILINE)
+        text = re.sub(
+            r"^Specification maturity:\s*.*$",
+            "Specification maturity: Completed",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        text = re.sub(
+            r"^Execution permission:\s*.*$",
+            "Execution permission: NO — completed",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if "## Completion summary" not in text:
+            text = text.rstrip() + "\n\n## Completion summary\n\n" + completion_summary.strip() + "\n"
+        destination.write_text(text, encoding="utf-8")
+
+        # Preserve a valid canonical snapshot at every observable step: create the
+        # new spec, repoint shard, update lifecycle/frontier, then remove old spec.
+        self._update_shard(task, completed_relative)
+        self._update_master(snapshot, task.id)
+        if destination != source:
+            source.unlink()
+        return completed_relative
+
+    def _update_shard(self, task: CanonicalTask, completed_relative: str) -> None:
+        path = _repo_path(
+            self.root,
+            task.shard_path,
+            label=f"{task.id} shard_path",
+            roots=("tasks/backlog-v2",),
+        )
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.lstrip().startswith("- [") and task.id in line:
+                prefix = line[: len(line) - len(line.lstrip())]
+                row = parse_inline_sequence(line.strip()[2:].strip())
+                row[-1] = completed_relative
+                lines[index] = f"{prefix}- {render_inline_sequence(row)}"
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                return
+        raise BacklogValidationError(f"{task.id}: canonical shard row not found")
+
+    def _update_master(self, snapshot: BacklogSnapshot, completed_task_id: str) -> None:
+        path = self.root / BacklogReader.MASTER_PATH
+        lines = path.read_text(encoding="utf-8").splitlines()
+        block = next(
+            (index for index, line in enumerate(lines) if line == f"  {completed_task_id}:"),
+            None,
+        )
+        if block is None:
+            raise BacklogValidationError(f"{completed_task_id}: execution_metadata block not found")
+        lifecycle = None
+        for index in range(block + 1, min(block + 8, len(lines))):
+            if lines[index].startswith("  ") and not lines[index].startswith("    "):
+                break
+            if lines[index].strip().startswith("lifecycle_state:"):
+                lifecycle = index
+                break
+        if lifecycle is None:
+            raise BacklogValidationError(f"{completed_task_id}: lifecycle_state not found")
+        lines[lifecycle] = "    lifecycle_state: Completed"
+
+        tasks = dict(snapshot.tasks)
+        tasks[completed_task_id] = replace(tasks[completed_task_id], lifecycle_state="Completed")
+        updated = replace(snapshot, tasks=tasks)
+        ready = [task.id for task in BacklogReader.ready_frontier(updated, set())]
+        start = next((i for i, line in enumerate(lines) if line == "ready_frontier:"), None)
+        if start is None:
+            raise BacklogValidationError("ready_frontier block not found")
+        end = start + 1
+        while end < len(lines) and lines[end].startswith("  - "):
+            end += 1
+        lines[start:end] = ["ready_frontier:", *[f"  - {task_id}" for task_id in ready]]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")

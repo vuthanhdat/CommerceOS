@@ -44,6 +44,7 @@ REQUIRED_FILES = [
     "docs/development/13-free-tier-and-credit-guardrails.md",
     "docs/development/14-codex-multi-agent-and-worktrees.md",
     "docs/development/15-planning-factory-and-task-maturity.md",
+    "docs/development/16-task-orchestrator.md",
     "docs/agents/domain-architect.md",
     "docs/agents/technical-architect.md",
     "docs/agents/backlog-planner.md",
@@ -64,6 +65,7 @@ REQUIRED_FILES = [
     "infra/CommerceOS.Cdk/CommerceOS.Cdk.csproj",
     "tests/CommerceOS.ArchitectureTests/CommerceOS.ArchitectureTests.csproj",
     "tools/commerceos.py",
+    "tools/orchestrator.py",
 ]
 
 TASK_REQUIRED_HEADINGS = [
@@ -149,6 +151,19 @@ def check_task_specs(errors: list[str]) -> None:
             )
 
         text = path.read_text(encoding="utf-8")
+        maturity_match = re.search(
+            r"^Specification maturity:\s*([^\n]+)$", text, flags=re.MULTILINE
+        )
+        maturity = maturity_match.group(1).strip() if maturity_match else None
+
+        # The full task template is an execution contract. Enforce it for Ready work
+        # and anything already claimed under tasks/active. Outline/Refined planning
+        # nodes and role-specific completed records are valid historical/planning
+        # artifacts and must not be forced into a Builder-spec shape retroactively.
+        requires_full_spec = maturity == "Ready" or path.parent.name == "active"
+        if not requires_full_spec:
+            continue
+
         for heading in TASK_REQUIRED_HEADINGS:
             if heading not in text:
                 fail(f"Task missing heading '{heading}': {path.relative_to(ROOT)}", errors)
@@ -237,6 +252,26 @@ def check_planning_factory(errors: list[str]) -> None:
             fail("AGENTS.md must forbid Builder execution of non-Ready tasks", errors)
 
 
+def run_orchestrator_checks(errors: list[str]) -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/orchestrator",
+        "-p",
+        "test_*.py",
+    ]
+    print("\n==> Run Task Orchestrator tests", flush=True)
+    result = subprocess.run(command, cwd=ROOT, check=False)
+    if result.returncode != 0:
+        fail(
+            f"Task Orchestrator checks failed ({result.returncode}): {' '.join(command)}",
+            errors,
+        )
+
+
 def run_application_checks(errors: list[str]) -> None:
     commands = [
         ("Restore .NET dependencies", ["dotnet", "restore", "CommerceOS.slnx"]),
@@ -285,6 +320,9 @@ def main() -> int:
         check_local_markdown_links(ROOT / relative, errors)
 
     if not errors:
+        run_orchestrator_checks(errors)
+
+    if not errors:
         run_application_checks(errors)
 
     if errors:
@@ -300,6 +338,7 @@ def main() -> int:
     print("Phase H0 definition check: PASS")
     print("Environment/IaC/Free-Tier/Codex strategy checks: PASS")
     print("Planning factory/task-maturity/agent-role checks: PASS")
+    print("Task Orchestrator tests: PASS")
     print("Application build/test/architecture/CDK checks: PASS")
     return 0
 

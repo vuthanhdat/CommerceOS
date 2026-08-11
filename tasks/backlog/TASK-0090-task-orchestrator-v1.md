@@ -13,81 +13,76 @@ Exclusive resources when Active: `repository-task-state`, `git-worktrees`, `main
 
 ## Goal
 
-Build a deterministic, **local-only CommerceOS Task Orchestrator V1** that consumes the canonical Backlog V2 task graph, computes the safe Ready frontier, dispatches a small number of Codex agents into isolated Git worktrees, coordinates Builder → deterministic verification → Reviewer → bounded fix loops, serializes verified integration through one merge lane, and automatically advances the DAG until no safe work remains or an explicit gate requires human judgment.
+Build a deterministic, **local-only CommerceOS Task Orchestrator V1** that consumes canonical Backlog V2 metadata, computes the safe Ready frontier, dispatches at most two writable Codex Builder task pipelines into isolated Git worktrees, coordinates deterministic verification and independent Reviewer/fix loops, serializes integration through one merge lane, and advances the DAG until no safe work remains or an explicit human gate is reached.
 
-V1 also provides a **local monitoring/control dashboard** so the human maintainer can see what the agent system is doing without following multiple terminal sessions. The dashboard is a thin observability/control surface over Orchestrator Core; it must not contain scheduling, readiness, dependency, or merge semantics.
+V1 also provides a loopback-only monitoring/control dashboard. A prominent **Stop** action has graceful-drain semantics: fresh Ready work stops immediately while every task already Active at stop-request time may finish its bounded Builder/fix/verify/review/merge lifecycle before the Orchestrator becomes `STOPPED`.
 
-The normal path should require only starting the Orchestrator and observing it. Human involvement is an exception path for product/domain/architecture/security/cost/cloud decisions, unsafe or ambiguous merge/integration failures, retry exhaustion, or explicit operator stop.
+## Business context
+
+CommerceOS uses Harness Engineering: expensive product/domain/architecture reasoning is encoded into repository artifacts first, then routine Builder execution should be automatable. TASK-0089 established the canonical Backlog V2 schema, dependencies, maturity, lifecycle semantics, exclusive resources, cloud gates, and integration policy. This task turns that machine-readable planning contract into a local execution engine.
+
+The Orchestrator is not a new product/business domain. It must not replace the Backlog Planner or infer business semantics. It may surface structured blockers such as `PLANNING_REQUIRED`, `DOMAIN_DECISION_REQUIRED`, or `ARCHITECTURE_DECISION_REQUIRED`, but V1 does not automatically invent/refine/reorder tasks.
+
+Normal operation should be:
 
 ```text
-Canonical Backlog V2
-        │
-        ▼
-┌───────────────────────────────┐
-│       Orchestrator Core       │
-│                               │
-│ DAG / Scheduler / Run State   │
-│ Worktrees / Agent Runner      │
-│ Verification / Review         │
-│ Merge Queue / Recovery        │
-└──────────────┬────────────────┘
-               │
-        ┌──────┴──────┐
-        ▼             ▼
-    Builder A      Builder B
-        │             │
-        ▼             ▼
-   Verification   Verification
-        │             │
-        ▼             ▼
-     Reviewer       Reviewer
-        └──────┬──────┘
-               ▼
-         serial merge lane
-               │
-               ▼
-              main
-               │
-               ▼
-          reload DAG
-
-Local Dashboard ──read/control──► Orchestrator Core
+canonical Ready DAG
+       ↓
+Task Orchestrator
+       ↓
+Builder A / Builder B
+       ↓
+verification
+       ↓
+independent Reviewer
+       ↓
+serialized verified merge
+       ↓
+authoritative main
+       ↓
+reload DAG
 ```
 
-## Authority and planning boundary
+## In scope
 
-TASK-0089 is complete and the canonical metadata/DAG contract exists in:
+### 1. Canonical backlog reader and validator
 
-- `tasks/BACKLOG.v2.yaml`;
-- `tasks/backlog-v2/*.yaml`;
-- detailed Ready task specifications referenced by `spec_path`.
+- Read `tasks/BACKLOG.v2.yaml` plus declared `tasks/backlog-v2/*.yaml` shards.
+- Validate task row shape, ids, maturity/lifecycle, spec paths, dependencies, gates, execution metadata, and declared Ready frontier.
+- Reject duplicate IDs, missing dependencies, dependency cycles, malformed Ready tasks, and a Ready frontier that disagrees with mechanical eligibility.
+- Fail closed with actionable diagnostics; never repair or reinterpret planning semantics with an LLM.
 
-The Orchestrator **consumes** this contract. It does not invent a competing task schema and does not replace Backlog Planner reasoning.
+### 2. Ready-frontier scheduler
 
-The Orchestrator may surface `PLANNING_REQUIRED`, `DOMAIN_DECISION_REQUIRED`, `ARCHITECTURE_DECISION_REQUIRED`, or similar structured blockers, but it must not create/refine/reorder tasks by inference. Future automation may invoke a Backlog Planner agent through a separate boundary; that planner loop is not required for V1.
+Dispatch only when canonical metadata proves:
 
-## Operating assumptions
+- maturity `Ready`;
+- lifecycle `Backlog`;
+- all dependencies Completed/declared completed roots;
+- gates empty/satisfied;
+- no conflicting active `exclusive_resources`;
+- writable concurrency below the configured maximum.
 
-V1 is deliberately narrow:
+Defaults:
 
-- one developer machine;
-- one CommerceOS repository;
-- one Orchestrator process;
-- maximum two concurrent writable Builder tasks by default;
-- bounded Reviewer concurrency;
-- exactly one serialized merge lane;
-- local Git branches/worktrees;
-- local run state and logs;
-- GitHub remains the remote repository/system of record;
-- no distributed scheduler, remote worker fleet, Redis, RabbitMQ, Temporal, Kubernetes, or always-on cloud orchestration service.
+```text
+Builder/task pipeline    max 2
+Reviewer                 bounded by task pipelines (max 2)
+Merge lane               exactly 1
+```
 
-The Orchestrator itself must have no AWS runtime cost.
+Numeric task order is never readiness evidence. A local `BLOCKED` or `HUMAN_REQUIRED` run must not be auto-claimed again until an explicit operator retry/resume.
 
-## Core state model
+### 3. Persisted local run/control state
 
-Repository task lifecycle remains authoritative according to `tasks/BACKLOG.v2.yaml`.
+- Persist process state, per-task execution state, attempt/fix counters, branch/worktree, blocker details, graceful-stop drain membership, and event timeline.
+- Separate local runtime state from canonical task planning state.
+- Survive process restart without duplicate dispatch.
+- Recover interrupted active work conservatively.
+- Preserve `STOP_REQUESTED`/drain intent across restart.
+- Use local filesystem/SQLite only; transient state/logs remain outside Git.
 
-The Orchestrator additionally owns transient/local execution states such as:
+Orchestrator control states include:
 
 ```text
 IDLE
@@ -98,7 +93,7 @@ STOPPED
 HUMAN_REQUIRED
 ```
 
-and per-task execution states such as:
+Per-task states include:
 
 ```text
 QUEUED
@@ -113,360 +108,241 @@ BLOCKED
 HUMAN_REQUIRED
 ```
 
-Local runtime state must never silently override canonical task maturity, dependencies, gates, or accepted repository completion state.
+### 4. Git worktree/branch isolation
 
-## In scope
-
-### 1. Deterministic DAG loader and validator
-
-- read canonical Backlog V2 metadata;
-- validate task IDs, required metadata, dependency references, lifecycle/maturity values, gates, and spec references;
-- reject duplicate canonical task IDs;
-- detect missing dependencies and dependency cycles;
-- reject dispatch of Refined/Outline/blocked work;
-- fail closed with actionable diagnostics rather than guessing.
-
-### 2. Ready-frontier scheduler
-
-A task is dispatchable only when canonical metadata proves all required conditions:
-
-- maturity is `Ready`;
-- lifecycle is `Backlog`;
-- all dependencies are completed according to canonical completion semantics;
-- no unresolved human/product/domain/architecture/security/cost/cloud gate remains;
-- no declared exclusive-resource conflict exists with active work;
-- writable Builder concurrency stays within the configured limit.
-
-Numeric task order and a detailed-looking Markdown body are never readiness evidence.
-
-Default lane limits:
-
-```text
-Builder lane    max 2 concurrent writable tasks
-Reviewer lane   max 2 concurrent read-only reviews
-Merge lane      exactly 1 integration at a time
-```
-
-### 3. Local run state and resumability
-
-Persist enough local state to inspect, resume, and recover safely after interruption.
-
-The implementation must:
-
-- separate repository task state from local process state;
-- prevent duplicate dispatch within one Orchestrator state store;
-- preserve attempt counters, loop counters, task timelines, blocker details, and current lane;
-- detect stale/incomplete claims after restart;
-- support status inspection without mutation;
-- support deterministic resume/recovery;
-- keep transient state/logs out of Git unless a task explicitly requires evidence in the repository.
-
-A local filesystem or SQLite-backed store is sufficient. No network database is required.
-
-### 4. Worktree and branch isolation
-
-For every writable Builder task:
-
-- create/reuse a task-specific branch/worktree according to repository multi-agent guidance;
-- never allow Builder feature changes in the primary `main` checkout;
-- prevent unsafe parallel use of declared exclusive resources;
-- detect dirty/conflicting worktrees instead of overwriting them;
-- make create/resume/cleanup idempotent;
-- prune finished worktrees only after safe integration or explicit operator cleanup.
+- One writable task = one task branch = one sibling worktree.
+- Builder never writes feature changes in primary `main` checkout.
+- Create/reuse worktrees idempotently and refuse mismatched/unsafe state.
+- Do not silently overwrite dirty worktrees.
+- Commit inspectable Builder changes before review.
+- Refuse no-op/empty implementation evidence rather than silently completing a task.
+- Clean worktrees only after safe integration or explicit cleanup.
 
 ### 5. Codex runner abstraction
 
-Provide a runner boundary that launches Codex non-interactively from the task worktree using repository-owned instructions.
+- Launch Codex non-interactively from the task worktree through one adapter.
+- Build prompts from repository-owned `AGENTS.md`, role instructions, detailed task spec, architecture rules, worktree policy, Definition of Done, and task-referenced artifacts.
+- Centralize executable/model routing configuration rather than embedding permanent model names in task files.
+- Capture structured exit result and log path.
+- Provide a deterministic fake agent runner for tests so tests consume no Codex quota.
+- Reviewer runs read-only and returns an explicit pass/fix result.
 
-Context includes, as applicable:
+### 6. Builder → verification → Reviewer → fix loop
 
-- `AGENTS.md`;
-- the detailed task specification;
-- relevant role instructions under `docs/agents/`;
-- task-selected domain/architecture/ADR artifacts.
+- Run Builder against the isolated worktree.
+- Run deterministic task/repository verification afterward.
+- A verification failure returns diagnostics to a bounded Builder repair loop.
+- A green Builder result is reviewed independently.
+- Blocking Reviewer findings return to a bounded Builder fix loop.
+- Retry exhaustion becomes persistent `HUMAN_REQUIRED`; never loop forever or weaken guardrails.
 
-Requirements:
+### 7. Serialized automatic integration
 
-- support a fake/test runner so automated tests consume no Codex quota;
-- capture structured run result, stdout/stderr/log references, exit state, and attempt identity;
-- centralize model-class routing rather than hard-coding permanent model names into task specs.
+For each verified task:
 
-### 6. Builder execution and deterministic verification
+1. acquire one process-local merge-lane lock;
+2. require a clean primary integration checkout;
+3. fetch/sync latest `origin/main` with fast-forward-only semantics;
+4. integrate the task branch;
+5. use bounded AI conflict resolution only for safe implementation-level textual/structural conflicts;
+6. escalate semantic/product/domain/architecture/security conflicts;
+7. run deterministic verification against combined latest-main state;
+8. update canonical completion bookkeeping only after integrated code is green;
+9. verify bookkeeping too;
+10. push `main` without force;
+11. consider the task Completed only after authoritative `main` contains verified implementation + required completion record;
+12. reload the DAG.
 
-After Builder execution:
+A push race or other unpushed integration failure must roll the local integration checkout back to current `origin/main` rather than leaving a hidden divergent control checkout.
 
-- capture structured output;
-- run verification required by the task/Definition of Done;
-- if deterministic verification fails, enter a bounded Builder fix loop with preserved diagnostics;
-- never weaken tests, architecture rules, or guardrails merely to obtain green status.
+### 8. Graceful Stop
 
-### 7. Independent Reviewer and bounded fix loop
+When Stop is accepted:
 
-After local verification passes:
+1. persist stop intent atomically;
+2. immediately stop claiming fresh Ready tasks;
+3. mark every currently Active task as part of the drain set;
+4. allow those task(s) to continue through bounded Builder/fix, verification, review, merge, and post-integration verification;
+5. let each drain task reach `COMPLETED`, `BLOCKED`, or `HUMAN_REQUIRED`;
+6. do not start tasks newly unlocked by those completions;
+7. transition to `STOPPED` only after the drain set is terminal;
+8. recover the same intent after process restart.
 
-- Reviewer receives task context plus the produced diff/result;
-- Reviewer must not silently modify the Builder branch as part of review;
-- actionable findings are persisted;
-- blocking findings transition to `FIX_REQUIRED` and redispatch the Builder with review evidence;
-- a clean review moves the task to `MERGE_QUEUED`;
-- Builder ↔ Reviewer iteration is bounded;
-- exhausted loops become `HUMAN_REQUIRED` rather than infinite retry.
+With two active Builders, both active tasks drain. Stop is not an emergency kill and must not abandon a task mid-write or a partially integrated `main`.
 
-### 8. Serialized automatic merge queue
+### 9. Local dashboard
 
-Only one verified task may integrate with `main` at a time.
+Provide a dashboard bound to loopback only. Show at minimum:
 
-For each queued task, the merge worker must:
-
-1. acquire the merge-lane lock;
-2. sync against the latest `origin/main`;
-3. integrate the task branch using the repository-approved Git strategy;
-4. handle a clean integration or enter bounded conflict resolution;
-5. run post-integration verification against the combined latest-main state;
-6. push `main` without force-push only after verification succeeds;
-7. mark the task Completed only when the verified result is present on authoritative `main` and the required completion record exists;
-8. reload the DAG and unlock newly eligible work;
-9. clean the task worktree only when safe.
-
-A successful textual Git merge is not proof of semantic correctness.
-
-### 9. Bounded AI-assisted merge conflict resolution
-
-Routine textual/structural conflicts may be sent to a Conflict Resolver agent when the resolution does not require changing accepted product/domain/architecture/security semantics.
-
-The resolver may handle compatible edits such as composition/registration files, manifests, documentation indexes, project membership, or nearby implementation changes.
-
-It must escalate instead of choosing arbitrarily when a conflict requires changing an accepted contract, domain invariant, persistence owner, security boundary, architecture decision, or product meaning.
-
-Every AI-resolved integration still requires deterministic post-integration verification.
-
-### 10. Human/strong-reasoning escalation
-
-Surface structured blockers for at least:
-
-- `PLANNING_REQUIRED`;
-- `BUSINESS_DECISION_REQUIRED`;
-- `DOMAIN_DECISION_REQUIRED`;
-- `ARCHITECTURE_DECISION_REQUIRED`;
-- `SECURITY_DECISION_REQUIRED`;
-- `COST_APPROVAL_REQUIRED`;
-- cloud execution not explicitly authorized by canonical metadata/policy;
-- semantic merge/integration failure after bounded repair;
-- dependency/backlog inconsistency;
-- Builder/Reviewer/Conflict-Resolver retry exhaustion;
-- dirty/manual Git state that cannot be classified safely.
-
-Independent lanes may continue only when the scheduler can prove they are unaffected.
-
-### 11. Cloud-task safety
-
-The Orchestrator itself performs local orchestration only.
-
-For a future Ready task requiring real AWS verification:
-
-- canonical metadata must explicitly require/allow cloud verification;
-- the required human/cloud authorization gate must already be satisfied;
-- repository cost and teardown guardrails remain mandatory;
-- the Orchestrator must never infer permission to spend AWS credit merely because execution would otherwise be blocked.
-
-### 12. Local monitoring and control dashboard
-
-Provide a local dashboard, served only on the developer machine, for observability and basic operator control.
-
-The dashboard must expose at minimum:
-
-- Orchestrator state: `IDLE`, `RUNNING`, `STOP_REQUESTED`, `STOPPING`, `STOPPED`, `HUMAN_REQUIRED`;
-- canonical backlog totals and completed/total progress;
+- Orchestrator state and completed/total progress;
 - Ready frontier;
-- active Builder/Reviewer counts;
-- merge queue and blockers;
-- recent activity timeline;
-- task id/title/spec, maturity/lifecycle and execution lane;
-- dependencies/gates;
-- branch/worktree;
-- agent role/model class;
-- attempt/fix-loop count;
-- verification/review/merge status;
-- structured blocker reason;
-- relevant logs/timeline;
-- a readable DAG/progress visualization distinguishing Outline/Refined, Ready, Active, Reviewing/Merging, Completed, and Blocked/Human Required.
+- Builder/Reviewer utilization;
+- merge queue;
+- blocker count;
+- Ready / Active / Review / Merge / Blocked workflow views;
+- task id/title/spec, dependencies/gates, branch/worktree, model class, attempts, blocker detail;
+- DAG/progress representation;
+- recent event timeline;
+- Stop and Resume controls.
 
-The UI must not implement readiness calculation, dependency resolution, retry policy, task completion semantics, or merge decisions. Those live in Orchestrator Core and are exposed through an explicit local read/control boundary.
+The dashboard is a thin read/control surface over Orchestrator Core. It must not calculate readiness, modify canonical YAML directly, resolve dependencies, or perform Git integration itself.
 
-The UI is local-only. Authentication, internet exposure, multi-user tenancy, and remote orchestration control are out of scope for V1.
+### 10. CLI
 
-### 13. Graceful Stop — finish current active task(s), then stop
-
-The dashboard must provide a prominent **Stop** action with graceful-drain semantics.
-
-When the operator clicks **Stop** or invokes the equivalent CLI command:
-
-1. atomically persist `STOP_REQUESTED`;
-2. immediately stop dispatching any new Ready task;
-3. claim no new Builder task after the stop request is accepted;
-4. allow every task already Active at stop-request time to continue through its normal bounded lifecycle until it reaches a safe terminal point: Completed on authoritative `main`, Blocked, or Human Required;
-5. continue required verification, Reviewer/fix-loop work, merge processing, and post-integration verification for those already-active tasks because these steps finish current work rather than start new backlog work;
-6. transition to `STOPPED` only after all tasks active at stop-request time reach a safe terminal point and their required merge-lane work is drained;
-7. leave tasks newly unlocked by those completions undispatched;
-8. persist stop intent across process restart so recovery cannot accidentally claim fresh Ready work until explicit operator resume/start.
-
-With the default two-Builder configuration, if two tasks are already Active when Stop is requested, **both currently active tasks finish**. The Orchestrator does not arbitrarily kill one.
+Expose equivalent local commands:
 
 ```text
-RUNNING
-   │
-   │ Stop
-   ▼
-STOP_REQUESTED
-   │
-   ├── reject new task dispatch
-   │
-   └── drain tasks already Active
-           │
-           ├── Builder/fix
-           ├── verification
-           ├── review
-           ├── integration/merge when safe
-           └── Completed | Blocked | Human Required
-                     │
-                     ▼
-                  STOPPED
+status
+validate
+plan
+dry-run
+run
+stop
+resume
+cleanup
+ui
+start
 ```
 
-Stop is **not** an emergency process kill and must not abandon a worktree mid-write, skip verification, or leave a partially integrated `main` merely to stop quickly.
+`start` runs scheduler + local dashboard. CLI and UI share the same persisted run/control model.
 
-A hard-abort/emergency-kill control is not required for V1. External process termination is handled by normal resume/recovery semantics.
+### 11. Cloud safety
 
-### 14. CLI / developer experience
+The Orchestrator itself uses no AWS resource. For future tasks:
 
-Expose an ergonomic local interface with capabilities equivalent to:
-
-```text
-status       inspect DAG, active work, blockers, stop state, merge queue, Ready frontier
-validate     validate canonical task metadata/DAG
-plan         show tasks that would dispatch next
-dry-run      simulate dispatch/review/merge/control actions without side effects
-run          run automatically until no work, a blocking gate, or graceful Stop completion
-stop         request the same graceful drain used by the dashboard Stop button
-resume       recover safely after interruption or restart scheduling after explicit operator action
-cleanup      inspect/remove finished task worktrees safely
-ui           start/open the local monitoring dashboard
-start        start the Orchestrator and local dashboard together
-```
-
-`run`/`start` continue advancing the DAG automatically rather than requiring one invocation per task. CLI and dashboard use the same Orchestrator Core semantics.
+- canonical cloud gates remain authoritative;
+- a task with `cloud_verification: required` additionally needs explicit runtime operator consent before real cloud execution;
+- a Builder is explicitly told whether real cloud execution is authorized for the current run;
+- no AWS spend is inferred merely to keep automation moving.
 
 ## Out of scope
 
-- changing product/domain/technical architecture;
-- generating or semantically refining canonical Backlog V2;
-- replacing Backlog Planner reasoning with scheduler logic;
-- using an LLM to decide DAG eligibility/dependency satisfaction;
-- automatically invoking a Planner agent to invent new task semantics in V1;
-- more than two concurrent writable Builders by default;
-- multiple concurrent merge workers;
-- distributed orchestration, leader election, remote worker fleets, or multi-host state;
-- Kubernetes, Temporal, Redis, RabbitMQ, database servers, or always-on orchestration infrastructure;
-- internet-exposed or multi-user web UI;
-- a server-hosted orchestration service;
-- autonomous approval of product/domain/architecture/security/cost changes;
-- force-pushing or rewriting `main` history;
-- automatically spending AWS credit without repository-approved cloud gates;
-- an emergency hard-kill UI that intentionally abandons in-flight task state;
-- changing ChatGPT/Codex account, quota, or subscription configuration.
+- changing CommerceOS product/domain/technical architecture;
+- creating or semantically refining Backlog V2 tasks;
+- replacing Backlog Planner reasoning;
+- LLM-based DAG eligibility/dependency decisions;
+- automatic Planner-agent loop in V1;
+- more than two writable task pipelines by default;
+- multiple merge workers;
+- distributed scheduler/leader election/remote worker fleet;
+- Redis, RabbitMQ, Temporal, Kubernetes, network DB, or hosted orchestration infrastructure;
+- internet-exposed/multi-user dashboard;
+- autonomous approval of product/domain/architecture/security/cost decisions;
+- force-push/rewrite of `main`;
+- unapproved AWS spending;
+- emergency hard-kill UI;
+- changing ChatGPT/Codex account/quota/subscription configuration.
 
 ## Acceptance criteria
 
 ### AC01 — Invalid DAG fails closed
-Invalid/missing dependencies, cycles, duplicate task IDs, malformed execution state, or unsupported canonical metadata cause validation failure with actionable diagnostics and no Codex dispatch.
+Malformed metadata, duplicate task IDs, missing dependencies, cycles, unsupported states, or invalid declared frontier cause validation failure and no Codex dispatch.
 
 ### AC02 — Ready frontier is mechanical
-Only canonical Ready/Backlog tasks whose dependencies/gates/exclusive-resource constraints are satisfied are dispatchable. Numeric ordering and Markdown detail do not grant eligibility.
+Only canonical Ready/Backlog work with satisfied dependencies/gates and no exclusive-resource conflict can be dispatched.
 
 ### AC03 — Parallel work is bounded
-At most two writable Builder tasks and the configured bounded Reviewer count may run concurrently; declared exclusive-resource conflicts prevent unsafe co-scheduling; merge concurrency is exactly one.
+No more than two writable task pipelines operate concurrently and merge concurrency is exactly one.
 
 ### AC04 — Worktree isolation
-Independent writable tasks use isolated branches/worktrees and do not modify feature code from the primary `main` checkout.
+Writable tasks use isolated task branches/worktrees; the primary checkout remains the integration/control checkout.
 
 ### AC05 — Dry-run is side-effect free
-Dry-run reports intended tasks, roles, model classes, worktrees, gates, control state, verification, and merge actions without launching Codex, mutating Git/run state, pushing, or invoking AWS.
+Dry-run reports intended dispatch/agent/model/worktree/cloud/verification/merge actions without launching Codex, mutating state/Git, pushing, or invoking AWS.
 
 ### AC06 — Codex execution is testable without quota
-The runner has a fake/test implementation sufficient to exercise scheduler, state transitions, verification/review loops, Stop behavior, and merge orchestration without invoking Codex.
+A fake runner exercises orchestration behavior without invoking Codex.
 
-### AC07 — Verification failures enter bounded repair
-A Builder result that fails deterministic verification cannot advance to review/merge; diagnostics are preserved and bounded repair is attempted before Human Required.
+### AC07 — Verification failure enters bounded repair
+Failed deterministic verification cannot reach review/merge; diagnostics return to Builder until bounded retry exhausts.
 
 ### AC08 — Independent review is mandatory
-A Builder-produced change cannot enter the merge queue until required deterministic verification and independent review pass according to policy.
+Builder changes cannot enter merge queue before verification + independent read-only Reviewer pass.
 
-### AC09 — Integration is serialized and verified on latest main
-Only one task integrates at a time, integration uses latest `main`, no force-push occurs, and post-integration verification must pass before authoritative completion.
+### AC09 — Integration is serialized and reverified on latest main
+Latest main is synchronized, only one integration runs, no force-push occurs, and combined state must pass verification.
 
-### AC10 — Completion unlocks DAG only after authoritative merge
-An agent claim, local commit, or locally green branch does not count as Completed. Dependents unlock only after the verified result and required completion record are on authoritative `main`.
+### AC10 — Completion is authoritative-main based
+Local success/commit is not completion. Completion bookkeeping and verified result must be present on authoritative main.
 
 ### AC11 — Retry exhaustion fails safely
-Builder/Reviewer/Conflict-Resolver loop exhaustion produces a persistent inspectable Human Required/Blocked state instead of infinite retry or silent acceptance.
+Exhausted Builder/Reviewer/conflict loops become persistent inspectable Human Required/Blocked states.
 
-### AC12 — Dashboard shows current system state
-The local dashboard reflects Orchestrator Core state for Ready, Active, Reviewing, Merge Queued/Integrating, Completed, and Blocked/Human Required tasks; it exposes progress, lane utilization, task detail, logs/timeline, and blockers without duplicating scheduler logic in the UI.
+### AC12 — Dashboard shows system state
+Dashboard exposes progress, lanes, task detail, logs/timeline and blockers without becoming a second scheduler.
 
-### AC13 — Dashboard and CLI share one control model
-Starting/stopping/status operations through CLI and UI observe the same persisted Orchestrator state and cannot create contradictory scheduler state.
+### AC13 — Dashboard and CLI share control state
+Status/Stop/Resume observe one persisted state model.
 
-### AC14 — Stop rejects new dispatch immediately
-Given one or more tasks are Active and additional Ready work exists, when Stop is accepted, `STOP_REQUESTED` is persisted and no new Ready task is dispatched afterward.
+### AC14 — Stop rejects fresh dispatch immediately
+No fresh Ready task may be claimed after Stop acceptance.
 
-### AC15 — Stop drains already-active tasks safely
-Tasks already Active when Stop was requested may continue through required Builder/fix, verification, review, merge, and post-integration verification until each reaches Completed, Blocked, or Human Required; only then may the Orchestrator become `STOPPED`.
+### AC15 — Stop drains already-active tasks
+All tasks Active at stop-request time may finish their bounded lifecycle to a safe terminal state before `STOPPED`.
 
 ### AC16 — Stop does not consume newly unlocked work
-If draining an active task makes dependent tasks Ready, those newly Ready tasks remain undispatched while stopping/stopped.
+Tasks becoming Ready during drain remain undispatched.
 
 ### AC17 — Stop survives restart
-If the process restarts after Stop was requested but before draining completes, persisted stop intent is recovered; already-active work may be recovered/finished but fresh Ready work cannot be claimed until explicit operator resume/start.
+Persisted drain intent is recovered and fresh work remains blocked until explicit resume/start.
 
 ### AC18 — UI remains local-only
-The dashboard binds to a local developer-machine interface by default and does not introduce internet exposure, cloud hosting, user management, or a remote-control service.
+Non-loopback dashboard binding is rejected by default/V1 implementation.
 
 ### AC19 — Cloud execution remains fail-closed
-A task requiring AWS/cloud verification cannot be dispatched into real cloud execution unless canonical metadata and required explicit authorization gates permit it.
+Real AWS execution requires canonical permission plus explicit runtime authorization where required.
 
 ### AC20 — Repository harness and Orchestrator tests pass
-Unit/integration tests cover DAG validation, scheduler eligibility, exclusive resources, resumability, fake-agent execution, review/fix loops, serialized integration, Stop draining, and UI/control-state behavior; repository harness/architecture checks required by the implementation pass.
+Tests cover DAG validation, scheduler/exclusive resources, resumability, fake-agent execution, verification/review fix loops, Git worktree/integration primitives, graceful Stop/restart, dashboard control, cloud fail-closed behavior, and completion bookkeeping. `python3 scripts/harness_check.py` must pass before authoritative completion.
 
-## Required implementation boundaries
+## Architecture impact
 
-The implementation must preserve explicit responsibilities equivalent to:
+This is local engineering/harness tooling, not a CommerceOS bounded context or deployment unit. Implementation responsibilities remain separated across backlog validation, scheduler, run-state store, workspace manager, agent runner, verification, integration coordinator, control service/read model, and dashboard. No AWS service, business module, domain contract, persistence ownership, or tenant model changes.
 
-```text
-BacklogReader / DagValidator
-Scheduler
-RunStateStore
-WorkspaceManager
-AgentRunner
-VerificationRunner
-ReviewCoordinator
-MergeQueue / IntegrationCoordinator
-OrchestratorControlService
-DashboardReadModel
-LocalDashboard
-```
+The implementation uses Python standard-library local tooling and SQLite. This is consistent with the repository's existing Python harness/launcher and does not require an ADR because it does not change the CommerceOS application runtime/deployment architecture.
 
-Names may differ, but task semantics, Git mutation, agent execution, UI state, and scheduling must not collapse into one god object. The dashboard depends on stable read/control interfaces rather than direct access to Git worktrees, scheduler internals, or canonical YAML mutation.
+## Security and tenant impact
+
+No merchant/Tenant data is introduced. The dashboard is local-loopback only and V1 rejects non-loopback binding. Real Codex Builder write scope is the task worktree; Reviewer runs read-only. No credentials are written to repository state. Cloud execution is explicitly fail-closed.
+
+## Reliability and idempotency impact
+
+SQLite persists control/run state. Claiming is transactional within the one-process V1 model. Stop intent and drain membership survive restart. Worktree creation/reuse and cleanup are idempotent-oriented. Merge is serialized; remote-main races fail rather than force-push. Human-required local runs are not auto-redispatched until explicit retry/resume.
+
+## Observability impact
+
+Local event/state records plus per-agent/per-verification logs make task attempts, lane, blockers, merge status, and stop behavior inspectable through CLI/dashboard without attaching a debugger. No CloudWatch or remote telemetry is introduced.
+
+## Cost impact
+
+- New AWS services/resources: none.
+- Expected AWS runtime cost for Orchestrator: `$0`.
+- Automated tests use fake agents and consume no Codex quota.
+- Real Codex runs consume the user's configured Codex allowance/API usage according to their environment; the tool does not alter account/subscription settings.
+
+## Test plan
+
+- Python unit tests for YAML subset parsing and backlog validation.
+- Missing-dependency/cycle/frontier mismatch failure tests.
+- Scheduler tests for Ready eligibility, local Human Required suppression, concurrency, and exclusive resources.
+- SQLite tests for transactional claim, persisted Stop/drain, and explicit retry reset.
+- Fake Builder/verification/Reviewer pipeline tests including bounded fix loops and no-op fail-closed behavior.
+- Local Git tests using temporary repository + bare origin for real worktree, commit, merge and non-force push primitives.
+- Service-level graceful Stop tests with two active tasks and a third Ready task.
+- Restart test proving persisted Stop drains old active work but does not start fresh work.
+- Dashboard HTTP tests for status/Stop plus loopback-only binding.
+- Full repository `python3 scripts/harness_check.py` before completion.
 
 ## Ready-gate result
 
-Final Backlog Planner recheck completed after the TASK-0089 Backlog V2 contract was frozen and after the local-dashboard/graceful-stop requirement revision was approved.
+Final Backlog Planner recheck completed after TASK-0089 froze the canonical Backlog V2 contract and the human approved the dashboard/graceful-Stop revision.
 
-- TASK-0089 is Completed.
-- Canonical task metadata and execution semantics required by this tool are defined.
-- Product/domain/technical baselines do not block the engineering tool.
-- No cloud execution is required to implement or verify the Orchestrator itself.
-- The Orchestrator consumes, but does not redefine, Backlog Planner authority.
-- Graceful Stop semantics are explicit and testable.
-- Local dashboard responsibility is separated from scheduler/merge semantics.
+- TASK-0089 Completed.
+- Required metadata/execution semantics exist.
+- Product/domain/technical baselines do not block this engineering tool.
+- Orchestrator itself requires no cloud verification.
+- Planner authority remains external.
+- Stop semantics are explicit/testable.
+- Dashboard is separated from scheduling/merge semantics.
 
 **Ready gate: satisfied. TASK READY.**
