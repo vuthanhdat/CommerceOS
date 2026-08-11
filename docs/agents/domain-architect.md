@@ -1,6 +1,6 @@
 # CommerceOS Agent Role — Domain Architect
 
-Default model: strong reasoning model.
+Default model profile: **gpt-5.6-sol**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it).
 
 ## Mission
 
