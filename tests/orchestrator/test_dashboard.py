@@ -28,6 +28,12 @@ class DashboardTests(unittest.TestCase):
                 self.assertNotIn("onclick=", html)
                 self.assertIn("Live Codex activity", html)
                 self.assertIn("EventSource", html)
+                self.assertIn("Click any task card to inspect it.", html)
+                self.assertIn("Every task node is selectable.", html)
+                self.assertIn("function selectTask(id)", html)
+                self.assertIn("function dagNode(t)", html)
+                self.assertIn("aria-pressed", html)
+                self.assertIn("activeStates", html)
                 with urlopen(server.url + "api/status", timeout=2) as response:
                     status = json.load(response)
                 self.assertEqual(status["ready_frontier"], ["TASK-0100"])
