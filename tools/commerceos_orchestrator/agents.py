@@ -36,7 +36,13 @@ class AgentRunner(Protocol):
 class CodexExecutionProfile:
     model: str
     reasoning_effort: str = "medium"
+    # Human-facing policy name. Codex CLI represents Standard/non-Fast as the
+    # default service tier, while Fast maps to fast/priority.
     service_tier: str = "standard"
+
+    @property
+    def codex_service_tier(self) -> str:
+        return "default" if self.service_tier == "standard" else self.service_tier
 
 
 # Human-approved CommerceOS model policy. Planning agents are documented to use
@@ -159,7 +165,7 @@ CONFLICT_RESULT: RESOLVED
             "-c",
             f'model_reasoning_effort="{self.profile.reasoning_effort}"',
             "-c",
-            f'service_tier="{self.profile.service_tier}"',
+            f'service_tier="{self.profile.codex_service_tier}"',
             prompt,
         ]
 
