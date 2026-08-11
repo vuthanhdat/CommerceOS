@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,9 +23,18 @@ def result(text: str) -> AgentResult:
 
 
 class FakeWorkspaceManager:
-    def __init__(self, root: Path, *, diff: str = ""):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        diff: str = "",
+        changed_files: list[str] | None = None,
+    ):
         self.root = root
         self.diff = diff
+        self._changed_files = changed_files if changed_files is not None else (
+            ["tasks/BACKLOG.v2.yaml"] if diff else []
+        )
         self.cleaned: list[str] = []
 
     def workspace_for(self, task):
@@ -32,6 +42,9 @@ class FakeWorkspaceManager:
 
     def ensure_committed(self, task, workspace):
         return "fake-sha"
+
+    def changed_files(self, workspace, base="origin/main"):
+        return list(self._changed_files)
 
     def diff_text(self, workspace, base="origin/main"):
         return self.diff
@@ -90,13 +103,14 @@ class PromotingPlanningRunner(FakePlanningAgentRunner):
 
 
 class PlanningCoordinatorTests(unittest.TestCase):
-    def test_nearest_dependency_satisfied_non_ready_task_is_planning_candidate(self):
+    def test_refined_candidate_is_preferred_over_outline_at_same_dependency_frontier(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             write_backlog(
                 root,
                 [
-                    row("TASK-0100", maturity="Refined", deps="[TASK-0001]"),
+                    row("TASK-0100", maturity="Outline", deps="[TASK-0001]"),
+                    row("TASK-0102", maturity="Refined", deps="[TASK-0001]"),
                     row("TASK-0101", maturity="Outline", deps="[TASK-0100]"),
                 ],
                 ready=[],
@@ -112,7 +126,7 @@ class PlanningCoordinatorTests(unittest.TestCase):
             )
             candidate = coordinator.next_candidate(BacklogReader(root).load())
             self.assertIsNotNone(candidate)
-            self.assertEqual(candidate.id, "TASK-0100")
+            self.assertEqual(candidate.id, "TASK-0102")
 
     def test_planner_routes_to_domain_architect_then_returns_to_planner(self):
         with tempfile.TemporaryDirectory() as td:
@@ -188,7 +202,10 @@ class PlanningCoordinatorTests(unittest.TestCase):
             self.assertEqual(outcome, PlanningOutcome.READY)
             planned = BacklogReader(root).load().tasks["TASK-0100"]
             self.assertEqual(planned.maturity, "Ready")
-            self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.COMPLETED)
+            self.assertEqual(
+                state.task_run("TASK-0100").execution_state,
+                TaskExecutionState.COMPLETED,
+            )
             self.assertEqual(verification.calls, [("TASK-0100", "planning")])
             self.assertEqual(integration.prepare_calls, 1)
             self.assertEqual(workspace.cleaned, ["TASK-0100"])
@@ -214,6 +231,55 @@ class PlanningCoordinatorTests(unittest.TestCase):
                 state.task_run("TASK-0100").blocker_code,
                 "BACKLOG_PLANNER_PROTOCOL_ERROR",
             )
+
+    def test_planning_scope_guard_rejects_code_changes_before_integration(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100", maturity="Refined")], ready=[])
+            state = RunStateStore(root / "state.db")
+            integration = FakeIntegrationManager()
+            coordinator = PlanningCoordinator(
+                root,
+                state,
+                FakePlanningAgentRunner(
+                    planner_results=[result("PLANNING_RESULT: HUMAN_REQUIRED")]
+                ),
+                FakeVerificationRunner(),
+                workspace_manager=FakeWorkspaceManager(
+                    root,
+                    diff="code change",
+                    changed_files=["src/CommerceOS.Api/Program.cs"],
+                ),
+                integration_manager=integration,
+            )
+            outcome = coordinator.refine_next(BacklogReader(root).load())
+            self.assertEqual(outcome, PlanningOutcome.FAILED)
+            self.assertEqual(integration.prepare_calls, 0)
+            self.assertEqual(
+                state.task_run("TASK-0100").blocker_code,
+                "PLANNING_SCOPE_VIOLATION",
+            )
+
+    def test_structured_codex_marker_parser_ignores_echoed_input_markers(self):
+        echoed = {
+            "type": "item.completed",
+            "item": {"type": "user_message", "text": "PLANNING_RESULT: READY"},
+        }
+        final = {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "PLANNING_RESULT: HUMAN_REQUIRED"},
+        }
+        raw = AgentResult(
+            True,
+            0,
+            json.dumps(echoed) + "\n" + json.dumps(final) + "\n",
+            "",
+            "",
+        )
+        self.assertEqual(
+            PlanningCoordinator._planner_marker(raw),
+            "HUMAN_REQUIRED",
+        )
 
     def test_planning_codex_execution_boundary_is_sol_medium_standard(self):
         with tempfile.TemporaryDirectory() as td:
