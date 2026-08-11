@@ -46,6 +46,10 @@ execution_metadata:
     lifecycle_state: Backlog
     exclusive_resources: [aws-dev-foundation]
     merge_policy: verified_serial_main
+  TASK-0167:
+    lifecycle_state: Active
+    exclusive_resources: [repository-task-state, orchestrator-ui, codex-runner]
+    merge_policy: verified_serial_main
 
 lifecycle_semantics:
   Backlog: canonical task exists but is not claimed by a Builder
