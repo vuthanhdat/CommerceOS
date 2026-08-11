@@ -39,7 +39,7 @@ execution_metadata:
     exclusive_resources: [repository-task-state, git-worktrees, main-merge-lane]
     merge_policy: verified_serial_main
   TASK-0093:
-    lifecycle_state: Backlog
+    lifecycle_state: Completed
     exclusive_resources: [repo-architecture-tests]
     merge_policy: verified_serial_main
   TASK-0094:
@@ -93,4 +93,4 @@ task_shards:
   - tasks/backlog-v2/04-hardening-future.yaml
 
 ready_frontier:
-  - TASK-0093
+  
