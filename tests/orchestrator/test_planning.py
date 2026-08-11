@@ -6,7 +6,7 @@ from pathlib import Path
 
 from helpers import row, write_backlog
 from commerceos_orchestrator.backlog import BacklogReader
-from commerceos_orchestrator.models import AgentResult, Workspace
+from commerceos_orchestrator.models import AgentResult, TaskExecutionState, Workspace
 from commerceos_orchestrator.planning import (
     CodexPlanningAgentRunner,
     FakePlanningAgentRunner,
@@ -42,7 +42,11 @@ class FakeWorkspaceManager:
 
 
 class FakeIntegrationManager:
+    def __init__(self):
+        self.prepare_calls = 0
+
     def prepare_main(self):
+        self.prepare_calls += 1
         return None
 
     def branch_is_on_remote_main(self, branch):
@@ -62,6 +66,27 @@ class FakeIntegrationManager:
 
     def push_main(self):
         return None
+
+
+class PromotingPlanningRunner(FakePlanningAgentRunner):
+    def __init__(self, root: Path):
+        super().__init__()
+        self.root = root
+
+    def run_backlog_planner(self, task, worktree, *, attempt):
+        self.calls.append("backlog-planner")
+        shard = self.root / "tasks/backlog-v2/00.yaml"
+        shard.write_text(
+            shard.read_text(encoding="utf-8").replace(
+                f"[{task.id}, Refined,", f"[{task.id}, Ready,", 1
+            ),
+            encoding="utf-8",
+        )
+        master = self.root / "tasks/BACKLOG.v2.yaml"
+        text = master.read_text(encoding="utf-8")
+        text = text.replace("ready_frontier:\n", f"ready_frontier:\n  - {task.id}\n", 1)
+        master.write_text(text, encoding="utf-8")
+        return result("PLANNING_RESULT: READY")
 
 
 class PlanningCoordinatorTests(unittest.TestCase):
@@ -141,6 +166,53 @@ class PlanningCoordinatorTests(unittest.TestCase):
             self.assertEqual(
                 runner.calls,
                 ["backlog-planner", "technical-architect", "backlog-planner"],
+            )
+
+    def test_ready_result_requires_canonical_ready_gate_then_releases_for_builder(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100", maturity="Refined")], ready=[])
+            state = RunStateStore(root / "state.db")
+            workspace = FakeWorkspaceManager(root, diff="planning diff")
+            integration = FakeIntegrationManager()
+            verification = FakeVerificationRunner()
+            coordinator = PlanningCoordinator(
+                root,
+                state,
+                PromotingPlanningRunner(root),
+                verification,
+                workspace_manager=workspace,
+                integration_manager=integration,
+            )
+            outcome = coordinator.refine_next(BacklogReader(root).load())
+            self.assertEqual(outcome, PlanningOutcome.READY)
+            planned = BacklogReader(root).load().tasks["TASK-0100"]
+            self.assertEqual(planned.maturity, "Ready")
+            self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.COMPLETED)
+            self.assertEqual(verification.calls, [("TASK-0100", "planning")])
+            self.assertEqual(integration.prepare_calls, 1)
+            self.assertEqual(workspace.cleaned, ["TASK-0100"])
+
+    def test_protocol_failure_never_integrates_partial_planning_edits(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100", maturity="Refined")], ready=[])
+            state = RunStateStore(root / "state.db")
+            integration = FakeIntegrationManager()
+            coordinator = PlanningCoordinator(
+                root,
+                state,
+                FakePlanningAgentRunner(planner_results=[result("no protocol marker")]),
+                FakeVerificationRunner(),
+                workspace_manager=FakeWorkspaceManager(root, diff="unsafe partial edit"),
+                integration_manager=integration,
+            )
+            outcome = coordinator.refine_next(BacklogReader(root).load())
+            self.assertEqual(outcome, PlanningOutcome.FAILED)
+            self.assertEqual(integration.prepare_calls, 0)
+            self.assertEqual(
+                state.task_run("TASK-0100").blocker_code,
+                "BACKLOG_PLANNER_PROTOCOL_ERROR",
             )
 
     def test_planning_codex_execution_boundary_is_sol_medium_standard(self):
