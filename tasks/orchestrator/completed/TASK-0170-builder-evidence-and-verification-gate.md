@@ -1,8 +1,8 @@
 # TASK-0170 — Require Builder evidence before independent review
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
@@ -129,3 +129,7 @@ Fake-runner tests consume no Codex quota. No AWS, external cloud, or LocalStack 
 - Premature lifecycle mutation restoration tests.
 - Prompt snapshots proving completion evidence is not Reviewer scope.
 - LocalStack verification: N/A.
+
+## Completion summary
+
+Implemented BuilderResultManifest/v1 and VerificationReport/v1 with exact AC, changed-file, command, log, and commit binding. The trusted Verification Runner executes bounded required/additional commands and gates Reviewer plus all post-integration/finalization stages. Builder lifecycle mutations are restored from the trusted baseline. Added 83 Orchestrator regression tests; independent re-review passed; python scripts/harness_check.py passed. No product, tenant, cloud, or LocalStack impact.

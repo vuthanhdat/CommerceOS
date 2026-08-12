@@ -72,7 +72,7 @@ execution_metadata:
     exclusive_resources: [repository-task-state, agent-contracts, orchestrator-runtime]
     merge_policy: verified_serial_main
   TASK-0170:
-    lifecycle_state: Backlog
+    lifecycle_state: Completed
     exclusive_resources: [repository-task-state, agent-contracts, verification-runner]
     merge_policy: verified_serial_main
   TASK-0171:
@@ -139,4 +139,3 @@ task_shards:
 
 ready_frontier:
   - TASK-0094
-  - TASK-0170

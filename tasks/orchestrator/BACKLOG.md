@@ -14,13 +14,14 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0170` — Require Builder evidence before independent review (`Completed`).
 - `TASK-0169` — Define machine-checkable agent stage contracts and workflow states (`Completed`).
 - `TASK-0167` — Stream Codex agent activity and pin role-based model profiles (`Completed`).
 - `TASK-0168` — Separate CommerceOS and Orchestrator task catalogs (`Completed`).
 
 ## Ready frontier
 
-- `TASK-0170` — Require Builder evidence before independent review (`Ready`).
+No Orchestrator task is Ready until TASK-0171 completes its planning gate.
 
 ## Strict workflow boundary program
 
@@ -39,5 +40,5 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0170 is Ready now that TASK-0169 is completed; each later task follows its declared
-dependency gate.
+TASK-0170 is completed; TASK-0171 is the next planning candidate and each later task follows its
+declared dependency gate.
