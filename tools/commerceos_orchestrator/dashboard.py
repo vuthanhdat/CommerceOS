@@ -50,7 +50,12 @@ class DashboardReadModel:
                 lanes[name] = lanes.get(name, 0) + 1
                 blockers += int(
                     run.execution_state
-                    in {TaskExecutionState.BLOCKED, TaskExecutionState.HUMAN_REQUIRED}
+                    in {
+                        TaskExecutionState.PLANNING_REQUIRED,
+                        TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED,
+                        TaskExecutionState.BLOCKED,
+                        TaskExecutionState.HUMAN_REQUIRED,
+                    }
                 )
             tasks.append(self._summary(task, run))
 
@@ -67,10 +72,21 @@ class DashboardReadModel:
             "ready_frontier": [task.id for task in ready],
             "active_builders": sum(
                 lanes.get(name, 0)
-                for name in ("QUEUED", "BUILDING", "VERIFYING", "FIX_REQUIRED")
+                for name in (
+                    "QUEUED",
+                    "INITIAL_BUILD",
+                    "PRE_REVIEW_VERIFICATION",
+                    "REPAIR_REQUIRED",
+                    "REPAIR_BUILD",
+                    "REPAIR_VERIFICATION",
+                )
             ),
-            "active_reviewers": lanes.get("REVIEWING", 0),
-            "merge_queue_length": lanes.get("MERGE_QUEUED", 0) + lanes.get("INTEGRATING", 0),
+            "active_reviewers": lanes.get("FIRST_REVIEW", 0) + lanes.get("RE_REVIEW", 0),
+            "merge_queue_length": (
+                lanes.get("MERGE_QUEUED", 0)
+                + lanes.get("INTEGRATING", 0)
+                + lanes.get("FINALIZING", 0)
+            ),
             "blocker_count": blockers,
             "tasks": tasks,
             "events": self.state.recent_events(50),
@@ -136,6 +152,9 @@ class DashboardReadModel:
             "blocker_detail": run.blocker_detail if run else None,
             "drain_at_stop": run.drain_at_stop if run else False,
             "updated_at": run.updated_at if run else None,
+            "contract_version": run.contract_version if run else None,
+            "input_artifact_id": run.input_artifact_id if run else None,
+            "output_artifact_id": run.output_artifact_id if run else None,
         }
 
 

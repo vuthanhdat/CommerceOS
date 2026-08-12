@@ -36,12 +36,16 @@ class Scheduler:
             if run.execution_state
             in {
                 TaskExecutionState.QUEUED,
-                TaskExecutionState.BUILDING,
-                TaskExecutionState.VERIFYING,
-                TaskExecutionState.FIX_REQUIRED,
-                TaskExecutionState.REVIEWING,
+                TaskExecutionState.INITIAL_BUILD,
+                TaskExecutionState.PRE_REVIEW_VERIFICATION,
+                TaskExecutionState.FIRST_REVIEW,
+                TaskExecutionState.REPAIR_REQUIRED,
+                TaskExecutionState.REPAIR_BUILD,
+                TaskExecutionState.REPAIR_VERIFICATION,
+                TaskExecutionState.RE_REVIEW,
                 TaskExecutionState.MERGE_QUEUED,
                 TaskExecutionState.INTEGRATING,
+                TaskExecutionState.FINALIZING,
             }
         )
         capacity = max(0, max_builders - active_builder_count)

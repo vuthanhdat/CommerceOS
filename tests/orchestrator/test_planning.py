@@ -204,7 +204,7 @@ class PlanningCoordinatorTests(unittest.TestCase):
             self.assertEqual(planned.maturity, "Ready")
             self.assertEqual(
                 state.task_run("TASK-0100").execution_state,
-                TaskExecutionState.COMPLETED,
+                TaskExecutionState.PLANNING_COMPLETED,
             )
             self.assertEqual(verification.calls, [("TASK-0100", "planning")])
             self.assertEqual(integration.prepare_calls, 1)

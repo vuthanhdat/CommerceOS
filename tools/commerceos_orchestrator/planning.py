@@ -291,7 +291,7 @@ class PlanningCoordinator:
             workspace = self.workspace.workspace_for(task)
             self.state.update_task(
                 task.id,
-                TaskExecutionState.BUILDING,
+                TaskExecutionState.PLANNING,
                 branch=workspace.branch,
                 worktree=str(workspace.path),
             )
@@ -309,7 +309,7 @@ class PlanningCoordinator:
 
         for _ in range(self.max_rounds):
             role_attempt += 1
-            self.state.update_task(task.id, TaskExecutionState.BUILDING, attempt_delta=1)
+            self.state.update_task(task.id, TaskExecutionState.PLANNING, attempt_delta=1)
             planner = self.runner.run_backlog_planner(
                 task, workspace.path, attempt=role_attempt
             )
@@ -409,7 +409,7 @@ class PlanningCoordinator:
                     "Planner claimed READY without inspectable repository planning changes",
                 )
                 return PlanningOutcome.FAILED
-            self.state.update_task(task.id, TaskExecutionState.COMPLETED)
+            self.state.update_task(task.id, TaskExecutionState.PLANNING_COMPLETED)
             self.state.add_event(
                 task.id,
                 "PLANNING_READY",

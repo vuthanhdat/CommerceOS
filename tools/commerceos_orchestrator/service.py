@@ -17,6 +17,7 @@ from .models import (
     ReviewResult,
     TaskExecutionState,
     TaskRun,
+    TERMINAL_TASK_STATES,
 )
 from .scheduler import Scheduler
 from .state import RunStateStore
@@ -195,11 +196,7 @@ class TaskOrchestrator:
                 future.result()
             except Exception as exc:
                 run = self.state.task_run(task_id)
-                if run and run.execution_state not in {
-                    TaskExecutionState.COMPLETED,
-                    TaskExecutionState.BLOCKED,
-                    TaskExecutionState.HUMAN_REQUIRED,
-                }:
+                if run and run.execution_state not in TERMINAL_TASK_STATES:
                     self.state.update_task(
                         task_id,
                         TaskExecutionState.HUMAN_REQUIRED,
@@ -224,21 +221,42 @@ class TaskOrchestrator:
         run = self.state.task_run(task.id)
         feedback: str | None = None
         review_context: str | None = None
+        repair_resume = False
         if resume and prior_run:
             feedback = f"Resume safely after interrupted local state {prior_run.execution_state.value}. Inspect existing worktree before editing."
+            repair_resume = prior_run.execution_state in {
+                TaskExecutionState.PRE_REVIEW_VERIFICATION,
+                TaskExecutionState.FIRST_REVIEW,
+                TaskExecutionState.REPAIR_REQUIRED,
+                TaskExecutionState.REPAIR_BUILD,
+                TaskExecutionState.REPAIR_VERIFICATION,
+                TaskExecutionState.RE_REVIEW,
+            }
 
         if prior_run and prior_run.execution_state in {
             TaskExecutionState.MERGE_QUEUED,
             TaskExecutionState.INTEGRATING,
+            TaskExecutionState.FINALIZING,
         }:
             self._integrate(task, workspace.branch, workspace.path)
             return
 
+        if repair_resume and prior_run and prior_run.execution_state in {
+            TaskExecutionState.PRE_REVIEW_VERIFICATION,
+            TaskExecutionState.FIRST_REVIEW,
+            TaskExecutionState.REPAIR_VERIFICATION,
+            TaskExecutionState.RE_REVIEW,
+        }:
+            self.state.update_task(task.id, TaskExecutionState.REPAIR_REQUIRED)
+
         for fix_round in range(self.config.max_fix_attempts + 1):
+            is_repair = repair_resume or fix_round > 0
             self.state.update_task(
                 task.id,
-                TaskExecutionState.BUILDING,
-                fix_attempt_delta=1 if fix_round > 0 else 0,
+                TaskExecutionState.REPAIR_BUILD
+                if is_repair
+                else TaskExecutionState.INITIAL_BUILD,
+                fix_attempt_delta=1 if is_repair else 0,
             )
             agent = self._run_builder_with_capacity_retry(task, workspace.path, feedback=feedback)
             if agent is None:
@@ -250,7 +268,12 @@ class TaskOrchestrator:
             if not self._builder_left_task_open(task, workspace.path):
                 return
 
-            self.state.update_task(task.id, TaskExecutionState.VERIFYING)
+            self.state.update_task(
+                task.id,
+                TaskExecutionState.PRE_REVIEW_VERIFICATION
+                if not is_repair
+                else TaskExecutionState.REPAIR_VERIFICATION,
+            )
             verification = self.verification.run(task, workspace.path, phase=f"builder-{fix_round}")
             if not verification.success:
                 if fix_round >= self.config.max_fix_attempts:
@@ -264,7 +287,7 @@ class TaskOrchestrator:
                     "Deterministic verification failed. Fix the implementation; do not weaken checks.\n"
                     + (verification.stdout + "\n" + verification.stderr)[-20000:]
                 )
-                self.state.update_task(task.id, TaskExecutionState.FIX_REQUIRED)
+                self.state.update_task(task.id, TaskExecutionState.REPAIR_REQUIRED)
                 continue
 
             try:
@@ -281,7 +304,12 @@ class TaskOrchestrator:
                 self._block(task, "GIT_TASK_BRANCH_ERROR", str(exc))
                 return
 
-            self.state.update_task(task.id, TaskExecutionState.REVIEWING)
+            self.state.update_task(
+                task.id,
+                TaskExecutionState.FIRST_REVIEW
+                if not is_repair
+                else TaskExecutionState.RE_REVIEW,
+            )
             review = self.agent_runner.run_reviewer(
                 task,
                 workspace.path,
@@ -355,7 +383,7 @@ class TaskOrchestrator:
                 return
             feedback = "Independent Reviewer findings:\n" + review.findings[-20000:]
             review_context = self._write_review_context(task, workspace.path, review.findings)
-            self.state.update_task(task.id, TaskExecutionState.FIX_REQUIRED)
+            self.state.update_task(task.id, TaskExecutionState.REPAIR_REQUIRED)
 
     @staticmethod
     def _write_review_context(task: CanonicalTask, worktree: Path, findings: str) -> str:
@@ -433,7 +461,15 @@ class TaskOrchestrator:
     ) -> AgentResult | None:
         """Retry transient model-capacity failures without changing the pinned model policy."""
         for capacity_retry in range(self.config.max_capacity_retries + 1):
-            self.state.update_task(task.id, TaskExecutionState.BUILDING, attempt_delta=1)
+            current_state = self.state.task_run(task.id)
+            build_state = (
+                current_state.execution_state
+                if current_state
+                and current_state.execution_state
+                in {TaskExecutionState.INITIAL_BUILD, TaskExecutionState.REPAIR_BUILD}
+                else TaskExecutionState.INITIAL_BUILD
+            )
+            self.state.update_task(task.id, build_state, attempt_delta=1)
             current = self.state.task_run(task.id)
             agent = self.agent_runner.run_builder(
                 task,
@@ -482,7 +518,9 @@ class TaskOrchestrator:
 
     def _integrate(self, task: CanonicalTask, branch: str, worktree: Path) -> None:
         with self._merge_lock:
-            self.state.update_task(task.id, TaskExecutionState.INTEGRATING)
+            current_run = self.state.task_run(task.id)
+            if not current_run or current_run.execution_state != TaskExecutionState.FINALIZING:
+                self.state.update_task(task.id, TaskExecutionState.INTEGRATING)
             integration_checkout_prepared = False
             try:
                 self.integration.prepare_main()
@@ -518,6 +556,8 @@ class TaskOrchestrator:
                         self._block(task, "POST_INTEGRATION_VERIFICATION_FAILED", f"log={post_merge.log_path}")
                         return
 
+                    self.state.update_task(task.id, TaskExecutionState.FINALIZING)
+
                     snapshot = BacklogReader(self.root, self.catalog).load()
                     merged_task = snapshot.tasks.get(task.id)
                     if not merged_task:
@@ -537,6 +577,7 @@ class TaskOrchestrator:
                         return
                     self.integration.push_main()
                 else:
+                    self.state.update_task(task.id, TaskExecutionState.FINALIZING)
                     snapshot = BacklogReader(self.root, self.catalog).load()
                     current_task = snapshot.tasks.get(task.id)
                     if current_task and current_task.lifecycle_state != "Completed":
@@ -572,9 +613,23 @@ class TaskOrchestrator:
                 self._block(task, "INTEGRATION_ERROR", str(exc))
 
     def _block(self, task: CanonicalTask, code: str, detail: str) -> None:
+        if code == "PLANNING_REQUIRED":
+            target = TaskExecutionState.PLANNING_REQUIRED
+        elif code in {
+            "WORKTREE_ERROR",
+            "GIT_TASK_BRANCH_ERROR",
+            "POST_INTEGRATION_VERIFICATION_FAILED",
+            "COMPLETION_BOOKKEEPING_VERIFICATION_FAILED",
+            "INTEGRATION_ERROR",
+        }:
+            target = TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
+        elif code in {"MODEL_CAPACITY_EXHAUSTED", "RETRY_LIMIT_EXCEEDED"}:
+            target = TaskExecutionState.BLOCKED
+        else:
+            target = TaskExecutionState.HUMAN_REQUIRED
         self.state.update_task(
             task.id,
-            TaskExecutionState.HUMAN_REQUIRED,
+            target,
             blocker_code=code,
             blocker_detail=detail[-20000:],
         )

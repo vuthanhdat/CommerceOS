@@ -19,6 +19,11 @@ between authoritative artifacts, but must not resolve it by instructing the Buil
 
 ## Shared responsibilities
 
+The executable role handoff contract is `commerceos.orchestrator.stage/v1`. The role matrix below
+maps to the versioned `builder`, `verification`, `reviewer`, `repair_builder`, `integration`, and
+`finalization` stages; planning entry and convergence use the versioned `planning` stage. Agent
+text is evidence only until the matching stage output validates.
+
 | Role | Owns | Does not own |
 | --- | --- | --- |
 | Builder | implementation, tests, task-scoped documentation, verification evidence | product/architecture decisions, independent approval, lifecycle bookkeeping |

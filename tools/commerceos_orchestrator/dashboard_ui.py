@@ -37,9 +37,9 @@ pre{white-space:pre-wrap;word-break:break-word}#dag{display:flex;flex-wrap:wrap;
 <script>
 const $=id=>document.getElementById(id);
 let liveSource=null,liveTask=null,selectedTask=null,lastStatus=null;
-const activeStates=['QUEUED','BUILDING','VERIFYING','FIX_REQUIRED','REVIEWING','MERGE_QUEUED','INTEGRATING'];
-const terminalStates=['COMPLETED','BLOCKED','HUMAN_REQUIRED'];
-const lane=t=>{const s=t.execution_state;if(['QUEUED','BUILDING','VERIFYING','FIX_REQUIRED'].includes(s))return'active';if(s==='REVIEWING')return'review';if(['MERGE_QUEUED','INTEGRATING'].includes(s))return'merge';if(['BLOCKED','HUMAN_REQUIRED'].includes(s))return'blocked';if(t.maturity==='Ready'&&t.lifecycle_state==='Backlog')return'ready';return'other'};
+const activeStates=['QUEUED','PLANNING','INITIAL_BUILD','PRE_REVIEW_VERIFICATION','REPAIR_REQUIRED','REPAIR_BUILD','REPAIR_VERIFICATION','FIRST_REVIEW','RE_REVIEW','MERGE_QUEUED','INTEGRATING','FINALIZING'];
+const terminalStates=['PLANNING_COMPLETED','COMPLETED','PLANNING_REQUIRED','ORCHESTRATOR_ACTION_REQUIRED','BLOCKED','HUMAN_REQUIRED'];
+const lane=t=>{const s=t.execution_state;if(['QUEUED','PLANNING','INITIAL_BUILD','PRE_REVIEW_VERIFICATION','REPAIR_REQUIRED','REPAIR_BUILD','REPAIR_VERIFICATION'].includes(s))return'active';if(['FIRST_REVIEW','RE_REVIEW'].includes(s))return'review';if(['MERGE_QUEUED','INTEGRATING','FINALIZING'].includes(s))return'merge';if(['PLANNING_REQUIRED','ORCHESTRATOR_ACTION_REQUIRED','BLOCKED','HUMAN_REQUIRED'].includes(s))return'blocked';if(t.maturity==='Ready'&&t.lifecycle_state==='Backlog')return'ready';return'other'};
 const repairMojibake=value=>String(value??'').replaceAll('â€™','’').replaceAll('â€œ','“').replaceAll('â€�','”').replaceAll('â€”','—').replaceAll('â€“','–').replaceAll('â€¦','…').replaceAll('â†“','↓').replaceAll('â†’','→').replaceAll('Â·','·').replaceAll('Â©','©').replaceAll('Â®','®').replaceAll('Â ',' ');
 const clean=value=>repairMojibake(String(value??'').replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g,'').replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g,''));
 function text(tag,value,cls){const e=document.createElement(tag);e.textContent=clean(value);if(cls)e.className=cls;return e}

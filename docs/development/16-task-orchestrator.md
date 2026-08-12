@@ -42,7 +42,29 @@ The local implementation intentionally stays small:
 Transient files are written under `.commerceos/orchestrator/<catalog>/` by default and must
 remain untracked. CommerceOS and Orchestrator-tooling runs never share state or logs implicitly.
 
-## 3. Commands
+## 3. Executable stage contract
+
+The authoritative workflow contract is `commerceos.orchestrator.stage/v1`, implemented in
+`tools/commerceos_orchestrator/stage_contracts.py`. Every accepted state transition passes
+through the persisted state store; undeclared transitions fail closed to `HUMAN_REQUIRED` and
+produce a rejected-transition event.
+
+| Stage | Actor | Versioned input | Versioned output | Success exit |
+| --- | --- | --- | --- | --- |
+| `planning` | Backlog Planner | `PlanningInput` | `PlanningOutput` | `PLANNING_COMPLETED` |
+| `builder` | Builder | `BuilderInput` | `BuilderOutput` | `PRE_REVIEW_VERIFICATION` |
+| `verification` | Verification Runner | `VerificationInput` | `VerificationOutput` | `FIRST_REVIEW` or `RE_REVIEW` |
+| `reviewer` | Reviewer | `ReviewerInput` | `ReviewerOutput` | `MERGE_QUEUED` or accepted repair route |
+| `repair_builder` | Repair Builder | `RepairBuilderInput` | `RepairBuilderOutput` | `REPAIR_VERIFICATION` |
+| `integration` | Orchestrator | `IntegrationInput` | `IntegrationOutput` | `FINALIZING` |
+| `finalization` | Orchestrator | `FinalizationInput` | `FinalizationOutput` | `COMPLETED` |
+
+Persisted implementation states distinguish `INITIAL_BUILD`, `PRE_REVIEW_VERIFICATION`,
+`FIRST_REVIEW`, `REPAIR_REQUIRED`, `REPAIR_BUILD`, `REPAIR_VERIFICATION`, `RE_REVIEW`,
+`MERGE_QUEUED`, `INTEGRATING`, and `FINALIZING`. A review state cannot transition directly back
+to initial build. Every timeline transition records the contract version and artifact chain.
+
+## 4. Commands
 
 Run from the repository root:
 
@@ -78,7 +100,7 @@ catalog-specific directory so historical evidence remains recoverable.
 
 `start` runs the scheduler and dashboard together. The dashboard binds to `127.0.0.1:8765` by default. Non-loopback binding is rejected.
 
-## 4. Codex execution profiles
+## 5. Codex execution profiles
 
 The real agent runners invoke the repository-approved `codex` executable non-interactively. Interactive Codex TUI model/Fast selections are not inherited by autonomous CommerceOS execution.
 
@@ -101,7 +123,7 @@ Execution roles
 
 The Orchestrator never enables Fast/priority service implicitly. Planning agents receive no real-cloud authorization. Tests use fake agent/planning runners and consume no Codex quota.
 
-## 5. Live Codex observability
+## 6. Live Codex observability
 
 Codex automation uses `codex exec --json` with a streaming `subprocess.Popen` adapter. stdout JSONL is consumed while Codex is running, stderr is drained concurrently, and both are retained in audit logs.
 
@@ -117,7 +139,7 @@ codex exec --json
 
 Task detail can show live role/model/activity events for Planner, architects, Builder and Reviewer. Agent output is untrusted display data and is rendered through safe text DOM APIs; the dashboard does not inject agent HTML.
 
-## 6. Mechanical scheduling
+## 7. Mechanical scheduling
 
 A task is Builder-dispatchable only when canonical metadata proves:
 
@@ -132,7 +154,7 @@ Numeric task order and Markdown detail never imply readiness.
 
 The canonical maximum is two writable implementation pipelines and one serialized merge lane. Local `BLOCKED`/`HUMAN_REQUIRED` task state prevents automatic redispatch until explicit operator resume/retry.
 
-## 7. Planning Factory
+## 8. Planning Factory
 
 Planning is serial and runs only after normal Ready scheduling has no dispatchable work.
 
@@ -177,7 +199,7 @@ PLANNING_RESULT: HUMAN_REQUIRED
 
 Planning is bounded. Missing protocol markers, repeated non-convergence, human product/architecture decisions, or unsafe semantic ambiguity become Human Required rather than being guessed.
 
-## 8. Planning artifact integration
+## 9. Planning artifact integration
 
 Planning roles communicate through the task worktree and repository artifacts, not private cross-agent memory.
 
@@ -193,7 +215,7 @@ For `PLANNING_RESULT: READY`, the candidate is accepted only if canonical valida
 
 After planning artifacts are pushed to authoritative `main`, the scheduler reloads the DAG and the normal Luna Builder pipeline may claim the newly Ready task.
 
-## 9. Implementation execution and completion
+## 10. Implementation execution and completion
 
 The automated implementation happy path is:
 
@@ -229,7 +251,7 @@ The Orchestrator refuses to complete a task from an empty/no-op Builder diff. An
 
 The manual PR/human-integration workflow documented in `14-codex-multi-agent-and-worktrees.md` remains valid for work not executed by this Orchestrator.
 
-## 10. Graceful Stop
+## 11. Graceful Stop
 
 `stop` and the dashboard Stop button share the same persisted control model.
 
@@ -243,7 +265,7 @@ When Stop is accepted:
 
 Stop is not a hard process kill. A stop request survives process restart.
 
-## 11. Recovery and blockers
+## 12. Recovery and blockers
 
 Local SQLite state records attempts, execution state, blocker details, worktree/branch, drain intent, and a recent-event timeline.
 
@@ -266,7 +288,7 @@ first to the Backlog Planner, which owns planning convergence and the final Read
 Orchestrator must not call an Architect directly. Orchestrator-owned findings go to the
 Orchestrator handler, and human-owned findings stop at the human decision gate.
 
-## 12. Cloud safety
+## 13. Cloud safety
 
 The Orchestrator itself creates no AWS resources.
 
@@ -274,7 +296,7 @@ A canonical implementation task marked `cloud_verification: required` is not dis
 
 Planning roles never receive real-cloud authorization. They may refine cloud tasks and record required account/region/budget/human gates, but they may not spend cloud credit or treat planning as execution consent.
 
-## 13. Dashboard
+## 14. Dashboard
 
 The dashboard is a thin read/control client over Orchestrator Core. It shows:
 
@@ -291,7 +313,7 @@ The dashboard is a thin read/control client over Orchestrator Core. It shows:
 
 The browser UI does not calculate readiness, mutate canonical YAML, decide planning/architect routing, resolve dependencies, choose retries, or perform Git integration directly.
 
-## 14. Verification
+## 15. Verification
 
 The repository harness runs the Orchestrator Python test suite before application toolchain checks. Coverage includes:
 

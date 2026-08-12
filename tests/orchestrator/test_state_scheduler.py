@@ -17,7 +17,7 @@ class StateAndSchedulerTests(unittest.TestCase):
             state = RunStateStore(Path(td) / "state.db")
             state.clear_stop_and_run()
             self.assertTrue(state.claim_task("TASK-0100"))
-            state.update_task("TASK-0100", TaskExecutionState.BUILDING)
+            state.update_task("TASK-0100", TaskExecutionState.INITIAL_BUILD)
             draining = state.request_stop()
             self.assertEqual(draining, ["TASK-0100"])
             self.assertEqual(state.control_state(), OrchestratorState.STOP_REQUESTED)

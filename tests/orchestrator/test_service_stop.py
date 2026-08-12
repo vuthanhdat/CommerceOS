@@ -27,8 +27,13 @@ class DrainingOrchestrator(TaskOrchestrator):
             self.started_ids.append(task.id)
             if len(self.started_ids) >= 2:
                 self.started.set()
-        self.state.update_task(task.id, TaskExecutionState.BUILDING)
+        self.state.update_task(task.id, TaskExecutionState.INITIAL_BUILD)
         self.release.wait(timeout=5)
+        self.state.update_task(task.id, TaskExecutionState.PRE_REVIEW_VERIFICATION)
+        self.state.update_task(task.id, TaskExecutionState.FIRST_REVIEW)
+        self.state.update_task(task.id, TaskExecutionState.MERGE_QUEUED)
+        self.state.update_task(task.id, TaskExecutionState.INTEGRATING)
+        self.state.update_task(task.id, TaskExecutionState.FINALIZING)
         self.state.update_task(task.id, TaskExecutionState.COMPLETED)
 
 
@@ -73,7 +78,7 @@ class GracefulStopServiceTests(unittest.TestCase):
             state = RunStateStore(root / "state.db")
             state.clear_stop_and_run()
             state.claim_task("TASK-0100")
-            state.update_task("TASK-0100", TaskExecutionState.BUILDING)
+            state.update_task("TASK-0100", TaskExecutionState.INITIAL_BUILD)
             state.request_stop()
             release = threading.Event(); release.set()
             started = threading.Event()

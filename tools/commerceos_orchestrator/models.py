@@ -17,19 +17,30 @@ class OrchestratorState(StrEnum):
 
 class TaskExecutionState(StrEnum):
     QUEUED = "QUEUED"
-    BUILDING = "BUILDING"
-    VERIFYING = "VERIFYING"
-    FIX_REQUIRED = "FIX_REQUIRED"
-    REVIEWING = "REVIEWING"
+    PLANNING = "PLANNING"
+    PLANNING_COMPLETED = "PLANNING_COMPLETED"
+    INITIAL_BUILD = "INITIAL_BUILD"
+    PRE_REVIEW_VERIFICATION = "PRE_REVIEW_VERIFICATION"
+    FIRST_REVIEW = "FIRST_REVIEW"
+    REPAIR_REQUIRED = "REPAIR_REQUIRED"
+    REPAIR_BUILD = "REPAIR_BUILD"
+    REPAIR_VERIFICATION = "REPAIR_VERIFICATION"
+    RE_REVIEW = "RE_REVIEW"
     MERGE_QUEUED = "MERGE_QUEUED"
     INTEGRATING = "INTEGRATING"
+    FINALIZING = "FINALIZING"
     COMPLETED = "COMPLETED"
+    PLANNING_REQUIRED = "PLANNING_REQUIRED"
+    ORCHESTRATOR_ACTION_REQUIRED = "ORCHESTRATOR_ACTION_REQUIRED"
     BLOCKED = "BLOCKED"
     HUMAN_REQUIRED = "HUMAN_REQUIRED"
 
 
 TERMINAL_TASK_STATES = {
+    TaskExecutionState.PLANNING_COMPLETED,
     TaskExecutionState.COMPLETED,
+    TaskExecutionState.PLANNING_REQUIRED,
+    TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED,
     TaskExecutionState.BLOCKED,
     TaskExecutionState.HUMAN_REQUIRED,
 }
@@ -130,3 +141,6 @@ class TaskRun:
     activated_at: str | None
     updated_at: str
     drain_at_stop: bool
+    contract_version: str | None = None
+    input_artifact_id: str | None = None
+    output_artifact_id: str | None = None
