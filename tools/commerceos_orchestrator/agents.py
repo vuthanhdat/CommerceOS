@@ -556,11 +556,12 @@ policy, then runs deterministic verification and independent review.
         normalized = re.sub(r"[\\/]+", "/", command.lower())
         normalized = re.sub(r"[\"']", "", normalized)
         normalized = re.sub(r"\s+", " ", normalized).strip()
+        interpreter = r"(?:python(?:3|\.exe)?|py(?:\.exe)?)"
         return any(
             re.search(pattern, normalized)
             for pattern in (
-                r"(?:^| )\.?[^ ]*scripts/(?:harness_check|task_verification)\.py(?: |$)",
-                r"(?:^| )(?:python(?:3|\.exe)?|py(?:\.exe)?) -m (?:unittest|pytest)(?: |$)",
+                rf"(?:^| ){interpreter} (?:-[^ ]+ )*\.?[^ ]*scripts/(?:harness_check|task_verification)\.py(?: |$)",
+                rf"(?:^| ){interpreter} -m (?:unittest|pytest)(?: |$)",
                 r"(?:^| )pytest(?:\.exe)?(?: |$)",
                 r"(?:^| )dotnet test(?: |$)",
                 r"(?:^| )(?:npm|pnpm|yarn)(?:\.cmd)? (?:test|verify|run (?:test|verify))(?: |$)",

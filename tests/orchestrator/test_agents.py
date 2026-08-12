@@ -157,6 +157,13 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertTrue(CodexRunner._is_full_suite_command(command))
+        for command in (
+            "git diff -- scripts/harness_check.py",
+            "Get-Content ./scripts/task_verification.py",
+            "rg task_verification scripts",
+        ):
+            with self.subTest(inspection=command):
+                self.assertFalse(CodexRunner._is_full_suite_command(command))
 
     def test_reviewer_write_attempt_is_failed_and_leaves_clean_worktree(self):
         with tempfile.TemporaryDirectory() as td:
