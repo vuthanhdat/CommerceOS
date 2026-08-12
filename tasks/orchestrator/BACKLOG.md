@@ -23,7 +23,7 @@ Recently completed:
 
 ## Ready frontier
 
-No Orchestrator task is Ready until TASK-0173 completes its planning gate.
+- `TASK-0173` — Make completion an Orchestrator-owned verified transaction (`Ready`).
 
 ## Strict workflow boundary program
 
@@ -42,4 +42,4 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0172 is completed; TASK-0173 is the next planning candidate.
+TASK-0172 is completed and TASK-0173 passed its planning gate.

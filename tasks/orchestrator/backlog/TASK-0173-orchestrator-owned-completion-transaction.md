@@ -1,12 +1,30 @@
 # TASK-0173 — Make completion an Orchestrator-owned verified transaction
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — waits for TASK-0170 and TASK-0171
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Engineering / Harness
+Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
-Depends on: TASK-0170, TASK-0171
+Depends on: completed TASK-0170, completed TASK-0171
 Cloud verification: No
+
+## Planning readiness
+
+- Owning domain: Engineering / Harness; no product/tenant domain is touched.
+- Transaction boundary: serialized integration checkout from accepted review through merge,
+  post-integration verification, canonical finalization, post-bookkeeping verification, and
+  non-force push. Unpushed failure rolls back to trusted `origin/main`.
+- `CompletionTransaction/v1`: records task/catalog, integrated SHA, validated evidence artifact
+  IDs, pre-finalization canonical snapshot, completed path, bookkeeping SHA, validation outcome,
+  and push eligibility.
+- Canonical consistency validator owns detailed-spec cardinality/status/maturity/permission,
+  shard path, lifecycle metadata, ready frontier, dependency visibility, and catalog index.
+- Recovery: if implementation is already on remote main, finalization resumes only from a valid
+  non-completed snapshot; an already valid completed snapshot is a no-op. Partial/contradictory
+  snapshots fail closed.
+- Git, persistence, infrastructure, LocalStack, tenant, cost, and ADR decisions: no new choices.
+- Remaining planning blockers: None.
 
 ## Goal
 
@@ -66,9 +84,35 @@ Failure injection at each finalization step leaves either the pre-finalization s
 valid completed state. Re-running recovery produces no duplicate completion record or duplicate
 registry entry.
 
-## Architecture/security/runtime impact
+## Architecture impact
 
-Harness-only, serialized Git integration. No LocalStack or tenant impact.
+Harness-only transaction/validation layer over the existing serialized Git integration manager;
+no product module, persistence technology, infrastructure capability, or ADR change.
+
+## Security and tenant impact
+
+Only trusted Orchestrator paths may mutate lifecycle artifacts; all evidence references and
+canonical paths are containment-checked. Authentication, authorization, tenant data, and secrets
+are N/A.
+
+## Reliability and idempotency impact
+
+Every unpushed failure restores trusted main. Valid completed recovery is idempotent; partial or
+duplicate completion state fails closed. Push remains non-force and occurs only after transaction
+validation plus authoritative post-bookkeeping VerificationReport/v1.
+
+## Observability impact
+
+Timeline retains CompletionTransaction/v1 artifact ID, integrated/bookkeeping SHA, rollback
+reason, canonical validation result, and push eligibility.
+
+## Local runtime/resource impact
+
+Repository-local snapshots/evidence only; no LocalStack, port, or persistent service.
+
+## Cost impact
+
+No external/cloud cost.
 
 ## Quantified Definition of Done
 
@@ -86,4 +130,3 @@ Harness-only, serialized Git integration. No LocalStack or tenant impact.
 - Already-on-remote-main recovery and repeat-run idempotency tests.
 - Static role/prompt checks for lifecycle write ownership.
 - LocalStack verification: N/A.
-

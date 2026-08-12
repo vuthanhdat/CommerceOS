@@ -139,3 +139,4 @@ task_shards:
 
 ready_frontier:
   - TASK-0094
+  - TASK-0173
