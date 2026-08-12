@@ -29,6 +29,8 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0176` - Add dashboard command controls and agent settings (`Ready`).
+
 
 ## Strict workflow boundary program
 
