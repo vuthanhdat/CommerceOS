@@ -14,6 +14,7 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0171` — Enforce a bounded read-only Reviewer contract (`Completed`).
 - `TASK-0170` — Require Builder evidence before independent review (`Completed`).
 - `TASK-0169` — Define machine-checkable agent stage contracts and workflow states (`Completed`).
 - `TASK-0167` — Stream Codex agent activity and pin role-based model profiles (`Completed`).
@@ -21,7 +22,7 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0171` — Enforce a bounded read-only Reviewer contract (`Ready`).
+No Orchestrator task is Ready until the TASK-0172/TASK-0173 planning gates complete.
 
 ## Strict workflow boundary program
 
@@ -40,5 +41,4 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0170 is completed and TASK-0171 passed its planning gate; each later task follows its
-declared dependency gate.
+TASK-0171 is completed; TASK-0172 and TASK-0173 are the next planning candidates.

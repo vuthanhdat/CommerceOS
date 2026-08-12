@@ -1,8 +1,8 @@
 # TASK-0171 — Enforce a bounded read-only Reviewer contract
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
@@ -155,3 +155,7 @@ No external service or cloud cost. Reviewer remains on the repository-approved c
 - Stale commit, traversal, unknown evidence, incomplete coverage, owner/route mismatch, and
   forbidden command fixtures.
 - LocalStack verification: N/A.
+
+## Completion summary
+
+Implemented process-level read-only Reviewer execution, ReviewLedger/v1 exact AC/file coverage, structured finding ownership/routing, command-policy enforcement, write-attempt rollback, and bounded re-review continuity. Independent review resolved four findings and passed. 91 Orchestrator tests and full repository harness passed. No product, tenant, cloud, or LocalStack impact.
