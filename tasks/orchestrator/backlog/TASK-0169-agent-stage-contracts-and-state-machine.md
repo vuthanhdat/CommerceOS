@@ -1,11 +1,12 @@
 # TASK-0169 — Define machine-checkable agent stage contracts and workflow states
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — waits for TASK-0167 completion
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Engineering / Harness
+Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
-Depends on: completed TASK-0090, completed TASK-0168, TASK-0167
+Depends on: completed TASK-0090, completed TASK-0168, completed TASK-0167
 Cloud verification: No
 
 ## Goal
@@ -25,7 +26,7 @@ blurred and allows states such as `REVIEWING -> BUILDING` without an inspectable
 - Owning domain: Engineering / Harness.
 - Product/domain/tenant decisions: N/A.
 - Technical boundary: repository-local Python contracts and persisted SQLite task state.
-- Remaining blocker: TASK-0167 must finish so this task contracts the final runner/state surface.
+- Remaining blockers: None. TASK-0167 is completed and its runner/state surface is authoritative.
 
 ## In scope
 
@@ -93,4 +94,3 @@ all existing task records.
 - State-store migration and restart tests.
 - Pipeline tests for every success, retry, routed, and invalid-output edge.
 - LocalStack verification: N/A — repository harness only.
-
