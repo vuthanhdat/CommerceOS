@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 from .models import TaskExecutionState
 from .evidence import BuilderResultManifest, EvidenceValidationError, VerificationReport
 from .review_contract import ReviewLedger, ReviewLedgerError
+from .completion_contract import CompletionContractError, CompletionEntryGate
 
 
 WORKFLOW_STATUS: dict[TaskExecutionState, tuple[str, str]] = {
@@ -42,55 +42,49 @@ def evidence_counters(root: Path, catalog: str, task_id: str) -> dict[str, Any]:
     if not evidence_root.is_dir():
         return counters
     try:
-        artifacts = (
-            _latest_json(evidence_root, "builder-manifest-*.json"),
-            _latest_json(evidence_root, "verification-report-*.json"),
-            _latest_json(evidence_root, "review-ledger-*.json"),
-        )
-        if all(item is None for item in artifacts):
+        gate_path = evidence_root / "completion-entry-gate.json"
+        any_contract = any(evidence_root.glob("*.json"))
+        if not any_contract:
             return counters
-        if any(item is None for item in artifacts):
+        if not gate_path.is_file():
             counters["status"] = "INCOMPLETE"
             return counters
-        (manifest_path, manifest_payload), (report_path, report_payload), (ledger_path, ledger_payload) = artifacts  # type: ignore[misc]
-        rounds = {_round(path) for path in (manifest_path, report_path, ledger_path)}
-        if len(rounds) != 1:
-            raise ValueError("evidence artifacts are from different rounds")
-        criteria_rows = _list(manifest_payload, "acceptanceCriteria")
-        changed_rows = _list(manifest_payload, "changedFiles")
-        required_ids = _list(manifest_payload, "requiredCommandIds")
+        gate = CompletionEntryGate.from_dict(
+            json.loads(gate_path.read_text(encoding="utf-8"))
+        )
+        if gate.task_id != task_id:
+            raise ValueError("evidence gate task binding mismatch")
+        manifest_payload = _gated_payload(root, gate.builder_manifest_path)
+        report_payload = _gated_payload(root, gate.verification_report_path)
+        ledger_payload = _gated_payload(root, gate.review_ledger_path)
         manifest = BuilderResultManifest.from_dict(
             manifest_payload,
             expected_task_id=task_id,
-            expected_commit_sha=_string(manifest_payload, "taskCommitSha"),
-            expected_ac_ids=tuple(_string(row, "acId") for row in criteria_rows),
-            expected_changed_files=tuple(_string_value(item, "changedFiles") for item in changed_rows),
-            expected_required_command_ids=tuple(_string_value(item, "requiredCommandIds") for item in required_ids),
+            expected_commit_sha=gate.task_commit_sha,
+            expected_ac_ids=gate.acceptance_criterion_ids,
+            expected_changed_files=gate.changed_files,
+            expected_required_command_ids=gate.required_command_ids,
         )
         report = VerificationReport.from_dict(report_payload)
         if report.task_id != task_id or report.task_commit_sha != manifest.task_commit_sha:
             raise ValueError("verification task/commit binding mismatch")
         expected_commands = {result.command_id: result.argv for result in report.command_results}
+        expected_command_ids = (
+            *gate.required_command_ids,
+            *(command.command_id for command in manifest.additional_commands),
+        )
+        if tuple(expected_commands) != expected_command_ids:
+            raise ValueError("verification command inventory differs from entry gate")
         report.validate(expected_commands=expected_commands, expected_commit_sha=manifest.task_commit_sha)
-        ledger_ac = tuple(_string(row, "acId") for row in _list(ledger_payload, "acceptanceCriteria"))
-        ledger_files = tuple(_string(row, "path") for row in _list(ledger_payload, "changedFiles"))
-        evidence_refs = tuple(dict.fromkeys(
-            reference
-            for finding in _list(ledger_payload, "findings")
-            for reference in _list(finding, "evidenceRefs")
-            if isinstance(reference, str)
-        ))
         ledger = ReviewLedger.from_dict(
             ledger_payload,
             expected_task_id=task_id,
             expected_commit_sha=manifest.task_commit_sha,
             expected_ac_ids=tuple(item.ac_id for item in manifest.acceptance_criteria),
             expected_changed_files=manifest.changed_files,
-            allowed_evidence_refs=evidence_refs,
+            allowed_evidence_refs=gate.allowed_evidence_refs,
             expected_review_round=_string(ledger_payload, "reviewRound"),
         )
-        if ledger_ac != tuple(item.ac_id for item in manifest.acceptance_criteria) or ledger_files != manifest.changed_files:
-            raise ValueError("evidence coverage mismatch")
         counters["acceptance_criteria"] = {
             "satisfied": sum(item.verdict == "SATISFIED" for item in manifest.acceptance_criteria),
             "total": len(manifest.acceptance_criteria),
@@ -111,20 +105,19 @@ def evidence_counters(root: Path, catalog: str, task_id: str) -> dict[str, Any]:
         counters["status"] = "VALID"
     except (
         OSError, ValueError, json.JSONDecodeError, TypeError, EvidenceValidationError,
-        ReviewLedgerError,
+        ReviewLedgerError, CompletionContractError,
     ):
         counters["status"] = "INVALID"
     return counters
 
 
-def _latest_json(root: Path, pattern: str) -> tuple[Path, dict[str, Any]] | None:
-    paths = sorted(root.glob(pattern), key=lambda path: (path.stat().st_mtime_ns, path.name))
-    if not paths:
-        return None
-    value = json.loads(paths[-1].read_text(encoding="utf-8"))
+def _gated_payload(root: Path, relative: str) -> dict[str, Any]:
+    path = (root / relative).resolve()
+    path.relative_to(root.resolve())
+    value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("evidence artifact must be an object")
-    return paths[-1], value
+    return value
 
 
 def _list(value: dict[str, Any], key: str) -> list[Any]:
@@ -139,16 +132,3 @@ def _string(value: dict[str, Any], key: str) -> str:
     if not isinstance(result, str) or not result:
         raise ValueError(f"{key} must be a non-empty string")
     return result
-
-
-def _string_value(value: Any, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{label} must contain non-empty strings")
-    return value
-
-
-def _round(path: Path) -> int:
-    match = re.search(r"-(\d+)\.json$", path.name)
-    if not match:
-        raise ValueError("evidence artifact has no round")
-    return int(match.group(1))

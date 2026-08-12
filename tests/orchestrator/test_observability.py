@@ -83,6 +83,21 @@ class WorkflowObservabilityTests(unittest.TestCase):
             }
             for name, payload in artifacts.items():
                 (evidence / name).write_text(json.dumps(payload), encoding="utf-8")
+            prefix = ".commerceos/orchestrator/commerceos/evidence/TASK-0100"
+            (evidence / "completion-entry-gate.json").write_text(
+                json.dumps({
+                    "contractVersion": "CompletionEntryGate/v1", "taskId": "TASK-0100",
+                    "taskCommitSha": "abc",
+                    "builderManifestPath": f"{prefix}/builder-manifest-0.json",
+                    "verificationReportPath": f"{prefix}/verification-report-0.json",
+                    "reviewLedgerPath": f"{prefix}/review-ledger-0.json",
+                    "acceptanceCriterionIds": ["AC01", "AC02"],
+                    "changedFiles": ["a.py", "b.py"],
+                    "requiredCommandIds": ["task-verification"],
+                    "allowedEvidenceRefs": ["one", "two", "verify.log"],
+                }),
+                encoding="utf-8",
+            )
             counters = evidence_counters(root, "commerceos", "TASK-0100")
             self.assertEqual(counters["status"], "VALID")
             self.assertEqual(counters["acceptance_criteria"], {"satisfied": 1, "total": 2})
@@ -98,7 +113,7 @@ class WorkflowObservabilityTests(unittest.TestCase):
             root = Path(td)
             evidence = root / ".commerceos/orchestrator/commerceos/evidence/TASK-0100"
             evidence.mkdir(parents=True)
-            (evidence / "builder-manifest-0.json").write_text("{bad", encoding="utf-8")
+            (evidence / "completion-entry-gate.json").write_text("{bad", encoding="utf-8")
             self.assertEqual(
                 evidence_counters(root, "commerceos", "TASK-0100")["status"],
                 "INVALID",
