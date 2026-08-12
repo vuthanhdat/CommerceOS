@@ -14,6 +14,7 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0172` — Restrict Builder rework to accepted Reviewer findings (`Completed`).
 - `TASK-0171` — Enforce a bounded read-only Reviewer contract (`Completed`).
 - `TASK-0170` — Require Builder evidence before independent review (`Completed`).
 - `TASK-0169` — Define machine-checkable agent stage contracts and workflow states (`Completed`).
@@ -22,7 +23,7 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0172` — Restrict Builder rework to accepted Reviewer findings (`Ready`).
+No Orchestrator task is Ready until TASK-0173 completes its planning gate.
 
 ## Strict workflow boundary program
 
@@ -41,5 +42,4 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0171 is completed; TASK-0172 passed its planning gate and TASK-0173 remains the next
-planning candidate.
+TASK-0172 is completed; TASK-0173 is the next planning candidate.

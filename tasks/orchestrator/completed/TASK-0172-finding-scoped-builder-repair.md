@@ -1,8 +1,8 @@
 # TASK-0172 — Restrict Builder rework to accepted Reviewer findings
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
@@ -135,3 +135,7 @@ No external/cloud cost; approved coding profile remains unchanged.
 - Unauthorized dependency/task/ADR mutation fixtures.
 - Multi-round ledger continuity and bounded retry tests.
 - LocalStack verification: N/A.
+
+## Completion summary
+
+Implemented RepairPacket/v1 and RepairManifest/v1 with open-Builder-finding purity, safe POSIX glob scope, exact repair-delta mapping, commit continuity, re-review evidence handoff, and fail-closed restart behavior. Independent review resolved five findings and passed. 97 Orchestrator tests and full harness passed. No product, tenant, cloud, or LocalStack impact.
