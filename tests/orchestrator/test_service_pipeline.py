@@ -151,6 +151,7 @@ def write_completion_entry_gate(root: Path, task_id: str = "TASK-0100") -> None:
     }
     for name, payload in artifacts.items():
         (evidence_root / name).write_text(json.dumps(payload), encoding="utf-8")
+    (root / "verification.log").write_text("PASS", encoding="utf-8")
     prefix = f".commerceos/orchestrator/commerceos/evidence/{task_id}"
     (evidence_root / "completion-entry-gate.json").write_text(
         json.dumps({
@@ -195,18 +196,22 @@ def reviewer_environment_failure() -> ReviewResult:
 
 class PipelineTests(unittest.TestCase):
     def test_malformed_resumed_evidence_is_blocked_before_integration(self):
-        for artifact in ("builder.json", "verification.json", "review.json"):
+        for artifact in (
+            "builder.json", "verification.json", "review.json", "builder-blocked",
+            "missing-log",
+        ):
             with self.subTest(artifact=artifact), tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
                 write_completion_entry_gate(root)
-                path = root / f".commerceos/orchestrator/commerceos/evidence/TASK-0100/{artifact}"
+                filename = artifact if artifact.endswith(".json") else "builder.json"
+                path = root / f".commerceos/orchestrator/commerceos/evidence/TASK-0100/{filename}"
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 if artifact == "builder.json":
                     payload.pop("contractVersion")
                 elif artifact == "verification.json":
                     payload["testTotals"]["failed"] = 1
-                else:
+                elif artifact == "review.json":
                     payload["findings"] = [{
                         "findingId": "F-001", "status": "OPEN", "severity": "HIGH",
                         "owner": "BUILDER", "route": "BUILDER_FIX", "title": "blocking",
@@ -215,7 +220,18 @@ class PipelineTests(unittest.TestCase):
                         ],
                         "affectedPaths": ["x"], "acceptanceCondition": "must close",
                     }]
-                path.write_text(json.dumps(payload), encoding="utf-8")
+                elif artifact == "builder-blocked":
+                    payload["acceptanceCriteria"] = [{
+                        "acId": "AC01", "verdict": "BLOCKED", "evidenceIds": ["blocked"]
+                    }]
+                    gate_path = path.parent / "completion-entry-gate.json"
+                    gate_payload = json.loads(gate_path.read_text(encoding="utf-8"))
+                    gate_payload["acceptanceCriterionIds"] = ["AC01"]
+                    gate_path.write_text(json.dumps(gate_payload), encoding="utf-8")
+                else:
+                    (root / "verification.log").unlink()
+                if artifact != "missing-log":
+                    path.write_text(json.dumps(payload), encoding="utf-8")
                 state = RunStateStore(root / "state.db")
                 self.assertTrue(state.claim_task("TASK-0100"))
                 connection = sqlite3.connect(root / "state.db")

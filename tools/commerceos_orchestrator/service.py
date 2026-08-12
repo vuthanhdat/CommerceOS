@@ -263,7 +263,7 @@ class TaskOrchestrator:
         }:
             if resume:
                 try:
-                    self._rehydrate_completion_entry_gate(task)
+                    self._rehydrate_completion_entry_gate(task, workspace.path)
                 except (
                     CompletionContractError, EvidenceValidationError, ReviewLedgerError,
                     OSError, json.JSONDecodeError,
@@ -885,7 +885,7 @@ class TaskOrchestrator:
                 self.state.update_task(task.id, TaskExecutionState.INTEGRATING)
             integration_checkout_prepared = False
             try:
-                entry_gate = self._rehydrate_completion_entry_gate(task)
+                entry_gate = self._rehydrate_completion_entry_gate(task, worktree)
                 self.integration.prepare_main()
                 integration_checkout_prepared = True
                 already_remote = self.integration.branch_is_on_remote_main(branch)
@@ -1153,7 +1153,9 @@ class TaskOrchestrator:
             transaction.to_dict(),
         )
 
-    def _rehydrate_completion_entry_gate(self, task: CanonicalTask) -> CompletionEntryGate:
+    def _rehydrate_completion_entry_gate(
+        self, task: CanonicalTask, worktree: Path
+    ) -> CompletionEntryGate:
         relative = (
             Path(".commerceos/orchestrator") / task.catalog / "evidence" / task.id
             / "completion-entry-gate.json"
@@ -1179,6 +1181,8 @@ class TaskOrchestrator:
             expected_changed_files=gate.changed_files,
             expected_required_command_ids=gate.required_command_ids,
         )
+        if not manifest.all_satisfied:
+            raise EvidenceValidationError("Builder manifest has unsatisfied acceptance criteria")
         report = VerificationReport.from_dict(report_payload)
         if report.task_id != task.id:
             raise EvidenceValidationError("Verification report taskId mismatch")
@@ -1186,6 +1190,22 @@ class TaskOrchestrator:
             expected_commands=self.verification.expected_commands(manifest.additional_commands),
             expected_commit_sha=gate.task_commit_sha,
         )
+        allowed_roots = (self.root.resolve(), worktree.resolve())
+        for result in report.command_results:
+            raw_log = Path(result.log_artifact)
+            candidates = (raw_log.resolve(),) if raw_log.is_absolute() else tuple(
+                (root / raw_log).resolve() for root in allowed_roots
+            )
+            if not any(
+                candidate.is_file()
+                and any(
+                    candidate == root or root in candidate.parents for root in allowed_roots
+                )
+                for candidate in candidates
+            ):
+                raise EvidenceValidationError(
+                    f"Verification report references a missing command log: {result.log_artifact}"
+                )
         ledger = ReviewLedger.from_dict(
             ledger_payload,
             expected_task_id=task.id,
