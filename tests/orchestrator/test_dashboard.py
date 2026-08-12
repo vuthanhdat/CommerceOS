@@ -52,6 +52,11 @@ class DashboardTests(unittest.TestCase):
                 self.assertIn("Sandbox", html)
                 self.assertIn("danger-full-access", html)
                 self.assertIn("Reviewer is always read-only.", html)
+                self.assertIn("Planning candidate:", html)
+                self.assertIn("Use Run or Start to launch Planner.", html)
+                self.assertIn(".dag-panel{min-width:0;max-width:100%;overflow:hidden}", html)
+                self.assertIn("#dag{min-width:0;max-width:100%;overflow-x:auto", html)
+                self.assertIn("overflow-wrap:anywhere", html)
                 self.assertIn("X-CommerceOS-Dashboard", html)
                 self.assertIn("window.confirm", html)
                 with urlopen(server.url + "api/status", timeout=2) as response:
@@ -163,6 +168,17 @@ class DashboardTests(unittest.TestCase):
                 def plan(self):
                     return [snapshot.tasks["TASK-0100"]]
 
+                def plan_report(self):
+                    return {
+                        "dispatchable": [],
+                        "planning_candidate": {
+                            "task": "TASK-0101",
+                            "maturity": "Refined",
+                            "gates": [],
+                        },
+                        "next_action": "Run or Start launches Backlog Planner for this candidate.",
+                    }
+
                 def dry_run(self):
                     return {"dispatchable": ["TASK-0100"]}
 
@@ -172,7 +188,8 @@ class DashboardTests(unittest.TestCase):
             dry_run, dry_status = runtime.execute("dry-run")
             self.assertEqual(validate_status, HTTPStatus.OK)
             self.assertTrue(validated["valid"])
-            self.assertEqual(planned["dispatchable"], ["TASK-0100"])
+            self.assertEqual(planned["dispatchable"], [])
+            self.assertEqual(planned["planning_candidate"]["task"], "TASK-0101")
             self.assertEqual(plan_status, HTTPStatus.OK)
             self.assertEqual(dry_run["result"]["dispatchable"], ["TASK-0100"])
             self.assertEqual(dry_status, HTTPStatus.OK)

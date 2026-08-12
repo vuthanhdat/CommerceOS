@@ -202,8 +202,13 @@ class RuntimeController:
             return {"action": action, "valid": True, "tasks": len(snapshot.tasks),
                     "ready_frontier": [task.id for task in ready]}, HTTPStatus.OK
         if action == "plan":
-            return {"action": action,
-                    "dispatchable": [task.id for task in self.orchestrator.plan()]}, HTTPStatus.OK
+            report = getattr(self.orchestrator, "plan_report", None)
+            result = (
+                report()
+                if report is not None
+                else {"dispatchable": [task.id for task in self.orchestrator.plan()]}
+            )
+            return {"action": action, **result}, HTTPStatus.OK
         if action == "dry-run":
             return {"action": action, "result": self.orchestrator.dry_run()}, HTTPStatus.OK
         if action in {"run", "start"}:

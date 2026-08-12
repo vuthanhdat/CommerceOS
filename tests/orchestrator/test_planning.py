@@ -12,6 +12,7 @@ from commerceos_orchestrator.planning import (
     CodexPlanningAgentRunner,
     FakePlanningAgentRunner,
     PlanningCoordinator,
+    PlanningAwareTaskOrchestrator,
     PlanningOutcome,
 )
 from commerceos_orchestrator.state import RunStateStore
@@ -280,6 +281,37 @@ class PlanningCoordinatorTests(unittest.TestCase):
             PlanningCoordinator._planner_marker(raw),
             "HUMAN_REQUIRED",
         )
+
+    def test_plan_report_names_refined_candidate_without_dispatching_builder(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(
+                root,
+                [row("TASK-0100", maturity="Refined")],
+                ready=[],
+                metadata={"TASK-0100": ""},
+            )
+            state = RunStateStore(root / "state.db")
+            coordinator = PlanningCoordinator(
+                root,
+                state,
+                FakePlanningAgentRunner(),
+                FakeVerificationRunner(),
+            )
+
+            class Delegate:
+                def validate(self):
+                    return BacklogReader(root).load()
+
+                def plan(self):
+                    return []
+
+            report = PlanningAwareTaskOrchestrator(Delegate(), coordinator).plan_report()
+
+            self.assertEqual(report["dispatchable"], [])
+            self.assertEqual(report["planning_candidate"]["task"], "TASK-0100")
+            self.assertEqual(report["planning_candidate"]["maturity"], "Refined")
+            self.assertIn("Run or Start", report["next_action"])
 
     def test_planning_codex_execution_boundary_is_sol_medium_standard(self):
         with tempfile.TemporaryDirectory() as td:

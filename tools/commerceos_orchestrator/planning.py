@@ -625,29 +625,40 @@ class PlanningAwareTaskOrchestrator:
     def __getattr__(self, name):
         return getattr(self.delegate, name)
 
+    def _planning_candidate_payload(self) -> dict[str, object]:
+        decision = self.planning.preview(self.delegate.validate())
+        agent_runner = getattr(self.planning.runner, "runner", None)
+        profile = getattr(agent_runner, "profile", PLANNING_CODEX_PROFILE)
+        return {
+            "task": decision.task_id,
+            "maturity": decision.maturity,
+            "gates": list(decision.gates),
+            "provider": (
+                getattr(agent_runner, "PROVIDER", "codex") if decision.task_id else None
+            ),
+            "model": profile.model if decision.task_id else None,
+            "reasoning_effort": profile.reasoning_effort if decision.task_id else None,
+            "service_tier": profile.service_tier if decision.task_id else None,
+        }
+
+    def plan_report(self) -> dict[str, object]:
+        """Read-only operator preview for Builder dispatch and planning work."""
+        dispatchable = [task.id for task in self.delegate.plan()]
+        value: dict[str, object] = {"dispatchable": dispatchable}
+        if not dispatchable:
+            candidate = self._planning_candidate_payload()
+            value["planning_candidate"] = candidate
+            value["next_action"] = (
+                "Run or Start launches Backlog Planner for this candidate."
+                if candidate["task"]
+                else "No dependency-satisfied planning candidate is available."
+            )
+        return value
+
     def dry_run(self) -> dict[str, object]:
         value = dict(self.delegate.dry_run())
         if not value.get("dispatchable"):
-            decision = self.planning.preview(self.delegate.validate())
-            agent_runner = getattr(self.planning.runner, "runner", None)
-            profile = getattr(agent_runner, "profile", PLANNING_CODEX_PROFILE)
-            value["planning_candidate"] = {
-                "task": decision.task_id,
-                "maturity": decision.maturity,
-                "gates": list(decision.gates),
-                "provider": getattr(agent_runner, "PROVIDER", "codex") if decision.task_id else None,
-                "model": profile.model if decision.task_id else None,
-                "reasoning_effort": (
-                    profile.reasoning_effort
-                    if decision.task_id
-                    else None
-                ),
-                "service_tier": (
-                    profile.service_tier
-                    if decision.task_id
-                    else None
-                ),
-            }
+            value["planning_candidate"] = self._planning_candidate_payload()
         return value
 
     def run(self, *, resume: bool = False) -> None:

@@ -224,7 +224,7 @@ def main() -> int:
             )
             return 0
         if args.command == "plan":
-            print_json({"dispatchable": [task.id for task in orchestrator.plan()]})
+            print_json(orchestrator.plan_report())
             return 0
         if args.command == "dry-run":
             print_json(orchestrator.dry_run())

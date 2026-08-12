@@ -47,8 +47,23 @@ class StateAndSchedulerTests(unittest.TestCase):
             decision = Scheduler(state, max_builders=2).plan(snap)
             self.assertEqual([t.id for t in decision.dispatchable], ["TASK-0101"])
             state.reset_retryable_terminal_runs()
+            self.assertEqual(state.control_state(), OrchestratorState.RUNNING)
             decision = Scheduler(state, max_builders=2).plan(snap)
             self.assertEqual([t.id for t in decision.dispatchable], ["TASK-0100", "TASK-0101"])
+
+    def test_retry_reset_clears_stale_human_required_control_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = RunStateStore(Path(td) / "state.db")
+            state.clear_stop_and_run()
+            state.claim_task("TASK-0100")
+            state.update_task(
+                "TASK-0100", TaskExecutionState.HUMAN_REQUIRED, blocker_code="TEST"
+            )
+            state.set_control_state(OrchestratorState.HUMAN_REQUIRED)
+
+            self.assertEqual(state.reset_retryable_terminal_runs(), ["TASK-0100"])
+            self.assertEqual(state.control_state(), OrchestratorState.IDLE)
+            self.assertEqual(state.blocked_task_runs(), [])
 
     def test_exclusive_resources_prevent_parallel_selection(self):
         with tempfile.TemporaryDirectory() as td:

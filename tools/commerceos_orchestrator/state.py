@@ -173,6 +173,7 @@ class RunStateStore:
         recomputed from the repository after the reset. Completed evidence is never reset.
         """
         now = utc_now()
+        control_reset = False
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -188,8 +189,28 @@ class RunStateStore:
                 connection.executemany(
                     "DELETE FROM task_runs WHERE task_id = ?", [(task_id,) for task_id in ids]
                 )
+            remaining = connection.execute(
+                """
+                SELECT COUNT(*) FROM task_runs
+                WHERE execution_state IN (
+                    'PLANNING_REQUIRED', 'ORCHESTRATOR_ACTION_REQUIRED',
+                    'BLOCKED', 'HUMAN_REQUIRED'
+                )
+                """
+            ).fetchone()[0]
+            current = connection.execute(
+                "SELECT state FROM control_state WHERE id = 1"
+            ).fetchone()[0]
+            if current == OrchestratorState.HUMAN_REQUIRED.value and remaining == 0:
+                connection.execute(
+                    "UPDATE control_state SET state = ?, updated_at = ? WHERE id = 1",
+                    (OrchestratorState.IDLE.value, now),
+                )
+                control_reset = True
         for task_id in ids:
             self.add_event(task_id, "RETRY_RESET", "explicit operator resume cleared local blocker")
+        if control_reset:
+            self.add_event(None, "CONTROL", OrchestratorState.IDLE.value)
         return ids
 
     def blocked_task_runs(self) -> list[TaskRun]:
