@@ -97,6 +97,7 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             "acceptanceCriteria": [],
             "changedFiles": ["x"],
             "requiredCommandIds": ["task-verification"],
+            "additionalCommands": [],
             "limitations": [],
             "followUps": [],
         }

@@ -346,6 +346,7 @@ class TaskOrchestrator:
                 workspace.path,
                 phase=f"builder-{fix_round}",
                 commit_sha=commit_sha,
+                additional_commands=manifest.additional_commands,
             )
             if not isinstance(verification.report, VerificationReport):
                 self._block(
@@ -362,10 +363,22 @@ class TaskOrchestrator:
                     "Verification report task/commit binding mismatch",
                 )
                 return
+            if any(
+                not Path(result.log_artifact).is_file()
+                for result in report.command_results
+            ):
+                self._block(
+                    task,
+                    "INVALID_VERIFICATION_REPORT",
+                    "Verification report references a missing command log artifact",
+                )
+                return
             if verification.success:
                 try:
                     report.validate(
-                        expected_command_ids=tuple(self.verification.required_command_ids),
+                        expected_commands=self.verification.expected_commands(
+                            manifest.additional_commands
+                        ),
                         expected_commit_sha=commit_sha,
                     )
                 except EvidenceValidationError as exc:

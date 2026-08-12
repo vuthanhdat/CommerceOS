@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 from helpers import row, write_backlog
-from commerceos_orchestrator.backlog import BacklogReader, BacklogValidationError, BacklogWriter
+from commerceos_orchestrator.backlog import (
+    BacklogReader,
+    BacklogValidationError,
+    BacklogWriter,
+    _atomic_write_text,
+    _read_text,
+)
 from commerceos_orchestrator.yaml_subset import parse_document, parse_inline_sequence
 
 
@@ -20,6 +27,33 @@ class YamlSubsetTests(unittest.TestCase):
 
 
 class BacklogReaderTests(unittest.TestCase):
+    def test_atomic_canonical_write_never_exposes_partial_document(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "BACKLOG.v2.yaml"
+            documents = (
+                "schema_version: 1\ntask_fields:\n  - id\nmarker: alpha\n",
+                "schema_version: 1\ntask_fields:\n  - id\nmarker: beta\n",
+            )
+            _atomic_write_text(path, documents[0])
+            observed: list[str] = []
+            finished = threading.Event()
+
+            def read_while_writing() -> None:
+                while not finished.is_set():
+                    observed.append(_read_text(path))
+
+            reader = threading.Thread(target=read_while_writing)
+            reader.start()
+            try:
+                for index in range(100):
+                    _atomic_write_text(path, documents[index % 2])
+            finally:
+                finished.set()
+                reader.join()
+
+            self.assertTrue(observed)
+            self.assertTrue(set(observed).issubset(set(documents)))
+
     def test_named_catalogs_are_strictly_filtered(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

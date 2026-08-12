@@ -24,6 +24,12 @@ class AcceptanceCriterionVerdict:
 
 
 @dataclass(frozen=True)
+class AdditionalVerificationCommand:
+    command_id: str
+    argv: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class BuilderResultManifest:
     contract_version: str
     task_id: str
@@ -31,6 +37,7 @@ class BuilderResultManifest:
     acceptance_criteria: tuple[AcceptanceCriterionVerdict, ...]
     changed_files: tuple[str, ...]
     required_command_ids: tuple[str, ...]
+    additional_commands: tuple[AdditionalVerificationCommand, ...]
     limitations: tuple[str, ...]
     follow_ups: tuple[str, ...]
 
@@ -52,6 +59,7 @@ class BuilderResultManifest:
             "acceptanceCriteria",
             "changedFiles",
             "requiredCommandIds",
+            "additionalCommands",
             "limitations",
             "followUps",
         )
@@ -91,6 +99,28 @@ class BuilderResultManifest:
         _require_exact_unique_ids(
             "required command IDs", command_ids, expected_required_command_ids
         )
+        additional_rows = _required_list(values["additionalCommands"], "additionalCommands")
+        additional_commands: list[AdditionalVerificationCommand] = []
+        for index, row in enumerate(additional_rows):
+            item = _required_object(
+                row, ("commandId", "argv"), f"additionalCommands[{index}]"
+            )
+            command_id = _required_string(
+                item["commandId"], f"additionalCommands[{index}].commandId"
+            )
+            if not re.fullmatch(r"additional-[a-z0-9-]+", command_id):
+                raise EvidenceValidationError(
+                    "additional commandId must match additional-[a-z0-9-]+"
+                )
+            argv = _string_tuple(
+                item["argv"], f"additionalCommands[{index}].argv", allow_empty=False
+            )
+            additional_commands.append(AdditionalVerificationCommand(command_id, argv))
+        additional_ids = tuple(command.command_id for command in additional_commands)
+        if len(additional_ids) != len(set(additional_ids)):
+            raise EvidenceValidationError("additionalCommands contains duplicate command IDs")
+        if set(additional_ids) & set(command_ids):
+            raise EvidenceValidationError("additional command IDs overlap required command IDs")
         limitations = _string_tuple(values["limitations"], "limitations")
         follow_ups = _string_tuple(values["followUps"], "followUps")
         return cls(
@@ -100,6 +130,7 @@ class BuilderResultManifest:
             tuple(verdicts),
             changed_files,
             command_ids,
+            tuple(additional_commands),
             limitations,
             follow_ups,
         )
@@ -123,6 +154,10 @@ class BuilderResultManifest:
             ],
             "changedFiles": list(self.changed_files),
             "requiredCommandIds": list(self.required_command_ids),
+            "additionalCommands": [
+                {"commandId": command.command_id, "argv": list(command.argv)}
+                for command in self.additional_commands
+            ],
             "limitations": list(self.limitations),
             "followUps": list(self.follow_ups),
         }
@@ -154,14 +189,28 @@ class VerificationReport:
     success: bool
 
     def validate(
-        self, *, expected_command_ids: tuple[str, ...], expected_commit_sha: str
+        self,
+        *,
+        expected_commands: dict[str, tuple[str, ...]],
+        expected_commit_sha: str,
     ) -> None:
         if self.contract_version != VERIFICATION_REPORT_VERSION:
             raise EvidenceValidationError("unsupported Verification report contractVersion")
         if self.task_commit_sha != expected_commit_sha:
             raise EvidenceValidationError("Verification report taskCommitSha mismatch")
         ids = tuple(result.command_id for result in self.command_results)
-        _require_exact_unique_ids("verification command results", ids, expected_command_ids)
+        _require_exact_unique_ids(
+            "verification command results", ids, tuple(expected_commands)
+        )
+        for result in self.command_results:
+            if result.argv != expected_commands[result.command_id]:
+                raise EvidenceValidationError(
+                    f"verification argv mismatch for {result.command_id}"
+                )
+            if not result.log_artifact.strip():
+                raise EvidenceValidationError(
+                    f"verification log artifact missing for {result.command_id}"
+                )
         if any(result.exit_code != 0 for result in self.command_results):
             raise EvidenceValidationError("required verification command failed")
         totals = self.test_totals

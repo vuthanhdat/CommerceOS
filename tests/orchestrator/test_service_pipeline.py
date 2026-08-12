@@ -149,6 +149,52 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(verify.calls, [])
             self.assertEqual(agents.reviewer_calls, 0)
 
+    def test_builder_declared_additional_command_is_executed_and_reported(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            evidence = {
+                "contractVersion": "BuilderResultManifest/v1",
+                "taskId": "TASK-0100",
+                "taskCommitSha": "abc",
+                "acceptanceCriteria": [],
+                "changedFiles": ["x"],
+                "requiredCommandIds": ["task-verification"],
+                "additionalCommands": [
+                    {
+                        "commandId": "additional-unit",
+                        "argv": ["python", "-m", "unittest", "tests.example"],
+                    }
+                ],
+                "limitations": [],
+                "followUps": [],
+            }
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner(
+                builder_results=[AgentResult(True, 0, "", "", "", evidence=evidence)],
+                review_results=[review(True, "REVIEW_RESULT: PASS")],
+            )
+            verify = FakeVerificationRunner([True, True, True])
+            orch = TaskOrchestrator(
+                root,
+                state,
+                agents,
+                verify,
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            orch.run()
+            self.assertEqual(
+                verify.command_calls[0], ("task-verification", "additional-unit")
+            )
+            report_path = root / agents.review_calls[0]["verification_report_path"]
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                {result["commandId"] for result in report["commandResults"]},
+                {"task-verification", "additional-unit"},
+            )
+
     def test_verification_failure_enters_bounded_fix_loop(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

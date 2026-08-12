@@ -27,6 +27,7 @@ def manifest_payload() -> dict[str, object]:
         ],
         "changedFiles": ["tools/a.py", "tests/test_a.py"],
         "requiredCommandIds": ["task-verification"],
+        "additionalCommands": [],
         "limitations": [],
         "followUps": [],
     }
@@ -91,6 +92,21 @@ class BuilderEvidenceTests(unittest.TestCase):
         with self.assertRaises(EvidenceValidationError):
             parse(commands)
 
+    def test_additional_commands_are_versioned_and_have_unique_ids(self):
+        payload = manifest_payload()
+        payload["additionalCommands"] = [
+            {
+                "commandId": "additional-evidence-tests",
+                "argv": ["python", "-m", "unittest", "tests.orchestrator.test_evidence"],
+            }
+        ]
+        manifest = parse(payload)
+        self.assertEqual(manifest.additional_commands[0].command_id, "additional-evidence-tests")
+        duplicate = manifest_payload()
+        duplicate["additionalCommands"] = [payload["additionalCommands"][0]] * 2
+        with self.assertRaises(EvidenceValidationError):
+            parse(duplicate)
+
     def test_acceptance_ids_are_read_from_machine_checkable_headings(self):
         with tempfile.TemporaryDirectory() as td:
             spec = Path(td) / "task.md"
@@ -115,7 +131,10 @@ class VerificationEvidenceTests(unittest.TestCase):
 
     def test_full_pass_is_accepted(self):
         self.report(TestTotals(7, 7, 0, 0)).validate(
-            expected_command_ids=("task-verification",), expected_commit_sha="abc123"
+            expected_commands={
+                "task-verification": ("python", "scripts/task_verification.py")
+            },
+            expected_commit_sha="abc123",
         )
 
     def test_failure_skip_stale_and_missing_command_are_rejected(self):
@@ -134,6 +153,33 @@ class VerificationEvidenceTests(unittest.TestCase):
                 VERIFICATION_REPORT_VERSION,
                 "TASK-0170",
                 "abc123",
+                (
+                    VerificationCommandResult(
+                        "task-verification", ("wrong",), 0, "log"
+                    ),
+                ),
+                TestTotals(1, 1, 0, 0),
+                True,
+            ),
+            VerificationReport(
+                VERIFICATION_REPORT_VERSION,
+                "TASK-0170",
+                "abc123",
+                (
+                    VerificationCommandResult(
+                        "task-verification",
+                        ("python", "scripts/task_verification.py"),
+                        0,
+                        "",
+                    ),
+                ),
+                TestTotals(1, 1, 0, 0),
+                True,
+            ),
+            VerificationReport(
+                VERIFICATION_REPORT_VERSION,
+                "TASK-0170",
+                "abc123",
                 (),
                 TestTotals(1, 1, 0, 0),
                 True,
@@ -143,7 +189,9 @@ class VerificationEvidenceTests(unittest.TestCase):
             with self.subTest(report=report):
                 with self.assertRaises(EvidenceValidationError):
                     report.validate(
-                        expected_command_ids=("task-verification",),
+                        expected_commands={
+                            "task-verification": ("python", "scripts/task_verification.py")
+                        },
                         expected_commit_sha="abc123",
                     )
 

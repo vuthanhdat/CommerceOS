@@ -231,6 +231,12 @@ required failure, required skip, stale commit, missing/duplicate AC, or changed-
 prevents Reviewer dispatch. Reviewer receives paths to the validated manifest and report; it does
 not create evidence or inspect completion bookkeeping.
 
+The manifest may declare additional commands with stable `additional-*` IDs. They are executed
+without a shell only when their argv matches the repository allow-list (bounded Python test/script,
+`dotnet test`, or npm test/run forms). Every required and accepted additional command receives one
+argv/exit/log-bound report row. Test totals are derived from recognized test-runner output; zero
+parseable required tests fails closed rather than fabricating a pass.
+
 The automated implementation happy path is:
 
 ```text

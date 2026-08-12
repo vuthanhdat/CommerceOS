@@ -467,8 +467,10 @@ Before finishing, commit all implementation changes. Then obtain the exact task 
 `git rev-parse HEAD` and the exact changed-file list with `git diff --name-only origin/main...HEAD`.
 Your final agent message must contain exactly one compact JSON object on a line prefixed by
 `BUILDER_RESULT_JSON:`. Use this schema:
-{{"contractVersion":"BuilderResultManifest/v1","taskId":"{task.id}","taskCommitSha":"<sha>","acceptanceCriteria":[{{"acId":"AC01","verdict":"SATISFIED|BLOCKED","evidenceIds":["<id>"]}}],"changedFiles":["path"],"requiredCommandIds":["task-verification"],"limitations":[],"followUps":[]}}
+{{"contractVersion":"BuilderResultManifest/v1","taskId":"{task.id}","taskCommitSha":"<sha>","acceptanceCriteria":[{{"acId":"AC01","verdict":"SATISFIED|BLOCKED","evidenceIds":["<id>"]}}],"changedFiles":["path"],"requiredCommandIds":["task-verification"],"additionalCommands":[],"limitations":[],"followUps":[]}}
 Include every AC ID from the Ready task exactly once and every Git-changed path exactly once.
+Additional commands are optional; when needed, use objects shaped as
+{{"commandId":"additional-short-name","argv":["python","-m","unittest","..."]}}.
 The Orchestrator validates this untrusted manifest against the task, Git, and its trusted command
 policy, then runs deterministic verification and independent review.
 """
@@ -624,6 +626,7 @@ class FakeAgentRunner:
                     ],
                     "changedFiles": ["x"],
                     "requiredCommandIds": ["task-verification"],
+                    "additionalCommands": [],
                     "limitations": [],
                     "followUps": [],
                 },

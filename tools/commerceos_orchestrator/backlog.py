@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
+import tempfile
+import time
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
@@ -10,6 +13,47 @@ from .yaml_subset import parse_document, parse_inline_sequence, render_inline_se
 
 class BacklogValidationError(ValueError):
     pass
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace a canonical backlog file without exposing a partial document."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        for attempt in range(100):
+            try:
+                os.replace(temporary_path, path)
+                break
+            except PermissionError:
+                if attempt == 99:
+                    raise
+                # Windows can briefly deny replacement while another process has
+                # the old file open for reading. Retrying still exposes only the
+                # complete old or complete new document.
+                time.sleep(0.005)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _read_text(path: Path) -> str:
+    """Read through the brief Windows sharing window of an atomic replace."""
+    for attempt in range(100):
+        try:
+            return path.read_text(encoding="utf-8")
+        except PermissionError:
+            if attempt == 99:
+                raise
+            time.sleep(0.005)
+    raise AssertionError("unreachable")
 
 
 def _repo_path(root: Path, raw: str, *, label: str, roots: tuple[str, ...]) -> Path:
@@ -60,7 +104,7 @@ class BacklogReader:
         master_path = self.root / self.MASTER_PATH
         if not master_path.is_file():
             raise BacklogValidationError(f"missing canonical backlog: {self.MASTER_PATH}")
-        master = parse_document(master_path.read_text(encoding="utf-8"))
+        master = parse_document(_read_text(master_path))
         fields = self._string_list(master.get("task_fields"), "task_fields", required=True)
         shards = self._string_list(master.get("task_shards"), "task_shards", required=True)
         defaults = master.get("task_defaults") or {}
@@ -78,7 +122,7 @@ class BacklogReader:
             )
             if not shard_path.is_file():
                 raise BacklogValidationError(f"missing backlog shard: {shard_name}")
-            rows = parse_document(shard_path.read_text(encoding="utf-8")).get("tasks")
+            rows = parse_document(_read_text(shard_path)).get("tasks")
             if not isinstance(rows, list):
                 raise BacklogValidationError(f"{shard_name}: tasks must be a list")
             for row in rows:
@@ -276,7 +320,7 @@ class BacklogWriter:
         completed_relative = str(completed_root / source.name)
         destination = self.root / completed_relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        text = source.read_text(encoding="utf-8")
+        text = _read_text(source)
         text = re.sub(r"^Status:\s*.*$", "Status: Completed", text, count=1, flags=re.MULTILINE)
         text = re.sub(
             r"^Specification maturity:\s*.*$",
@@ -294,7 +338,7 @@ class BacklogWriter:
         )
         if "## Completion summary" not in text:
             text = text.rstrip() + "\n\n## Completion summary\n\n" + completion_summary.strip() + "\n"
-        destination.write_text(text, encoding="utf-8")
+        _atomic_write_text(destination, text)
 
         # Preserve a valid canonical snapshot at every observable step: create the
         # new spec, repoint shard, update lifecycle/frontier, then remove old spec.
@@ -311,20 +355,20 @@ class BacklogWriter:
             label=f"{task.id} shard_path",
             roots=BacklogReader.SHARD_ROOTS,
         )
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = _read_text(path).splitlines()
         for index, line in enumerate(lines):
             if line.lstrip().startswith("- [") and task.id in line:
                 prefix = line[: len(line) - len(line.lstrip())]
                 row = parse_inline_sequence(line.strip()[2:].strip())
                 row[-1] = completed_relative
                 lines[index] = f"{prefix}- {render_inline_sequence(row)}"
-                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                _atomic_write_text(path, "\n".join(lines) + "\n")
                 return
         raise BacklogValidationError(f"{task.id}: canonical shard row not found")
 
     def _update_master(self, snapshot: BacklogSnapshot, completed_task_id: str) -> None:
         path = self.root / BacklogReader.MASTER_PATH
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = _read_text(path).splitlines()
         block = next(
             (index for index, line in enumerate(lines) if line == f"  {completed_task_id}:"),
             None,
@@ -357,4 +401,4 @@ class BacklogWriter:
         while end < len(lines) and lines[end].startswith("  - "):
             end += 1
         lines[start:end] = ["ready_frontier:", *[f"  - {task_id}" for task_id in ready]]
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _atomic_write_text(path, "\n".join(lines) + "\n")
