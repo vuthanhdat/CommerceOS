@@ -171,6 +171,6 @@ Chosen: Option D.
 
 ## References
 
-- relevant task: [TASK-0088](../../tasks/completed/TASK-0088-technical-architecture-baseline-reconciliation.md)
+- relevant task: [TASK-0088](../../tasks/commerceos/completed/TASK-0088-technical-architecture-baseline-reconciliation.md)
 - architecture docs: [First-frontier contracts and trusted context](../architecture/first-frontier-contracts.md), [Technical baseline](../architecture/technical-baseline.md), [Persistence access patterns](../architecture/persistence-access-patterns.md)
 - related ADRs: [ADR-004](ADR-004-trusted-tenant-authority-and-authorization-boundary.md), [ADR-005](ADR-005-dynamodb-module-ownership-and-access-pattern-strategy.md), [ADR-006](ADR-006-reliable-cross-domain-integration-and-deferred-workflow-orchestration.md)

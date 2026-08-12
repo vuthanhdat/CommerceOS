@@ -13,6 +13,7 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - this role document
 - exactly one Ready/Active task
 - relevant domain/architecture docs and ADRs referenced by that task
+- `docs/development/17-review-scope-and-finding-ownership.md`
 
 ## Responsibilities
 
@@ -20,7 +21,11 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - add/update required tests and task-related documentation;
 - run repository verification and required cloud verification;
 - iterate on deterministic failures until checks pass;
-- record completion summary and remaining out-of-scope follow-ups.
+- record implementation evidence, acceptance-criterion results, and remaining out-of-scope
+  follow-ups in the Builder response or task-related notes; leave lifecycle bookkeeping to the
+  Orchestrator.
+- produce evidence mapped to each applicable acceptance criterion; unresolved domain/technical
+  decisions are routed to planning rather than guessed.
 
 ## Must not
 
@@ -30,6 +35,16 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - bypass tenant/security/reliability/cost guardrails;
 - modify unrelated code because it appears improvable;
 - review/approve its own work as the independent Reviewer.
+- move, copy, rename, or delete the task specification between a catalog's `backlog/`, `active/`,
+  and `completed/` directories;
+- edit a catalog `BACKLOG.md`, `tasks/BACKLOG.v2.yaml`, or a catalog `backlog-v2/` shard to change
+  lifecycle state, completed roots, task path, or ready frontier;
+- add a `## Completion summary` to claim lifecycle completion, mark a task `Completed`, or set
+  `Execution permission: NO`. Only the Orchestrator performs these operations after independent
+  review, integration, and post-bookkeeping verification.
+
+The Builder may update implementation documentation and may report completion evidence, but a
+task remains `Backlog`/`Ready` in the Builder worktree until the Orchestrator finalizes it.
 
 ## Stop conditions
 

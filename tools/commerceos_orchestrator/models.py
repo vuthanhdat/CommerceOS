@@ -53,6 +53,7 @@ class CanonicalTask:
     exclusive_resources: tuple[str, ...] = ()
     merge_policy: str = "verified_serial_main"
     shard_path: str = ""
+    catalog: str = "commerceos"
 
     @property
     def numeric_id(self) -> str:
@@ -78,6 +79,7 @@ class BacklogSnapshot:
     cloud_requires_explicit_gate: bool
     ready_frontier_declared: tuple[str, ...]
     shard_paths: tuple[str, ...]
+    catalog: str | None = None
     raw_master: dict[str, Any] = field(repr=False, default_factory=dict)
 
 

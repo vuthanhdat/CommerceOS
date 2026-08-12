@@ -82,7 +82,7 @@ Local harness-only change. Adds a live event/logging adapter, SSE read surface, 
 
 ## Security and tenant impact
 
-No tenant data model change. Live logs remain local under `.commerceos/orchestrator/` and are exposed only through the existing loopback-only dashboard. Prompt text remains excluded from command log output. Agent-generated output is treated as untrusted display data and rendered through text-only DOM APIs. Planning agents receive no real-cloud authorization, are scope-limited to planning paths, and must preserve unresolved human/security/cost/cloud gates.
+No tenant data model change. Live logs remain local under `.commerceos/orchestrator/orchestrator/` for this tooling catalog and are exposed only through the existing loopback-only dashboard. Prompt text remains excluded from command log output. Agent-generated output is treated as untrusted display data and rendered through text-only DOM APIs. Planning agents receive no real-cloud authorization, are scope-limited to planning paths, and must preserve unresolved human/security/cost/cloud gates.
 
 ## Reliability and idempotency impact
 

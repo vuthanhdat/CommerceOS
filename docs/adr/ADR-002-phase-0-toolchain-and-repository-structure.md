@@ -95,6 +95,6 @@ Frontend framework or CDK language changes would require rebuilding their respec
 
 ## References
 
-- relevant task: `../../tasks/active/TASK-0003-codebase-skeleton.md`
+- relevant task: `../../tasks/commerceos/completed/TASK-0003-codebase-skeleton.md`
 - architecture docs: `../03-serverless-architecture.md`, `../development/03-architecture-rules.md`, `../development/12-infrastructure-as-code.md`
 - external references: AWS Lambda .NET runtimes, Microsoft .NET support policy, AWS CDK C# guide

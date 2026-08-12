@@ -8,7 +8,7 @@ Read, in this order:
 
 1. `README.md`
 2. `docs/development/15-planning-factory-and-task-maturity.md`
-3. the active task under `tasks/active/` or the task explicitly named by the human
+3. the active task under `tasks/commerceos/active/` or `tasks/orchestrator/active/`, or the task explicitly named by the human
 4. the role contract under `docs/agents/`
 5. relevant product/domain documents
 6. `docs/development/03-architecture-rules.md`
@@ -20,7 +20,7 @@ Do not implement from the task title alone.
 
 ### Planning gate
 
-A file under `tasks/backlog/` is not evidence that it is implementation-ready.
+A file under either catalog's `backlog/` directory is not evidence that it is implementation-ready.
 
 ```text
 Outline -> Refined -> Ready -> Active -> Completed

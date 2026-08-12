@@ -51,6 +51,42 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         self.assertIn("git diff origin/main...HEAD", prompt)
         self.assertIn("untrusted evidence", prompt)
 
+    def test_reviewer_prompt_is_dod_centered_and_defers_bookkeeping(self):
+        prompt = CodexRunner._reviewer_prompt(
+            self._task(), review_context=".commerceos/orchestrator/review-context/TASK-0100.txt", final_review=True
+        )
+        self.assertIn("Definition of Done is the review authority", prompt)
+        self.assertIn("OUT OF REVIEW SCOPE", prompt)
+        self.assertIn("17-review-scope-and-finding-ownership.md", prompt)
+        self.assertIn("missing `Status: Completed`", prompt)
+        self.assertIn("stable IDs", prompt)
+        self.assertIn("OWNER: BUILDER", prompt)
+        self.assertIn("Domain/Technical findings route first", prompt)
+        self.assertIn("Unrelated observations must be FOLLOW_UP", prompt)
+        self.assertIn("FINDING F-001 STATUS", prompt)
+
+    def test_reviewer_bookkeeping_only_failure_is_normalized(self):
+        output = (
+            "MEDIUM — Required completion evidence is missing. The task remains under "
+            "tasks/backlog/ with Status: Backlog and no tasks/completed artifact. "
+            "REVIEW_RESULT: FIX_REQUIRED"
+        )
+        self.assertTrue(CodexRunner._only_reports_orchestrator_bookkeeping(output))
+
+    def test_reviewer_real_open_finding_is_not_normalized(self):
+        output = (
+            "FINDING F-001 STATUS: OPEN OWNER: BUILDER ROUTE: BUILDER_FIX "
+            "TITLE: broken behavior\nREVIEW_RESULT: FIX_REQUIRED"
+        )
+        self.assertFalse(CodexRunner._only_reports_orchestrator_bookkeeping(output))
+
+    def test_builder_prompt_keeps_lifecycle_bookkeeping_with_orchestrator(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            prompt = CodexRunner(root, root / "logs")._builder_prompt(self._task(), None)
+        self.assertIn("Do not move the task specification into `tasks/commerceos/completed/`", prompt)
+        self.assertIn("Task completion bookkeeping is owned by the", prompt)
+
     def test_role_profiles_are_pinned_to_human_approved_models(self):
         self.assertEqual(PLANNING_CODEX_PROFILE.model, "gpt-5.6-sol")
         self.assertEqual(PLANNING_CODEX_PROFILE.reasoning_effort, "medium")
@@ -78,6 +114,21 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self.assertIn("danger-full-access" if __import__("os").name == "nt" else "workspace-write", command)
             self.assertNotIn('service_tier="fast"', command)
             self.assertNotIn('service_tier="priority"', command)
+
+    def test_windows_reviewer_uses_compatible_process_sandbox(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runner = CodexRunner(root, root / "logs")
+            command = runner._build_command(
+                "codex",
+                worktree=root,
+                writable=False,
+                prompt="review prompt",
+            )
+            self.assertIn(
+                "danger-full-access" if __import__("os").name == "nt" else "read-only",
+                command,
+            )
 
     def test_codex_jsonl_is_published_before_process_wait_and_retained_in_audit_log(self):
         with tempfile.TemporaryDirectory() as td:
@@ -135,6 +186,14 @@ class CodexPromptBoundaryTests(unittest.TestCase):
 
     def test_windows_sandbox_failure_is_not_reported_as_success_when_codex_exits_zero(self):
         self.assertTrue(
+            CodexRunner._has_windows_sandbox_failure(
+                '{"type":"error","message":"CreateProcessAsUserW failed: 5"}',
+                "",
+            )
+        )
+
+    def test_nested_test_output_does_not_look_like_windows_sandbox_failure(self):
+        self.assertFalse(
             CodexRunner._has_windows_sandbox_failure(
                 '{"type":"item.completed","item":{"aggregated_output":"CreateProcessAsUserW failed: 5"}}',
                 "",

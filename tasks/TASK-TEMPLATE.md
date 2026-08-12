@@ -126,7 +126,9 @@ If a Builder discovers a material unresolved business/domain/architecture decisi
 
 ## Completion summary
 
-Fill before moving to `tasks/completed/`.
+The Builder may prepare evidence for this section, but must not move the task or edit canonical
+lifecycle indexes. The Orchestrator copies/finalizes this section only after independent review,
+integration, and post-bookkeeping verification.
 
 ### What changed
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import threading
 import time
@@ -13,6 +14,7 @@ from .models import (
     AgentResult,
     CanonicalTask,
     OrchestratorState,
+    ReviewResult,
     TaskExecutionState,
     TaskRun,
 )
@@ -20,6 +22,7 @@ from .scheduler import Scheduler
 from .state import RunStateStore
 from .verification import VerificationRunner
 from .workspace import GitIntegrationManager, GitWorkspaceManager, IntegrationError, WorkspaceError
+from .review_contract import FindingOwner, FindingRoute, next_hop, parse_review_findings
 
 
 @dataclass(frozen=True)
@@ -43,6 +46,7 @@ class TaskOrchestrator:
         workspace_manager: GitWorkspaceManager | None = None,
         integration_manager: GitIntegrationManager | None = None,
         config: OrchestratorConfig | None = None,
+        catalog: str = "commerceos",
     ):
         self.root = root.resolve()
         self.state = state_store
@@ -51,12 +55,14 @@ class TaskOrchestrator:
         self.workspace = workspace_manager or GitWorkspaceManager(self.root)
         self.integration = integration_manager or GitIntegrationManager(self.root)
         self.config = config or OrchestratorConfig()
+        self.catalog = catalog
+        self.backlog = BacklogReader(self.root, catalog)
         self.scheduler = Scheduler(self.state, max_builders=self.config.max_builders)
         self._merge_lock = threading.Lock()
         self._futures: dict[str, Future[None]] = {}
 
     def validate(self):
-        return BacklogReader(self.root).load()
+        return self.backlog.load()
 
     def plan(self) -> list[CanonicalTask]:
         snapshot = self.validate()
@@ -66,6 +72,7 @@ class TaskOrchestrator:
         snapshot = self.validate()
         decision = self.scheduler.plan(snapshot)
         return {
+            "catalog": self.catalog,
             "control_state": self.state.control_state().value,
             "dispatchable": [task.id for task in decision.dispatchable],
             "active_resources": sorted(decision.active_resources),
@@ -133,18 +140,10 @@ class TaskOrchestrator:
                         break
                     if task.id in self._futures:
                         continue
-                    if task.cloud_verification.lower() == "required" and not self.config.allow_cloud:
-                        if self.state.claim_task(task.id):
-                            self.state.update_task(
-                                task.id,
-                                TaskExecutionState.HUMAN_REQUIRED,
-                                blocker_code="CLOUD_EXECUTION_NOT_AUTHORIZED",
-                                blocker_detail=(
-                                    "task requires/permits real cloud verification; restart with explicit --allow-cloud "
-                                    "only after repository cloud gates are satisfied"
-                                ),
-                            )
-                        continue
+                    # ADR-012 makes LocalStack the only infrastructure target. The
+                    # backlog field cloud_verification describes whether infrastructure
+                    # verification is required; it is not authorization to use real AWS.
+                    # Do not block LocalStack tasks behind the legacy --allow-cloud flag.
                     if not self.state.claim_task(task.id):
                         continue
                     future = executor.submit(self._execute_task, task, False)
@@ -224,6 +223,7 @@ class TaskOrchestrator:
 
         run = self.state.task_run(task.id)
         feedback: str | None = None
+        review_context: str | None = None
         if resume and prior_run:
             feedback = f"Resume safely after interrupted local state {prior_run.execution_state.value}. Inspect existing worktree before editing."
 
@@ -246,6 +246,8 @@ class TaskOrchestrator:
             if not agent.success:
                 code = "EXTERNAL_ENVIRONMENT" if agent.marker == "ENVIRONMENT_UNAVAILABLE" else "BUILDER_FAILED"
                 self._block(task, code, agent.stderr or agent.stdout)
+                return
+            if not self._builder_left_task_open(task, workspace.path):
                 return
 
             self.state.update_task(task.id, TaskExecutionState.VERIFYING)
@@ -280,10 +282,67 @@ class TaskOrchestrator:
                 return
 
             self.state.update_task(task.id, TaskExecutionState.REVIEWING)
-            review = self.agent_runner.run_reviewer(task, workspace.path, diff=diff)
-            if review.passed:
+            review = self.agent_runner.run_reviewer(
+                task,
+                workspace.path,
+                diff=diff,
+                review_context=review_context,
+                final_review=fix_round == self.config.max_fix_attempts,
+            )
+            self.state.add_event(
+                task.id,
+                "REVIEW_LEDGER",
+                f"round={fix_round}; final={fix_round == self.config.max_fix_attempts}; "
+                + review.findings[-12000:],
+            )
+            review_passed = review.passed and not self._has_open_findings(review.findings)
+            if review.passed and not review_passed:
+                review = ReviewResult(
+                    False,
+                    review.findings
+                    + "\nOrchestrator rejected PASS because an explicit OPEN finding remains.",
+                    review.raw,
+                )
+            if review_passed:
                 self.state.update_task(task.id, TaskExecutionState.MERGE_QUEUED)
                 self._integrate(task, workspace.branch, workspace.path)
+                return
+
+            if review.raw.marker == "ENVIRONMENT_UNAVAILABLE":
+                self._block(
+                    task,
+                    "REVIEWER_ENVIRONMENT_UNAVAILABLE",
+                    "Reviewer could not start or access the task worktree; no code finding was established. "
+                    + review.findings[-20000:],
+                )
+                return
+
+            routed = tuple(
+                finding
+                for finding in parse_review_findings(review.findings)
+                if finding.status == "OPEN" and finding.owner != FindingOwner.BUILDER
+            )
+            if routed:
+                first = routed[0]
+                self.state.add_event(
+                    task.id,
+                    "REVIEW_ROUTED",
+                    "; ".join(
+                        f"{finding.finding_id} owner={finding.owner.value} route={finding.route.value}"
+                        for finding in routed
+                    ),
+                )
+                route_code = (
+                    "PLANNING_REQUIRED"
+                    if first.route == FindingRoute.PLANNING_REQUIRED
+                    else first.route.value
+                )
+                self._block(
+                    task,
+                    route_code,
+                    f"Review finding {first.finding_id} is owned by {first.owner.value}; "
+                    f"next hop: {next_hop(first)}. Do not dispatch Builder repair until that route resolves.",
+                )
                 return
 
             if fix_round >= self.config.max_fix_attempts:
@@ -295,7 +354,75 @@ class TaskOrchestrator:
                 )
                 return
             feedback = "Independent Reviewer findings:\n" + review.findings[-20000:]
+            review_context = self._write_review_context(task, workspace.path, review.findings)
             self.state.update_task(task.id, TaskExecutionState.FIX_REQUIRED)
+
+    @staticmethod
+    def _write_review_context(task: CanonicalTask, worktree: Path, findings: str) -> str:
+        """Persist the review ledger for the next bounded repair review.
+
+        The file is intentionally passed as untrusted evidence. It gives the next Reviewer
+        continuity without interpolating arbitrary review output into the controlling prompt.
+        """
+        relative = (
+            Path(".commerceos/orchestrator") / task.catalog / "review-context" / f"{task.id}.txt"
+        )
+        path = worktree / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(findings[-50000:], encoding="utf-8")
+        return relative.as_posix()
+
+    @staticmethod
+    def _has_open_findings(findings: str) -> bool:
+        return bool(re.search(r"FINDING\s+F-[0-9]+\s+STATUS:\s*OPEN\b", findings, flags=re.IGNORECASE))
+
+    def _builder_left_task_open(self, task: CanonicalTask, worktree: Path) -> bool:
+        """Reject premature task finalization before verification/review can proceed."""
+        spec_parts = Path(task.spec_path).parts
+        completed_root = (
+            worktree / "tasks" / task.catalog / "completed"
+            if len(spec_parts) >= 3 and spec_parts[1] in BacklogReader.CATALOGS
+            else worktree / "tasks" / "completed"
+        )
+        completed_spec = completed_root / Path(task.spec_path).name
+        if completed_spec.is_file():
+            try:
+                self.workspace.restore_task_lifecycle(task, worktree)
+            except (AttributeError, WorkspaceError) as exc:
+                self._block(task, "BUILDER_PREMATURE_COMPLETION", str(exc))
+                return False
+            self.state.add_event(
+                task.id,
+                "BUILDER_LIFECYCLE_RESTORED",
+                "discarded premature completion bookkeeping; implementation changes preserved",
+            )
+            return True
+        try:
+            snapshot = BacklogReader(worktree, self.catalog).load()
+        except Exception as exc:
+            self._block(
+                task,
+                "TASK_LIFECYCLE_CHECK_FAILED",
+                f"could not inspect task lifecycle after Builder exit: {exc!r}",
+            )
+            return False
+        current = snapshot.tasks.get(task.id)
+        if current is None:
+            self._block(task, "BUILDER_REMOVED_TASK", "task disappeared from the Builder worktree")
+            return False
+        if current.lifecycle_state == "Completed" or "/completed/" in current.spec_path:
+            try:
+                self.workspace.restore_task_lifecycle(task, worktree)
+            except (AttributeError, WorkspaceError) as exc:
+                self._block(task, "BUILDER_PREMATURE_COMPLETION", str(exc))
+                return False
+            self.state.add_event(
+                task.id,
+                "BUILDER_LIFECYCLE_RESTORED",
+                "discarded premature completion bookkeeping; implementation changes preserved",
+            )
+            return True
+        return True
 
     def _run_builder_with_capacity_retry(
         self,
@@ -391,7 +518,7 @@ class TaskOrchestrator:
                         self._block(task, "POST_INTEGRATION_VERIFICATION_FAILED", f"log={post_merge.log_path}")
                         return
 
-                    snapshot = BacklogReader(self.root).load()
+                    snapshot = BacklogReader(self.root, self.catalog).load()
                     merged_task = snapshot.tasks.get(task.id)
                     if not merged_task:
                         self.integration.rollback_unpushed_main()
@@ -410,7 +537,7 @@ class TaskOrchestrator:
                         return
                     self.integration.push_main()
                 else:
-                    snapshot = BacklogReader(self.root).load()
+                    snapshot = BacklogReader(self.root, self.catalog).load()
                     current_task = snapshot.tasks.get(task.id)
                     if current_task and current_task.lifecycle_state != "Completed":
                         summary = self._completion_summary(task)
@@ -429,7 +556,7 @@ class TaskOrchestrator:
 
                 self.state.update_task(task.id, TaskExecutionState.COMPLETED)
                 try:
-                    refreshed = BacklogReader(self.root).load()
+                    refreshed = BacklogReader(self.root, self.catalog).load()
                     completed_task = refreshed.tasks.get(task.id, task)
                     self.workspace.cleanup(completed_task)
                 except Exception as cleanup_error:

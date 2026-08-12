@@ -39,7 +39,8 @@ The local implementation intentionally stays small:
 - Server-Sent Events (SSE) for one-way live Codex activity streaming;
 - no Redis, RabbitMQ, Temporal, Kubernetes, remote worker fleet, network database, or AWS runtime service.
 
-Transient files are written under `.commerceos/orchestrator/` by default and must remain untracked.
+Transient files are written under `.commerceos/orchestrator/<catalog>/` by default and must
+remain untracked. CommerceOS and Orchestrator-tooling runs never share state or logs implicitly.
 
 ## 3. Commands
 
@@ -58,6 +59,20 @@ python tools/orchestrator.py resume
 python tools/orchestrator.py cleanup
 python tools/orchestrator.py ui
 ```
+
+Commands operate on the `commerceos` catalog by default. Use the tooling catalog explicitly:
+
+```bash
+python tools/orchestrator.py --catalog orchestrator validate
+python tools/orchestrator.py --catalog orchestrator start
+```
+
+Catalog contents are physically separated under `tasks/commerceos/` and
+`tasks/orchestrator/`; see `tasks/README.md`.
+
+The former `.commerceos/orchestrator/state.db` and sibling logs are legacy mixed-catalog
+diagnostics. They are not automatically deleted or imported; new runs use the selected
+catalog-specific directory so historical evidence remains recoverable.
 
 `plan` remains a **mechanical DAG/scheduler preview**; it does not consume an LLM. `dry-run` shows normal dispatchable work and, when none exists, the next dependency-satisfied Outline/Refined planning candidate plus its Sol profile. `run` and `start` execute Ready work first and invoke the Planning Factory only when normal scheduling becomes idle.
 
@@ -244,6 +259,12 @@ The tool fails closed to `HUMAN_REQUIRED` for conditions such as:
 - missing required external tooling.
 
 Explicit `resume` clears retryable local Blocked/Human Required claims; it does not silently change canonical gates or accepted semantics.
+
+Review findings use the shared contract in `17-review-scope-and-finding-ownership.md`. Builder
+findings return to the Builder repair loop. Domain, Technical, and Backlog Planner findings route
+first to the Backlog Planner, which owns planning convergence and the final Ready gate; the
+Orchestrator must not call an Architect directly. Orchestrator-owned findings go to the
+Orchestrator handler, and human-owned findings stop at the human decision gate.
 
 ## 12. Cloud safety
 
