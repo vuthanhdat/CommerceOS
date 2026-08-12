@@ -35,6 +35,7 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0179` — Make worktree creation resilient to transient origin fetch failures (`Ready`).
 
 
 
