@@ -22,7 +22,7 @@ Recently completed:
 
 ## Ready frontier
 
-No Orchestrator task is Ready until the TASK-0172/TASK-0173 planning gates complete.
+- `TASK-0172` — Restrict Builder rework to accepted Reviewer findings (`Ready`).
 
 ## Strict workflow boundary program
 
@@ -41,4 +41,5 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0171 is completed; TASK-0172 and TASK-0173 are the next planning candidates.
+TASK-0171 is completed; TASK-0172 passed its planning gate and TASK-0173 remains the next
+planning candidate.

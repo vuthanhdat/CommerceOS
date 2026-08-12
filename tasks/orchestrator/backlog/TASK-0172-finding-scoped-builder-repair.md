@@ -1,12 +1,40 @@
 # TASK-0172 — Restrict Builder rework to accepted Reviewer findings
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — waits for TASK-0171
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Engineering / Harness
+Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
-Depends on: TASK-0171
+Depends on: completed TASK-0171
 Cloud verification: No
+
+## Planning readiness
+
+- Owning domain: Engineering / Harness; product/domain/tenant decisions are N/A.
+- Contracts: `RepairPacket/v1` is Orchestrator-generated from validated open Builder findings;
+  `RepairManifest/v1` is Builder output validated against packet, reviewed baseline, repaired
+  commit, and Git repair delta.
+- Allowed-path semantics: each finding's validated `affectedPaths` entries are repository-relative
+  POSIX glob patterns (`*` does not cross `/`, `**` may); absolute/traversal patterns are invalid.
+- Dependency expansion: lock/manifest/project files, task specs/indexes, and `docs/adr/**` are
+  denied unless an open finding's pattern explicitly matches that path.
+- Persistence/integration: JSON evidence artifacts only; existing SQLite stage references and
+  Verification/Reviewer pipeline remain authoritative.
+- Infrastructure, LocalStack, cost, security identity, and ADR decisions: N/A.
+- Remaining planning blockers: None.
+
+## Repair contracts
+
+`RepairPacket/v1` contains task ID, reviewed baseline SHA, original ledger artifact/reference,
+and only open `BUILDER/BUILDER_FIX` findings with stable IDs, allowed path globs, evidence refs,
+and acceptance conditions.
+
+`RepairManifest/v1` contains task ID, baseline SHA, repaired SHA, exactly one disposition
+(`ADDRESSED` or `BLOCKED`) for every packet finding, and an exact mapping from every Git repair
+delta path to one or more packet finding IDs. The Orchestrator rejects missing/duplicate/unknown
+IDs, unmatched paths, unsafe globs, unauthorized dependency/governance paths, and stale commits
+before deterministic verification or re-review.
 
 ## Goal
 
@@ -62,10 +90,34 @@ and attaches changed paths plus verification evidence. Missing or duplicate IDs 
 The Reviewer receives the original ledger, reviewed baseline SHA, repaired SHA, repair manifest,
 and verification report. Stable finding IDs are preserved across 100% of repair-round tests.
 
-## Architecture/security/runtime impact
+## Architecture impact
 
-Harness-only. Scope enforcement must treat path globs and agent manifests as untrusted input and
-resolve them within the task worktree.
+Harness-only versioned evidence contracts; no product module, cross-domain boundary, persistence
+technology, infrastructure capability, or ADR change.
+
+## Security and tenant impact
+
+All globs, paths, IDs, and manifests are untrusted and validated against the worktree-contained
+Git delta. Authentication, authorization, tenant data, secrets, and customer data are N/A.
+
+## Reliability and idempotency impact
+
+Packet/manifest generation and validation are deterministic for the same ledger and commits.
+Invalid or blocked repair evidence fails closed without verification, re-review, merge, or
+lifecycle mutation.
+
+## Observability impact
+
+Repair packet/manifest artifact IDs, baseline/repaired SHA, finding dispositions, and explicit
+scope failure reasons are retained in stage timeline evidence.
+
+## Local runtime/resource impact
+
+Repository-local JSON only; no LocalStack, external service, port, or persistent runtime.
+
+## Cost impact
+
+No external/cloud cost; approved coding profile remains unchanged.
 
 ## Quantified Definition of Done
 
@@ -83,4 +135,3 @@ resolve them within the task worktree.
 - Unauthorized dependency/task/ADR mutation fixtures.
 - Multi-round ledger continuity and bounded retry tests.
 - LocalStack verification: N/A.
-
