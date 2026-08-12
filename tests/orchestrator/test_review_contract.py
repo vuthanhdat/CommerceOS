@@ -112,6 +112,14 @@ class ReviewContractTests(unittest.TestCase):
                 expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
                 allowed_evidence_refs=("builder.json",),
             )
+        for field in ("verdict",):
+            value = self._ledger(); value[field] = []
+            with self.subTest(field=field), self.assertRaises(ReviewLedgerError):
+                ReviewLedger.from_dict(
+                    value, expected_task_id="TASK-0100", expected_commit_sha="abc",
+                    expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                    allowed_evidence_refs=("builder.json",),
+                )
         value = self._ledger()
         value["acceptanceCriteria"][0]["verdict"] = "FAIL"
         value["findings"] = [{
@@ -121,12 +129,14 @@ class ReviewContractTests(unittest.TestCase):
             "acceptanceCondition": "A measurable condition.",
         }]
         value["verdict"] = "FIX_REQUIRED"
-        with self.assertRaises(ReviewLedgerError):
-            ReviewLedger.from_dict(
-                value, expected_task_id="TASK-0100", expected_commit_sha="abc",
-                expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
-                allowed_evidence_refs=("builder.json",),
-            )
+        for field in ("evidenceRefs", "status", "severity"):
+            malformed = {**value, "findings": [{**value["findings"][0], field: [["bad"]]}]}
+            with self.subTest(field=field), self.assertRaises(ReviewLedgerError):
+                ReviewLedger.from_dict(
+                    malformed, expected_task_id="TASK-0100", expected_commit_sha="abc",
+                    expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                    allowed_evidence_refs=("builder.json",),
+                )
     def test_domain_and_technical_findings_route_through_backlog_planner(self):
         findings = parse_review_findings(
             """FINDING F-001 STATUS: OPEN OWNER: DOMAIN_ARCHITECT ROUTE: PLANNING_REQUIRED TITLE: invariant conflict

@@ -136,7 +136,7 @@ class ReviewLedger:
                         )
 
         verdict = value["verdict"]
-        if verdict not in {"PASS", "FIX_REQUIRED"}:
+        if not isinstance(verdict, str) or verdict not in {"PASS", "FIX_REQUIRED"}:
             raise ReviewLedgerError("invalid review verdict")
         blocking = any(finding.status == "OPEN" for finding in findings)
         pass_allowed = (
@@ -191,7 +191,12 @@ class ReviewLedger:
         if OWNER_ROUTES[owner] != route:
             raise ReviewLedgerError("finding owner/route mismatch")
         status, severity = raw["status"], raw["severity"]
-        if status not in {"OPEN", "RESOLVED", "FOLLOW_UP"} or severity not in {"HIGH", "MEDIUM", "LOW"}:
+        if (
+            not isinstance(status, str)
+            or status not in {"OPEN", "RESOLVED", "FOLLOW_UP"}
+            or not isinstance(severity, str)
+            or severity not in {"HIGH", "MEDIUM", "LOW"}
+        ):
             raise ReviewLedgerError("invalid finding status/severity")
         refs, paths = raw["evidenceRefs"], raw["affectedPaths"]
         if (

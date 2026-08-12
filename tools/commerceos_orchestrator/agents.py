@@ -559,11 +559,11 @@ policy, then runs deterministic verification and independent review.
         return any(
             re.search(pattern, normalized)
             for pattern in (
-                r"(?:^| )scripts/(?:harness_check|task_verification)\.py(?: |$)",
+                r"(?:^| )\.?[^ ]*scripts/(?:harness_check|task_verification)\.py(?: |$)",
                 r"(?:^| )(?:python(?:3|\.exe)?|py(?:\.exe)?) -m (?:unittest|pytest)(?: |$)",
                 r"(?:^| )pytest(?:\.exe)?(?: |$)",
                 r"(?:^| )dotnet test(?: |$)",
-                r"(?:^| )(?:npm|pnpm|yarn)(?:\.cmd)? (?:test|run (?:test|verify))(?: |$)",
+                r"(?:^| )(?:npm|pnpm|yarn)(?:\.cmd)? (?:test|verify|run (?:test|verify))(?: |$)",
             )
         )
 

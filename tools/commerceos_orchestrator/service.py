@@ -454,6 +454,13 @@ class TaskOrchestrator:
                     + review.findings[-20000:],
                 )
                 return
+            if review.raw.marker == "REVIEWER_WRITE_ATTEMPT":
+                self._block(
+                    task,
+                    "REVIEWER_POLICY_VIOLATION",
+                    "Reviewer attempted to modify the read-only task worktree; all mutations were discarded.",
+                )
+                return
             try:
                 if not isinstance(review.ledger, dict):
                     raise ReviewLedgerError("Reviewer returned no ReviewLedger/v1")

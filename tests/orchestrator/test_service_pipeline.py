@@ -112,6 +112,27 @@ def reviewer_environment_failure() -> ReviewResult:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_reviewer_write_attempt_blocks_even_with_pass_result(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            raw = AgentResult(
+                False, 0, "REVIEW_LEDGER_JSON: valid-looking", "", "review.log",
+                "REVIEWER_WRITE_ATTEMPT",
+            )
+            agents = FakeAgentRunner(review_results=[ReviewResult(True, "PASS", raw)])
+            state = RunStateStore(root / "state.db")
+            orch = TaskOrchestrator(
+                root, state, agents, FakeVerificationRunner([True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            orch.run()
+            run = state.task_run("TASK-0100")
+            self.assertEqual(run.blocker_code, "REVIEWER_POLICY_VIOLATION")
+            self.assertEqual(run.execution_state, TaskExecutionState.HUMAN_REQUIRED)
+
     def test_late_verification_reports_are_commit_bound_before_advancing(self):
         for phase, already_remote in (
             ("post-integration", False),

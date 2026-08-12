@@ -143,6 +143,8 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         self.assertEqual(CodexRunner._reviewer_forbidden_commands(allowed), ())
         for command in (
             "python scripts/task_verification.py",
+            "python ./scripts/harness_check.py",
+            "python C:/repo/scripts/task_verification.py",
             "python -m unittest tests.orchestrator",
             "python3 -m pytest tests",
             "pytest -q",
@@ -150,6 +152,8 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             "npm test",
             "npm run verify",
             "pnpm run test",
+            "pnpm verify",
+            "yarn verify",
         ):
             with self.subTest(command=command):
                 self.assertTrue(CodexRunner._is_full_suite_command(command))
