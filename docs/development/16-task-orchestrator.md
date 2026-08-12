@@ -217,6 +217,20 @@ After planning artifacts are pushed to authoritative `main`, the scheduler reloa
 
 ## 10. Implementation execution and completion
 
+### Builder evidence and verification gate
+
+Before Reviewer dispatch, the Builder emits `BuilderResultManifest/v1` from its final agent
+message. The manifest is bound to the exact task ID and commit SHA, maps every task AC exactly
+once, inventories every Git-changed file, and declares the trusted `task-verification` command ID.
+The Orchestrator validates and stores the normalized manifest under the ignored per-task evidence
+directory.
+
+The deterministic Verification Runner executes the Orchestrator-owned command mapping and emits
+`VerificationReport/v1` with command results, log artifacts, test totals, and commit binding. A
+required failure, required skip, stale commit, missing/duplicate AC, or changed-file mismatch
+prevents Reviewer dispatch. Reviewer receives paths to the validated manifest and report; it does
+not create evidence or inspect completion bookkeeping.
+
 The automated implementation happy path is:
 
 ```text

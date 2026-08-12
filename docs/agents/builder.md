@@ -26,6 +26,9 @@ Implement one Ready task completely inside its assigned branch/worktree without 
   Orchestrator.
 - produce evidence mapped to each applicable acceptance criterion; unresolved domain/technical
   decisions are routed to planning rather than guessed.
+- commit implementation changes before exit and emit exactly one `BuilderResultManifest/v1`
+  record bound to the resulting task commit, with complete AC, changed-file, and required-command
+  coverage; this is implementation evidence, not lifecycle completion.
 
 ## Must not
 

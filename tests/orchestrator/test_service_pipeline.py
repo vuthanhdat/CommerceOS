@@ -26,6 +26,8 @@ class FakeWorkspaceManager:
         return "abc"
     def diff_text(self, workspace):
         return self.diff
+    def changed_files(self, workspace):
+        return ["x"] if self.diff.strip() else []
     def cleanup(self, task, force: bool = False):
         self.cleanup_calls += 1
         return True
@@ -116,6 +118,36 @@ class PipelineTests(unittest.TestCase):
                 validated,
                 {"builder", "verification", "reviewer", "integration", "finalization"},
             )
+            review_call = agents.review_calls[0]
+            self.assertTrue(review_call["builder_manifest_path"])
+            self.assertTrue(review_call["verification_report_path"])
+            self.assertTrue((root / review_call["builder_manifest_path"]).is_file())
+            self.assertTrue((root / review_call["verification_report_path"]).is_file())
+
+    def test_invalid_builder_manifest_prevents_verification_and_review(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner(
+                builder_results=[AgentResult(True, 0, "", "", "", evidence={})]
+            )
+            verify = FakeVerificationRunner([True])
+            orch = TaskOrchestrator(
+                root,
+                state,
+                agents,
+                verify,
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            orch.run()
+            run = state.task_run("TASK-0100")
+            self.assertEqual(run.execution_state, TaskExecutionState.HUMAN_REQUIRED)
+            self.assertEqual(run.blocker_code, "BUILDER_EVIDENCE_INVALID")
+            self.assertEqual(verify.calls, [])
+            self.assertEqual(agents.reviewer_calls, 0)
 
     def test_verification_failure_enters_bounded_fix_loop(self):
         with tempfile.TemporaryDirectory() as td:
@@ -230,6 +262,8 @@ class PipelineTests(unittest.TestCase):
             self.assertFalse(agents.review_calls[0]["final"])
             self.assertIsNotNone(agents.review_calls[1]["context"])
             self.assertTrue(agents.review_calls[1]["final"])
+            self.assertTrue(agents.review_calls[0]["builder_manifest_path"])
+            self.assertTrue(agents.review_calls[0]["verification_report_path"])
             self.assertIn("FINDING F-001", Path(root / agents.review_calls[1]["context"]).read_text(encoding="utf-8"))
 
     def test_explicit_open_finding_cannot_be_hidden_behind_pass_marker(self):

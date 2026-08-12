@@ -11,6 +11,13 @@ from pathlib import Path
 
 from .agents import AgentRunner
 from .backlog import BacklogReader, BacklogWriter, BacklogValidationError
+from .evidence import (
+    BuilderResultManifest,
+    EvidenceValidationError,
+    VerificationReport,
+    acceptance_criterion_ids,
+    write_evidence_artifact,
+)
 from .models import (
     AgentResult,
     CanonicalTask,
@@ -264,20 +271,67 @@ class TaskOrchestrator:
             if agent is None:
                 return
             builder_stage = "repair_builder" if is_repair else "builder"
-            builder_output_id = self._validated_stage_output(
-                task,
-                builder_stage,
-                success=agent.success,
-                evidence_artifact_ids=(agent.log_path or f"{task.id}:{builder_stage}:audit",),
-                failure_route=None if agent.success else TaskExecutionState.HUMAN_REQUIRED,
-            )
-            if builder_output_id is None:
-                return
             if not agent.success:
+                if self._validated_stage_output(
+                    task,
+                    builder_stage,
+                    success=False,
+                    evidence_artifact_ids=(agent.log_path or f"{task.id}:{builder_stage}:audit",),
+                    failure_route=TaskExecutionState.HUMAN_REQUIRED,
+                ) is None:
+                    return
                 code = "EXTERNAL_ENVIRONMENT" if agent.marker == "ENVIRONMENT_UNAVAILABLE" else "BUILDER_FAILED"
                 self._block(task, code, agent.stderr or agent.stdout)
                 return
             if not self._builder_left_task_open(task, workspace.path):
+                return
+
+            try:
+                commit_sha = self.workspace.ensure_committed(task, workspace)
+                diff = self.workspace.diff_text(workspace)
+                changed_files = tuple(self.workspace.changed_files(workspace))
+                if not diff.strip():
+                    self._block(
+                        task,
+                        "BUILDER_PRODUCED_NO_DIFF",
+                        "Builder produced no inspectable implementation diff relative to origin/main",
+                    )
+                    return
+                if agent.evidence is None:
+                    raise EvidenceValidationError("Builder result manifest is missing")
+                manifest = BuilderResultManifest.from_dict(
+                    agent.evidence,
+                    expected_task_id=task.id,
+                    expected_commit_sha=commit_sha,
+                    expected_ac_ids=acceptance_criterion_ids(workspace.path / task.spec_path),
+                    expected_changed_files=changed_files,
+                    expected_required_command_ids=tuple(self.verification.required_command_ids),
+                )
+                if not manifest.all_satisfied:
+                    raise EvidenceValidationError(
+                        "Builder manifest contains BLOCKED acceptance criteria"
+                    )
+                manifest_path = write_evidence_artifact(
+                    workspace.path,
+                    task.catalog,
+                    task.id,
+                    f"builder-manifest-{fix_round}.json",
+                    manifest.to_dict(),
+                )
+            except (WorkspaceError, EvidenceValidationError, AttributeError) as exc:
+                self._block(task, "BUILDER_EVIDENCE_INVALID", str(exc))
+                return
+
+            builder_output_id = self._validated_stage_output(
+                task,
+                builder_stage,
+                success=True,
+                evidence_artifact_ids=(
+                    agent.log_path or f"{task.id}:{builder_stage}:audit",
+                    manifest_path,
+                ),
+            )
+            if builder_output_id is None:
                 return
 
             self.state.update_task(
@@ -287,7 +341,43 @@ class TaskOrchestrator:
                 else TaskExecutionState.REPAIR_VERIFICATION,
                 input_artifact_id=builder_output_id,
             )
-            verification = self.verification.run(task, workspace.path, phase=f"builder-{fix_round}")
+            verification = self.verification.run(
+                task,
+                workspace.path,
+                phase=f"builder-{fix_round}",
+                commit_sha=commit_sha,
+            )
+            if not isinstance(verification.report, VerificationReport):
+                self._block(
+                    task,
+                    "INVALID_VERIFICATION_REPORT",
+                    "Verification Runner returned no authoritative VerificationReport/v1",
+                )
+                return
+            report = verification.report
+            if report.task_id != task.id or report.task_commit_sha != commit_sha:
+                self._block(
+                    task,
+                    "INVALID_VERIFICATION_REPORT",
+                    "Verification report task/commit binding mismatch",
+                )
+                return
+            if verification.success:
+                try:
+                    report.validate(
+                        expected_command_ids=tuple(self.verification.required_command_ids),
+                        expected_commit_sha=commit_sha,
+                    )
+                except EvidenceValidationError as exc:
+                    self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
+                    return
+            verification_report_path = write_evidence_artifact(
+                workspace.path,
+                task.catalog,
+                task.id,
+                f"verification-report-{fix_round}.json",
+                report.to_dict(),
+            )
             verification_route = (
                 None
                 if verification.success
@@ -303,6 +393,7 @@ class TaskOrchestrator:
                 success=verification.success,
                 evidence_artifact_ids=(
                     verification.log_path or f"{task.id}:verification:audit",
+                    verification_report_path,
                 ),
                 failure_route=verification_route,
             )
@@ -327,20 +418,6 @@ class TaskOrchestrator:
                 )
                 continue
 
-            try:
-                self.workspace.ensure_committed(task, workspace)
-                diff = self.workspace.diff_text(workspace)
-                if not diff.strip():
-                    self._block(
-                        task,
-                        "BUILDER_PRODUCED_NO_DIFF",
-                        "Builder/verification produced no change relative to origin/main; refusing to mark task complete without inspectable implementation evidence",
-                    )
-                    return
-            except WorkspaceError as exc:
-                self._block(task, "GIT_TASK_BRANCH_ERROR", str(exc))
-                return
-
             self.state.update_task(
                 task.id,
                 TaskExecutionState.FIRST_REVIEW
@@ -354,6 +431,8 @@ class TaskOrchestrator:
                 diff=diff,
                 review_context=review_context,
                 final_review=fix_round == self.config.max_fix_attempts,
+                builder_manifest_path=manifest_path,
+                verification_report_path=verification_report_path,
             )
             self.state.add_event(
                 task.id,

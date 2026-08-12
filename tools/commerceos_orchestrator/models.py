@@ -102,6 +102,7 @@ class AgentResult:
     stderr: str
     log_path: str
     marker: str | None = None
+    evidence: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,7 @@ class VerificationResult:
     stdout: str
     stderr: str
     log_path: str
+    report: Any | None = None
 
 
 @dataclass(frozen=True)

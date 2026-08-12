@@ -86,6 +86,46 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             prompt = CodexRunner(root, root / "logs")._builder_prompt(self._task(), None)
         self.assertIn("Do not move the task specification into `tasks/commerceos/completed/`", prompt)
         self.assertIn("Task completion bookkeeping is owned by the", prompt)
+        self.assertIn("BUILDER_RESULT_JSON:", prompt)
+        self.assertIn("BuilderResultManifest/v1", prompt)
+
+    def test_builder_manifest_is_parsed_only_from_final_agent_message(self):
+        payload = {
+            "contractVersion": "BuilderResultManifest/v1",
+            "taskId": "TASK-0100",
+            "taskCommitSha": "abc",
+            "acceptanceCriteria": [],
+            "changedFiles": ["x"],
+            "requiredCommandIds": ["task-verification"],
+            "limitations": [],
+            "followUps": [],
+        }
+        stdout = "\n".join(
+            [
+                json.dumps({"type": "user_message", "text": "BUILDER_RESULT_JSON: {}"}),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "agent_message",
+                            "text": "BUILDER_RESULT_JSON: " + json.dumps(payload),
+                        },
+                    }
+                ),
+            ]
+        )
+        self.assertEqual(CodexRunner._builder_evidence(stdout), payload)
+
+    def test_reviewer_prompt_receives_validated_evidence_without_evidence_work(self):
+        prompt = CodexRunner._reviewer_prompt(
+            self._task(),
+            builder_manifest_path=".commerceos/evidence/builder.json",
+            verification_report_path=".commerceos/evidence/verification.json",
+        )
+        self.assertIn(".commerceos/evidence/builder.json", prompt)
+        self.assertIn(".commerceos/evidence/verification.json", prompt)
+        self.assertIn("Do not recreate the evidence", prompt)
+        self.assertNotIn("create a completion summary", prompt.lower())
 
     def test_role_profiles_are_pinned_to_human_approved_models(self):
         self.assertEqual(PLANNING_CODEX_PROFILE.model, "gpt-5.6-sol")

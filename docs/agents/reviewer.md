@@ -13,6 +13,7 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - relevant domain/architecture docs and ADRs
 - full diff/PR
 - test/CI evidence
+- validated `BuilderResultManifest/v1` and `VerificationReport/v1` artifact paths
 - `docs/development/17-review-scope-and-finding-ownership.md`
 
 ## Responsibilities
@@ -28,6 +29,8 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - check reliability/idempotency/failure behavior;
 - check cost/Free Tier implications;
 - evaluate test quality and missing regression/failure cases;
+- inspect validated Builder/Verification evidence without recreating it or rerunning the full
+  deterministic verification stage;
 - report findings by severity with concrete evidence.
 - assign exactly one owner and one route to every blocking finding using the shared contract.
 - do not review, require, or report completion bookkeeping/evidence; the Orchestrator owns

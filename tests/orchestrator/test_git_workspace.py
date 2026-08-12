@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from helpers import TOOLS
-from commerceos_orchestrator.models import CanonicalTask
+from commerceos_orchestrator.models import CanonicalTask, Workspace
 from commerceos_orchestrator.workspace import GitIntegrationManager, GitWorkspaceManager, WorkspaceError
 
 
@@ -92,6 +92,60 @@ class GitWorkspaceTests(unittest.TestCase):
             im.push_main()
             self.assertTrue(im.branch_is_on_remote_main(ws.branch))
             wm.cleanup(task)
+
+    def test_committed_builder_completion_is_reversed_against_trusted_baseline(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            git(repo, "init", "-b", "main")
+            git(repo, "config", "user.email", "test@example.com")
+            git(repo, "config", "user.name", "Test")
+            for directory in (
+                "tasks/commerceos/backlog",
+                "tasks/commerceos/backlog-v2",
+                "tasks/commerceos/completed",
+            ):
+                (repo / directory).mkdir(parents=True, exist_ok=True)
+            spec_relative = "tasks/commerceos/backlog/TASK-0100.md"
+            shard_relative = "tasks/commerceos/backlog-v2/00.yaml"
+            spec = repo / spec_relative
+            shard = repo / shard_relative
+            master = repo / "tasks/BACKLOG.v2.yaml"
+            index = repo / "tasks/commerceos/BACKLOG.md"
+            spec.write_text("Status: Backlog\n", encoding="utf-8")
+            shard.write_text("tasks: backlog\n", encoding="utf-8")
+            master.write_text("state: backlog\n", encoding="utf-8")
+            index.write_text("TASK-0100 Ready\n", encoding="utf-8")
+            (repo / "implementation.txt").write_text("before\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "base")
+            git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+            spec.unlink()
+            (repo / "tasks/commerceos/completed/TASK-0100.md").write_text(
+                "Status: Completed\n", encoding="utf-8"
+            )
+            shard.write_text("tasks: completed\n", encoding="utf-8")
+            master.write_text("state: completed\n", encoding="utf-8")
+            index.write_text("TASK-0100 Completed\n", encoding="utf-8")
+            (repo / "implementation.txt").write_text("after\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "builder attempted completion")
+
+            task = CanonicalTask(
+                id="TASK-0100", maturity="Ready", type="engineering", domain="Harness",
+                title="Workspace test", goal="test", depends_on=(), gates=(), owner_role="Builder",
+                model_class="default", cloud_verification="no", spec_path=spec_relative,
+                shard_path=shard_relative, catalog="commerceos",
+            )
+            manager = GitWorkspaceManager(repo)
+            manager.restore_task_lifecycle(task, repo)
+            manager.ensure_committed(task, Workspace("main", repo, False))
+
+            self.assertEqual(spec.read_text(encoding="utf-8"), "Status: Backlog\n")
+            self.assertFalse((repo / "tasks/commerceos/completed/TASK-0100.md").exists())
+            self.assertEqual((repo / "implementation.txt").read_text(encoding="utf-8"), "after\n")
+            changed = git(repo, "diff", "--name-only", "origin/main...HEAD").splitlines()
+            self.assertEqual(changed, ["implementation.txt"])
 
     def test_invalid_task_id_cannot_construct_worktree_path(self):
         with tempfile.TemporaryDirectory() as td:

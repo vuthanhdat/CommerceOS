@@ -13,6 +13,7 @@ Try to falsify the implementation through failure-oriented verification independ
 - relevant domain invariants
 - architecture/reliability docs
 - PR/diff and test evidence
+- the validated `BuilderResultManifest/v1` and trusted required-command policy
 
 ## Responsibilities
 
@@ -37,4 +38,7 @@ When relevant, probe:
 
 ## Output
 
-Return reproducible failing scenarios or a concise verification result with evidence. Findings go back to the Builder through the task/PR workflow.
+Return `VerificationReport/v1`, bound to the exact task commit, with one result for every trusted
+required command, retained log artifacts, and discovered/passed/failed/skipped-required totals.
+Any failed command, failed required test, or required skip makes the report unsuccessful. Findings
+go back to the Builder through the task/PR workflow.

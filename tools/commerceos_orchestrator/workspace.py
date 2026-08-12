@@ -105,12 +105,20 @@ class GitWorkspaceManager:
 
         A Builder may write task-related documentation, but only the Orchestrator may move a
         Ready task to completed or update canonical lifecycle indexes. Restore only those
-        narrow files from the task branch HEAD; implementation files remain untouched.
+        narrow files from trusted `origin/main`; implementation files remain untouched.
         """
         directory = directory.resolve()
         repository_root = Path(self._run(["rev-parse", "--show-toplevel"], cwd=directory).stdout.strip()).resolve()
         if repository_root != directory:
             raise WorkspaceError(f"task lifecycle restore requires worktree root: {directory}")
+        baseline = (
+            "origin/main"
+            if self._run(
+                ["rev-parse", "--verify", "origin/main"], cwd=directory, check=False
+            ).returncode
+            == 0
+            else "HEAD"
+        )
 
         lifecycle_paths = [
             task.spec_path,
@@ -123,14 +131,17 @@ class GitWorkspaceManager:
             for path in lifecycle_paths
             if path
             and self._run(
-                ["ls-files", "--error-unmatch", "--", path],
+                ["cat-file", "-e", f"{baseline}:{path}"],
                 cwd=directory,
                 check=False,
             ).returncode
             == 0
         ]
         if lifecycle_paths:
-            self._run(["restore", "--source=HEAD", "--", *lifecycle_paths], cwd=directory)
+            self._run(
+                ["restore", f"--source={baseline}", "--staged", "--worktree", "--", *lifecycle_paths],
+                cwd=directory,
+            )
 
         spec_parts = Path(task.spec_path).parts
         if len(spec_parts) >= 3 and spec_parts[0] == "tasks" and spec_parts[1] in {
@@ -145,15 +156,33 @@ class GitWorkspaceManager:
             completed_path.relative_to(directory)
         except ValueError as exc:
             raise WorkspaceError(f"unsafe completed task path: {completed_path}") from exc
-        tracked = self._run(
-            ["ls-files", "--error-unmatch", "--", completed_relative],
+        present_on_baseline = self._run(
+            ["cat-file", "-e", f"{baseline}:{completed_relative}"],
             cwd=directory,
             check=False,
         )
-        if tracked.returncode == 0:
-            self._run(["restore", "--source=HEAD", "--", completed_relative], cwd=directory)
+        if present_on_baseline.returncode == 0:
+            self._run(
+                [
+                    "restore",
+                    f"--source={baseline}",
+                    "--staged",
+                    "--worktree",
+                    "--",
+                    completed_relative,
+                ],
+                cwd=directory,
+            )
         elif completed_path.is_file():
-            completed_path.unlink()
+            tracked = self._run(
+                ["ls-files", "--error-unmatch", "--", completed_relative],
+                cwd=directory,
+                check=False,
+            )
+            if tracked.returncode == 0:
+                self._run(["rm", "-f", "--", completed_relative], cwd=directory)
+            else:
+                completed_path.unlink()
 
     def cleanup(self, task: CanonicalTask, force: bool = False) -> bool:
         branch = self._task_branch(task)
