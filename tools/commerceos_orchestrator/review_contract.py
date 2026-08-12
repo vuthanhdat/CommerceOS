@@ -121,6 +121,14 @@ class ReviewLedger:
                 raise ReviewLedgerError("re-review omitted a previous finding ID")
             repair_paths = set(repair_changed_files)
             for finding in findings:
+                if (
+                    finding.finding_id in old
+                    and old[finding.finding_id].status == "OPEN"
+                    and finding.status not in {"OPEN", "RESOLVED"}
+                ):
+                    raise ReviewLedgerError(
+                        "an OPEN tracked finding may only remain OPEN or become RESOLVED"
+                    )
                 if finding.finding_id not in old and finding.status == "OPEN":
                     if not set(finding.affected_paths).issubset(repair_paths):
                         raise ReviewLedgerError(
@@ -152,7 +160,12 @@ class ReviewLedger:
             if not isinstance(item, dict) or set(item) != {key, value_key}:
                 raise ReviewLedgerError(f"invalid {key} coverage row")
             identifier, verdict = item[key], item[value_key]
-            if not isinstance(identifier, str) or not identifier or verdict not in allowed:
+            if (
+                not isinstance(identifier, str)
+                or not identifier
+                or not isinstance(verdict, str)
+                or verdict not in allowed
+            ):
                 raise ReviewLedgerError(f"invalid {key} coverage value")
             rows.append((identifier, verdict))
         if len({row[0] for row in rows}) != len(rows):
@@ -181,16 +194,24 @@ class ReviewLedger:
         if status not in {"OPEN", "RESOLVED", "FOLLOW_UP"} or severity not in {"HIGH", "MEDIUM", "LOW"}:
             raise ReviewLedgerError("invalid finding status/severity")
         refs, paths = raw["evidenceRefs"], raw["affectedPaths"]
-        if not isinstance(refs, list) or not refs or not set(refs).issubset(evidence):
+        if (
+            not isinstance(refs, list)
+            or not refs
+            or not all(isinstance(value, str) for value in refs)
+            or not set(refs).issubset(evidence)
+        ):
             raise ReviewLedgerError("finding evidence references are unknown or empty")
-        if not isinstance(paths, list) or not paths or not set(paths).issubset(allowed_paths):
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or not all(isinstance(value, str) for value in paths)
+            or not set(paths).issubset(allowed_paths)
+        ):
             raise ReviewLedgerError("finding affected paths are unknown or empty")
         for path in paths:
             pure = PurePosixPath(path)
             if pure.is_absolute() or ".." in pure.parts:
                 raise ReviewLedgerError("unsafe finding affected path")
-        if not all(isinstance(value, str) for value in refs + paths):
-            raise ReviewLedgerError("finding references/paths must be strings")
         title, condition = raw["title"], raw["acceptanceCondition"]
         if not isinstance(title, str) or not title.strip() or not isinstance(condition, str) or not condition.strip():
             raise ReviewLedgerError("finding title/acceptance condition is required")

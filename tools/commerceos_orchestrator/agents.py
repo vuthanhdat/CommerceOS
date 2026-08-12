@@ -129,6 +129,7 @@ class CodexRunner:
         # Do not interpolate Builder-controlled diff content into a privileged prompt.
         # Reviewer inspects the read-only worktree/Git diff directly.
         del diff, reviewed_commit_sha, acceptance_ids, changed_files, repair_changed_files
+        before = self._reviewer_mutations(worktree)
         raw = self._run(
             task,
             role="reviewer",
@@ -144,6 +145,15 @@ class CodexRunner:
             writable=False,
             attempt=0,
         )
+        after = self._reviewer_mutations(worktree)
+        if after != before:
+            self._restore_after_reviewer(worktree)
+            raw = replace(
+                raw,
+                success=False,
+                marker="REVIEWER_WRITE_ATTEMPT",
+                stderr=(raw.stderr + "\nReviewer modified the task worktree; changes were discarded.").strip(),
+            )
         combined = f"{raw.stdout}\n{raw.stderr}"
         ledger = self._reviewer_evidence(raw.stdout)
         forbidden = self._reviewer_forbidden_commands(raw.stdout)
@@ -525,10 +535,6 @@ policy, then runs deterministic verification and independent review.
     @staticmethod
     def _reviewer_forbidden_commands(stdout: str) -> tuple[str, ...]:
         forbidden: list[str] = []
-        patterns = (
-            "scripts/harness_check.py", "scripts\\harness_check.py", "dotnet test",
-            "npm test", "npm run test", "unittest discover", "pytest",
-        )
         for line in stdout.splitlines():
             try:
                 event = json.loads(line)
@@ -538,9 +544,44 @@ policy, then runs deterministic verification and independent review.
             if not isinstance(item, dict) or item.get("type") != "command_execution":
                 continue
             command = item.get("command")
-            if isinstance(command, str) and any(pattern in command.lower() for pattern in patterns):
-                forbidden.append(command)
+            rendered = " ".join(command) if isinstance(command, list) and all(
+                isinstance(value, str) for value in command
+            ) else command
+            if isinstance(rendered, str) and CodexRunner._is_full_suite_command(rendered):
+                forbidden.append(rendered)
         return tuple(forbidden)
+
+    @staticmethod
+    def _is_full_suite_command(command: str) -> bool:
+        normalized = re.sub(r"[\\/]+", "/", command.lower())
+        normalized = re.sub(r"[\"']", "", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return any(
+            re.search(pattern, normalized)
+            for pattern in (
+                r"(?:^| )scripts/(?:harness_check|task_verification)\.py(?: |$)",
+                r"(?:^| )(?:python(?:3|\.exe)?|py(?:\.exe)?) -m (?:unittest|pytest)(?: |$)",
+                r"(?:^| )pytest(?:\.exe)?(?: |$)",
+                r"(?:^| )dotnet test(?: |$)",
+                r"(?:^| )(?:npm|pnpm|yarn)(?:\.cmd)? (?:test|run (?:test|verify))(?: |$)",
+            )
+        )
+
+    @staticmethod
+    def _reviewer_mutations(worktree: Path) -> tuple[str, ...]:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=worktree,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return tuple(line for line in result.stdout.splitlines() if line.strip())
+
+    @staticmethod
+    def _restore_after_reviewer(worktree: Path) -> None:
+        subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=worktree, capture_output=True, check=False)
+        subprocess.run(["git", "clean", "-fd"], cwd=worktree, capture_output=True, check=False)
 
     @staticmethod
     def _reviewer_prompt(

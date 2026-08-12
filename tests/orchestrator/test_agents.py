@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from commerceos_orchestrator.agents import (
     CodexRunner,
 )
 from commerceos_orchestrator.models import CanonicalTask
+from commerceos_orchestrator.models import AgentResult
 
 
 class CodexPromptBoundaryTests(unittest.TestCase):
@@ -139,6 +141,45 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         })
         self.assertEqual(len(CodexRunner._reviewer_forbidden_commands(forbidden)), 1)
         self.assertEqual(CodexRunner._reviewer_forbidden_commands(allowed), ())
+        for command in (
+            "python scripts/task_verification.py",
+            "python -m unittest tests.orchestrator",
+            "python3 -m pytest tests",
+            "pytest -q",
+            "dotnet test CommerceOS.slnx",
+            "npm test",
+            "npm run verify",
+            "pnpm run test",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(CodexRunner._is_full_suite_command(command))
+
+    def test_reviewer_write_attempt_is_failed_and_leaves_clean_worktree(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "primary"
+            worktree = Path(td) / "sibling"
+            worktree.mkdir(parents=True)
+            subprocess.run(["git", "init"], cwd=worktree, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=worktree, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree, check=True)
+            tracked = worktree / "tracked.txt"
+            tracked.write_text("before", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=worktree, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=worktree, capture_output=True, check=True)
+            runner = CodexRunner(root, root / "logs")
+
+            def write_during_review(*args, **kwargs):
+                tracked.write_text("reviewer write", encoding="utf-8")
+                (worktree / "new.txt").write_text("reviewer write", encoding="utf-8")
+                return AgentResult(True, 0, "", "", "review.log")
+
+            with patch.object(runner, "_run", side_effect=write_during_review):
+                result = runner.run_reviewer(self._task(), worktree, diff="diff")
+
+            self.assertEqual(result.raw.marker, "REVIEWER_WRITE_ATTEMPT")
+            self.assertEqual(tracked.read_text(encoding="utf-8"), "before")
+            self.assertFalse((worktree / "new.txt").exists())
+            self.assertEqual(runner._reviewer_mutations(worktree), ())
 
     def test_role_profiles_are_pinned_to_human_approved_models(self):
         self.assertEqual(PLANNING_CODEX_PROFILE.model, "gpt-5.6-sol")
@@ -170,17 +211,19 @@ class CodexPromptBoundaryTests(unittest.TestCase):
 
     def test_windows_reviewer_uses_read_only_sandbox_from_primary_root(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
+            root = Path(td) / "primary"
+            sibling = Path(td) / "sibling"
             runner = CodexRunner(root, root / "logs")
             command = runner._build_command(
                 "codex",
-                worktree=root,
+                worktree=sibling,
                 writable=False,
                 prompt="review prompt",
             )
             self.assertIn("read-only", command)
             if __import__("os").name == "nt":
                 self.assertEqual(command[command.index("-C") + 1], str(root.resolve()))
+                self.assertNotEqual(str(root.resolve()), str(sibling.resolve()))
 
     def test_codex_jsonl_is_published_before_process_wait_and_retained_in_audit_log(self):
         with tempfile.TemporaryDirectory() as td:

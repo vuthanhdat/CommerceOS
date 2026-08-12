@@ -92,6 +92,41 @@ class ReviewContractTests(unittest.TestCase):
                 allowed_evidence_refs=("builder.json",), previous=previous,
                 repair_changed_files=(),
             )
+
+        repair["findings"] = [{**first["findings"][0], "status": "FOLLOW_UP"}]
+        repair["verdict"] = "PASS"
+        with self.assertRaisesRegex(ReviewLedgerError, "OPEN tracked"):
+            ReviewLedger.from_dict(
+                repair, expected_task_id="TASK-0100", expected_commit_sha="def",
+                expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                allowed_evidence_refs=("builder.json",), previous=previous,
+                repair_changed_files=("src/x.py",),
+            )
+
+    def test_unhashable_json_values_raise_review_ledger_error(self):
+        value = self._ledger()
+        value["acceptanceCriteria"][0]["verdict"] = []
+        with self.assertRaises(ReviewLedgerError):
+            ReviewLedger.from_dict(
+                value, expected_task_id="TASK-0100", expected_commit_sha="abc",
+                expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                allowed_evidence_refs=("builder.json",),
+            )
+        value = self._ledger()
+        value["acceptanceCriteria"][0]["verdict"] = "FAIL"
+        value["findings"] = [{
+            "findingId": "F-001", "status": "OPEN", "severity": "MEDIUM",
+            "owner": "BUILDER", "route": "BUILDER_FIX", "title": "broken",
+            "evidenceRefs": [["unhashable"]], "affectedPaths": ["src/x.py"],
+            "acceptanceCondition": "A measurable condition.",
+        }]
+        value["verdict"] = "FIX_REQUIRED"
+        with self.assertRaises(ReviewLedgerError):
+            ReviewLedger.from_dict(
+                value, expected_task_id="TASK-0100", expected_commit_sha="abc",
+                expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                allowed_evidence_refs=("builder.json",),
+            )
     def test_domain_and_technical_findings_route_through_backlog_planner(self):
         findings = parse_review_findings(
             """FINDING F-001 STATUS: OPEN OWNER: DOMAIN_ARCHITECT ROUTE: PLANNING_REQUIRED TITLE: invariant conflict
