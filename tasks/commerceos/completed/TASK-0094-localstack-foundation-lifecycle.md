@@ -1,11 +1,12 @@
 # TASK-0094 — Establish the LocalStack foundation lifecycle
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Platform Engineering
 Recommended model: Default implementation model
 Created: 2026-08-10
+Completed: 2026-08-12
 Reconciled: 2026-08-11
 Ready: 2026-08-11
 Roadmap phase: Phase 0
@@ -145,4 +146,44 @@ Before moving to `tasks/completed/`, record:
 - `python3 scripts/harness_check.py` result;
 - no-real-AWS verification statement.
 
-**Current gate: READY — Builder may execute TASK-0094 now.**
+**Current gate: COMPLETED — implementation and LocalStack verification evidence are recorded below.**
+
+## Completion summary
+
+### What changed
+
+- Added the repository-owned LocalStack lifecycle launcher for deterministic start, readiness, CDK synth/bootstrap/deploy, inspection, reset, redeploy, smoke, and destroy.
+- Added explicit instance-derived endpoints, ports, container/stack/resource names, synthetic credentials, reset policy, and pinned LocalStack image configuration.
+- Added FoundationStack inspection for health, stack metadata/tags, resources, and task-prefixed log groups, with launcher regression tests and bounded emulator documentation.
+
+### Acceptance criteria
+
+- AC01-AC06: satisfied by implementation commit `6019258`, already integrated into `main`, and the 2026-08-12 rerun evidence below.
+
+### Infrastructure verification
+
+- LocalStack Community image: `localstack/localstack:4.8.1` (`sha256:a39051372519359b748c6366ed05c9d1e3914f7d82331f190ad17f52400074e1`).
+- Isolated instance: `0094`; endpoint `http://127.0.0.1:14660`; stack `commerceos-localstack-test-0094-foundation`; log group `/commerceos-localstack-test-0094/foundation`.
+- Clean reset -> lifecycle -> inspect -> reset -> redeploy -> smoke: PASS; FoundationStack and log group reached `CREATE_COMPLETE`.
+- Final destroy: PASS; the task-owned LocalStack container was removed.
+- No real AWS account, credentials, deployment, or fallback was used.
+
+### Verification
+
+- `python -m unittest tests/test_commerceos_launcher.py`: PASS (9 tests).
+- `python scripts/harness_check.py`: PASS, including .NET build/tests, frontend lint/build/tests, architecture checks, CDK tests, and `cdk synth`.
+
+### Architecture, security, and limitations
+
+- LocalStack details remain in infrastructure/runtime configuration; Domain/Application boundaries are unchanged.
+- Ports and mutable resource names are derived from the task instance.
+- Evidence is bounded to LocalStack Community 4.8.1 CloudFormation/CDK and CloudWatch Logs behavior; it does not claim exact AWS IAM/control-plane fidelity.
+
+### Harness improvement
+
+- Launcher tests cover inspection payloads and accept healthy create/update stack states.
+- Normalized the legacy CommerceOS Markdown index so canonical completion bookkeeping is machine-checkable.
+
+### Follow-up
+
+- TASK-0095 may now be re-evaluated for Ready status.

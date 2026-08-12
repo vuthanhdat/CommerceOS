@@ -11,6 +11,13 @@ The machine-readable backlog authority is:
 
 This Markdown file is the human-readable execution plan. Detailed task specifications are created/refined only near the execution frontier. Numeric order alone never grants execution permission.
 
+Ready now:
+
+
+Recently completed:
+
+- `TASK-0094` — Establish LocalStack foundation lifecycle and infrastructure verification (`Completed`).
+
 ## LocalStack planning rule
 
 ADR-012 is authoritative:
@@ -43,17 +50,17 @@ Dependencies, human/product/domain/architecture/security gates, and exclusive-re
 
 ## Current execution state
 
-`TASK-0093` is now **Completed** on authoritative `main`; its architecture-test contract remediation has passed repository verification.
+`TASK-0094` is now **Completed** on authoritative `main`; its isolated LocalStack lifecycle and completion verification passed.
 
 ### Current Ready frontier
 
 | Task | Maturity | Why it is Ready |
 |---|---|---|
-| `TASK-0094` — Establish LocalStack foundation lifecycle and infrastructure verification | **Ready** | TASK-0093 is complete; ADR-012 and the technical baseline resolve the runtime/configuration/IaC boundaries; no AWS account, cloud authorization, IAM/OIDC, Budget or cost gate remains. |
+| None | — | TASK-0095 remains Refined pending Backlog Planner readiness reconciliation against TASK-0094 evidence. |
 
-Detailed spec: `tasks/commerceos/backlog/TASK-0094-localstack-foundation-lifecycle.md`.
+Completed spec: `tasks/commerceos/completed/TASK-0094-localstack-foundation-lifecycle.md`.
 
-TASK-0094 proves the repository-owned development infrastructure loop:
+TASK-0094 proved the repository-owned development infrastructure loop:
 
 ```text
 clean checkout
@@ -89,7 +96,7 @@ After TASK-0095 completes, `TASK-0096` and `TASK-0097` become the first business
 
 | Area | Canonical tasks | Current plan |
 |---|---|---|
-| CommerceOS Phase 0 foundation | `TASK-0094`–`TASK-0095` | 0094 Ready; 0095 Refined |
+| CommerceOS Phase 0 foundation | `TASK-0094`–`TASK-0095` | 0094 Completed; 0095 Refined |
 | Subscription foundation / Tenancy / Merchant Access / Audit | `TASK-0096`–`TASK-0103` | Outline; first business refinement begins with 0096/0097 after 0095 |
 | Files/Media and Catalog | `TASK-0104`–`TASK-0108` | Outline |
 | Product Data Ingestion | `TASK-0109`–`TASK-0116` | Outline; queue/storage/scheduling map to LocalStack-supported capabilities |
@@ -108,7 +115,7 @@ The domain/business task graph is intentionally preserved. The infrastructure de
 
 Key plan changes:
 
-- obsolete AWS dev deployment/cost task became `TASK-0094` LocalStack lifecycle;
+The obsolete AWS development deployment/cost task became the TASK-0094 LocalStack lifecycle;
 - obsolete AWS OIDC/preview/dev pipeline task became `TASK-0095` CI LocalStack verification;
 - real AWS account/Budget/IAM/OIDC/cost gates are removed from readiness;
 - storefront delivery is validated against LocalStack-supported static-delivery/cache capabilities rather than a real CloudFront deployment;
@@ -137,7 +144,7 @@ Key plan changes:
 Execution should now proceed as:
 
 ```text
-TASK-0094  READY
+TASK-0094  COMPLETED
    ↓ complete + record LocalStack lifecycle/limitations
 TASK-0095  re-evaluate -> Ready when evidence passes
    ↓ complete CI LocalStack harness
@@ -152,4 +159,4 @@ continue dependency graph
 
 Do not promote distant tasks just because real-AWS gates disappeared. Removal of a cloud gate does not resolve unrelated domain, contract, persistence, or workflow decisions.
 
-**Current stop condition: PLAN RECONCILED — CommerceOS Ready frontier = `TASK-0094`.**
+**Current stop condition: TASK-0094 COMPLETED — CommerceOS Ready frontier is empty pending TASK-0095 readiness reconciliation.**

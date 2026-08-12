@@ -52,7 +52,7 @@ execution_metadata:
     exclusive_resources: [repo-architecture-tests]
     merge_policy: verified_serial_main
   TASK-0094:
-    lifecycle_state: Backlog
+    lifecycle_state: Completed
     exclusive_resources: [localstack-foundation]
     merge_policy: verified_serial_main
   TASK-0095:
@@ -150,4 +150,3 @@ task_shards:
   - tasks/orchestrator/backlog-v2/00-harness.yaml
 
 ready_frontier:
-  - TASK-0094
