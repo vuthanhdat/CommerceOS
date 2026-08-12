@@ -757,7 +757,10 @@ class FakeAgentRunner:
                     for finding in packet["findings"]
                 ],
                 "changedFiles": [
-                    {"path": "x", "findingIds": [packet["findings"][0]["findingId"]]}
+                    {
+                        "path": "x",
+                        "findingIds": [finding["findingId"] for finding in packet["findings"]],
+                    }
                 ],
             }
             result = replace(result, evidence=evidence)

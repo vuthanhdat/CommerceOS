@@ -143,6 +143,27 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(verify.calls), 1)
             self.assertEqual(agents.reviewer_calls, 1)
 
+    def test_default_fake_repair_maps_all_open_builder_findings(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            agents = FakeAgentRunner(
+                review_results=[
+                    review(False, "FINDING F-001 STATUS: OPEN OWNER: BUILDER ROUTE: BUILDER_FIX TITLE: first\nFINDING F-002 STATUS: OPEN OWNER: BUILDER ROUTE: BUILDER_FIX TITLE: second\nREVIEW_RESULT: FIX_REQUIRED"),
+                    review(True, "REVIEW_RESULT: PASS"),
+                ]
+            )
+            state = RunStateStore(root / "state.db")
+            orch = TaskOrchestrator(
+                root, state, agents, FakeVerificationRunner([True, True, True, True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, max_fix_attempts=1, poll_seconds=0.01),
+            )
+            orch.run()
+            self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.COMPLETED)
+            self.assertEqual(agents.builder_calls, 2)
+
     def test_resume_without_persisted_repair_context_fails_before_builder(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
