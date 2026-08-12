@@ -98,10 +98,12 @@ cloud-service cost changes.
   to the same commit; otherwise it preserves a blocking Git error.
 - Authentication and other non-network failures are never retried or hidden by cached fallback.
 - A warning records the exact cached commit used.
+- A successful Planner run with a missing text marker may infer `READY` only when the runtime reader
+  independently proves the task's canonical artifacts are dispatchable.
 
 ### Verification
 
-- Orchestrator suite: PASS (144 tests).
+- Orchestrator suite: PASS (145 tests).
 - `py -3 scripts/harness_check.py`: PASS.
 
 ### Acceptance criteria status
@@ -121,3 +123,5 @@ cloud-service cost changes.
 
 - The orchestrator test suite now parses both real repository catalogs through the runtime reader,
   preventing malformed shard data from passing the harness while breaking the dashboard.
+- Protocol regression coverage proves valid canonical Ready artifacts recover a missing prose marker,
+  while partial/non-dispatchable planning edits still fail closed.

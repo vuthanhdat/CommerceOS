@@ -83,9 +83,10 @@ class FakeIntegrationManager:
 
 
 class PromotingPlanningRunner(FakePlanningAgentRunner):
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, marker: str = "PLANNING_RESULT: READY"):
         super().__init__()
         self.root = root
+        self.marker = marker
 
     def run_backlog_planner(self, task, worktree, *, attempt):
         self.calls.append("backlog-planner")
@@ -100,7 +101,7 @@ class PromotingPlanningRunner(FakePlanningAgentRunner):
         text = master.read_text(encoding="utf-8")
         text = text.replace("ready_frontier:\n", f"ready_frontier:\n  - {task.id}\n", 1)
         master.write_text(text, encoding="utf-8")
-        return result("PLANNING_RESULT: READY")
+        return result(self.marker)
 
 
 class PlanningCoordinatorTests(unittest.TestCase):
@@ -231,6 +232,30 @@ class PlanningCoordinatorTests(unittest.TestCase):
             self.assertEqual(
                 state.task_run("TASK-0100").blocker_code,
                 "BACKLOG_PLANNER_PROTOCOL_ERROR",
+            )
+
+    def test_missing_marker_uses_valid_canonical_ready_artifacts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100", maturity="Refined")], ready=[])
+            state = RunStateStore(root / "state.db")
+            integration = FakeIntegrationManager()
+            coordinator = PlanningCoordinator(
+                root,
+                state,
+                PromotingPlanningRunner(root, marker="TASK READY"),
+                FakeVerificationRunner(),
+                workspace_manager=FakeWorkspaceManager(root, diff="planning diff"),
+                integration_manager=integration,
+            )
+
+            outcome = coordinator.refine_next(BacklogReader(root).load())
+
+            self.assertEqual(outcome, PlanningOutcome.READY)
+            self.assertEqual(integration.prepare_calls, 1)
+            events = state.recent_events(limit=20)
+            self.assertTrue(
+                any(event["kind"] == "PLANNING_DECISION_INFERRED" for event in events)
             )
 
     def test_planning_scope_guard_rejects_code_changes_before_integration(self):

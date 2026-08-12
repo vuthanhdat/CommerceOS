@@ -320,6 +320,15 @@ class PlanningCoordinator:
                 break
 
             marker = self._planner_marker(planner)
+            if marker is None and self._canonical_task_is_dispatchable(
+                workspace.path, task.id
+            ):
+                marker = "READY"
+                self.state.add_event(
+                    task.id,
+                    "PLANNING_DECISION_INFERRED",
+                    "missing text marker; canonical planning artifacts satisfy the Ready gate",
+                )
             self.state.add_event(
                 task.id, "PLANNING_DECISION", marker or "MISSING_MARKER"
             )
@@ -596,6 +605,16 @@ class PlanningCoordinator:
             if f"PLANNING_RESULT: {value}" in output:
                 return value
         return None
+
+    def _canonical_task_is_dispatchable(self, root: Path, task_id: str) -> bool:
+        try:
+            snapshot = BacklogReader(root, self.catalog).load()
+            task = snapshot.tasks.get(task_id)
+            return task is not None and BacklogReader.is_dispatchable(
+                snapshot, task, active_resources=set()
+            )
+        except (BacklogValidationError, ValueError, OSError):
+            return False
 
     def _block(self, task: CanonicalTask, code: str, detail: str) -> None:
         self.state.update_task(
