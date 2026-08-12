@@ -1,10 +1,11 @@
 # TASK-0168 — Separate CommerceOS and Orchestrator task catalogs
 
-Status: Active
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: completed TASK-0090
 Cloud verification: No
 
@@ -96,3 +97,29 @@ No AWS or LocalStack cost impact. Local disk usage adds one small state/log dire
 - Unit-test catalog-specific completion destination.
 - Validate both catalogs through the CLI.
 - Run Orchestrator tests and repository harness.
+
+## Completion summary
+
+TASK-0168 is complete. CommerceOS product tasks and Orchestrator tooling tasks are now
+physically separated into named catalogs, with catalog-aware scheduling, planning, dashboard,
+state/log paths, completion bookkeeping, and cleanup. The shared registry remains the explicit
+cross-catalog dependency authority.
+
+### Acceptance criteria status
+
+- AC01 — Satisfied: canonical shards and detailed task records are isolated under
+  `tasks/commerceos/` or `tasks/orchestrator/`.
+- AC02 — Satisfied: catalog loading and dependency/frontier validation are catalog-specific.
+- AC03 — Satisfied: CLI, dashboard, state, and logs use the selected catalog.
+- AC04 — Satisfied: completion destinations remain inside the selected catalog.
+- AC05 — Satisfied: Orchestrator tests and repository harness verification pass.
+
+### Verification evidence
+
+- `python -m unittest discover -s tests/orchestrator -p "test_*.py"` — passed.
+- `python scripts/harness_check.py` — passed.
+
+### Scope and impact
+
+- Documentation/task organization and Orchestrator harness behavior only.
+- No CommerceOS product, tenant, security, domain, or LocalStack runtime behavior changed.

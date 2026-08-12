@@ -64,8 +64,32 @@ execution_metadata:
     exclusive_resources: [repository-task-state, orchestrator-ui, codex-runner]
     merge_policy: verified_serial_main
   TASK-0168:
-    lifecycle_state: Active
+    lifecycle_state: Completed
     exclusive_resources: [repository-task-state, canonical-backlog, orchestrator-runtime]
+    merge_policy: verified_serial_main
+  TASK-0169:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, agent-contracts, orchestrator-runtime]
+    merge_policy: verified_serial_main
+  TASK-0170:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, agent-contracts, verification-runner]
+    merge_policy: verified_serial_main
+  TASK-0171:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, agent-contracts, codex-runner]
+    merge_policy: verified_serial_main
+  TASK-0172:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, review-ledger, codex-runner]
+    merge_policy: verified_serial_main
+  TASK-0173:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, canonical-backlog, main-merge-lane]
+    merge_policy: verified_serial_main
+  TASK-0174:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime]
     merge_policy: verified_serial_main
 
 lifecycle_semantics:

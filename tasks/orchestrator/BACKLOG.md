@@ -15,4 +15,27 @@ product/runtime work.
 ## Current task
 
 - `TASK-0167` — Stream Codex agent activity and pin role-based model profiles (`Active`).
-- `TASK-0168` — Separate CommerceOS and Orchestrator task catalogs (`Active`).
+
+Recently completed:
+
+- `TASK-0168` — Separate CommerceOS and Orchestrator task catalogs (`Completed`).
+
+## Strict workflow boundary program
+
+```text
+TASK-0169 stage contracts/state model
+       ↓
+TASK-0170 Builder evidence + Verification gate
+       ↓
+TASK-0171 read-only Reviewer ledger
+       ├───────────────┐
+       ↓               ↓
+TASK-0172 scoped       TASK-0173 completion transaction
+Builder repair         owned by Orchestrator
+       └───────┬───────┘
+               ↓
+TASK-0174 status observability + end-to-end contract
+```
+
+All six tasks are `Refined`. TASK-0169 becomes eligible for Ready promotion after TASK-0167 is
+completed; each later task follows its declared dependency gate.
