@@ -398,6 +398,26 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self.assertEqual(result.raw.marker, "REVIEWER_AUDIT_UNAVAILABLE")
             self.assertIsNone(result.ledger)
 
+    def test_failed_antigravity_reviewer_cannot_pass_from_ledger_without_telemetry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runner = AntigravityRunner(root, root / "logs")
+            ledger = {"contractVersion": "ReviewLedger/v1", "verdict": "PASS"}
+            stdout = json.dumps(
+                {
+                    "event": "result",
+                    "result": {"response": "REVIEW_LEDGER_JSON:" + json.dumps(ledger)},
+                }
+            )
+            raw = AgentResult(False, 1, stdout, "provider failed", "AGENT_EXIT_1")
+            with patch.object(runner, "_run", return_value=raw), patch.object(
+                runner, "_reviewer_mutations", return_value=()
+            ):
+                result = runner.run_reviewer(self._task(), root, diff="")
+            self.assertFalse(result.passed)
+            self.assertEqual(result.raw.marker, "REVIEWER_AUDIT_UNAVAILABLE")
+            self.assertIsNone(result.ledger)
+
     def test_nested_test_output_does_not_look_like_windows_sandbox_failure(self):
         self.assertFalse(
             CodexRunner._has_windows_sandbox_failure(

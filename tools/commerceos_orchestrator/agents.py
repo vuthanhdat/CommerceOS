@@ -204,7 +204,7 @@ class CodexRunner:
             )
         combined = f"{raw.stdout}\n{raw.stderr}"
         ledger = self._reviewer_evidence(raw.stdout)
-        if raw.success and not self._reviewer_command_audit_available(raw.stdout):
+        if not self._reviewer_command_audit_available(raw.stdout):
             raw = replace(
                 raw,
                 success=False,
@@ -221,7 +221,7 @@ class CodexRunner:
         if forbidden:
             combined += "\nReviewer command policy violation: " + "; ".join(forbidden)
             ledger = None
-        passed = bool(ledger and ledger.get("verdict") == "PASS")
+        passed = bool(raw.success and ledger and ledger.get("verdict") == "PASS")
         return ReviewResult(passed, combined.strip(), raw, ledger)
 
     def _reviewer_command_audit_available(self, stdout: str) -> bool:
