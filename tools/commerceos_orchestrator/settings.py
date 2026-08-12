@@ -14,6 +14,7 @@ from .agents import (
     CODING_CODEX_PROFILE,
     PLANNING_CODEX_PROFILE,
     CodexExecutionProfile,
+    antigravity_supports_reviewer_audit,
     antigravity_supports_stream_json,
 )
 
@@ -138,6 +139,7 @@ def provider_capabilities() -> dict[str, dict[str, object]]:
     codex = shutil.which("codex")
     agy = discover_antigravity()
     agy_stream = antigravity_supports_stream_json(agy)
+    agy_reviewer_audit = antigravity_supports_reviewer_audit(agy)
     return {
         "codex": {
             "available": bool(codex),
@@ -155,12 +157,13 @@ def provider_capabilities() -> dict[str, dict[str, object]]:
             "available": bool(agy),
             "executable": agy,
             "version": _probe_version(agy),
-            "supported_roles": list(ROLE_KEYS) if agy_stream else [
+            "supported_roles": list(ROLE_KEYS) if agy_reviewer_audit else [
                 "planning", "builder", "conflict_resolver"
             ],
             "supports_reasoning_effort": agy_stream,
             "supports_service_tier": False,
             "supports_stream_json": agy_stream,
+            "supports_reviewer_command_audit": agy_reviewer_audit,
             "models": _probe_antigravity_models(agy),
         },
     }

@@ -149,7 +149,8 @@ states, contain no unsafe dynamic HTML insertion, and pass automated API/UI test
 - Installed baseline observed during implementation: Antigravity CLI `agy.exe` v1.1.12 at the
   documented Windows path, with `--print`, `--model`, `--effort`, `--sandbox`, and machine-readable
   `stream-json` output. Capability probing still supports older text-only installations with
-  Reviewer disabled.
+  Reviewer disabled. Reviewer eligibility additionally requires the enriched-tool-event release,
+  and each review fails closed when no auditable command telemetry is emitted.
 
 ## Completion summary
 

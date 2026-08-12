@@ -15,6 +15,7 @@ from commerceos_orchestrator.agents import (
     CODING_CODEX_PROFILE,
     PLANNING_CODEX_PROFILE,
     CodexRunner,
+    antigravity_supports_reviewer_audit,
     antigravity_supports_stream_json,
 )
 from commerceos_orchestrator.models import CanonicalTask
@@ -329,6 +330,25 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         with patch("commerceos_orchestrator.agents.subprocess.run", return_value=result):
             self.assertTrue(antigravity_supports_stream_json("agy"))
 
+    def test_antigravity_reviewer_requires_tool_event_release(self):
+        help_result = SimpleNamespace(
+            returncode=0,
+            stdout="",
+            stderr="--output-format Output format (text, json, stream-json)",
+        )
+        current_version = SimpleNamespace(returncode=0, stdout="1.1.12", stderr="")
+        old_version = SimpleNamespace(returncode=0, stdout="1.1.7", stderr="")
+        with patch(
+            "commerceos_orchestrator.agents.subprocess.run",
+            side_effect=[help_result, current_version],
+        ):
+            self.assertTrue(antigravity_supports_reviewer_audit("agy"))
+        with patch(
+            "commerceos_orchestrator.agents.subprocess.run",
+            side_effect=[help_result, old_version],
+        ):
+            self.assertFalse(antigravity_supports_reviewer_audit("agy"))
+
     def test_plain_text_provider_output_can_carry_builder_manifest(self):
         payload = {"contractVersion": "BuilderResultManifest/v1", "taskId": "TASK-0100"}
         output = "done\nBUILDER_RESULT_JSON:" + json.dumps(payload)
@@ -357,6 +377,26 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             CodexRunner._reviewer_forbidden_commands(output),
             ("python scripts/harness_check.py",),
         )
+
+    def test_antigravity_reviewer_without_command_telemetry_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runner = AntigravityRunner(root, root / "logs")
+            ledger = {"contractVersion": "ReviewLedger/v1", "verdict": "PASS"}
+            stdout = json.dumps(
+                {
+                    "event": "result",
+                    "result": {"response": "REVIEW_LEDGER_JSON:" + json.dumps(ledger)},
+                }
+            )
+            raw = AgentResult(True, 0, stdout, "", "")
+            with patch.object(runner, "_run", return_value=raw), patch.object(
+                runner, "_reviewer_mutations", return_value=()
+            ):
+                result = runner.run_reviewer(self._task(), root, diff="")
+            self.assertFalse(result.passed)
+            self.assertEqual(result.raw.marker, "REVIEWER_AUDIT_UNAVAILABLE")
+            self.assertIsNone(result.ledger)
 
     def test_nested_test_output_does_not_look_like_windows_sandbox_failure(self):
         self.assertFalse(

@@ -90,6 +90,24 @@ def antigravity_supports_stream_json(executable: str | None) -> bool:
     return result.returncode == 0 and "--output-format" in help_text and "stream-json" in help_text
 
 
+def antigravity_supports_reviewer_audit(executable: str | None) -> bool:
+    """Gate Reviewer use to the documented release that added enriched tool payloads."""
+    if not antigravity_supports_stream_json(executable) or not executable:
+        return False
+    try:
+        result = subprocess.run(
+            [executable, "--version"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    match = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", f"{result.stdout}\n{result.stderr}")
+    return bool(match and tuple(map(int, match.groups())) >= (1, 1, 8))
+
+
 class CodexRunner:
     """Non-interactive Codex CLI adapter with fixed role/model/sandbox boundaries."""
 
@@ -186,12 +204,29 @@ class CodexRunner:
             )
         combined = f"{raw.stdout}\n{raw.stderr}"
         ledger = self._reviewer_evidence(raw.stdout)
+        if raw.success and not self._reviewer_command_audit_available(raw.stdout):
+            raw = replace(
+                raw,
+                success=False,
+                marker="REVIEWER_AUDIT_UNAVAILABLE",
+                stderr=(
+                    raw.stderr
+                    + "\nReviewer provider did not emit auditable command telemetry; "
+                    "the review fails closed."
+                ).strip(),
+            )
+            combined = f"{raw.stdout}\n{raw.stderr}"
+            ledger = None
         forbidden = self._reviewer_forbidden_commands(raw.stdout)
         if forbidden:
             combined += "\nReviewer command policy violation: " + "; ".join(forbidden)
             ledger = None
         passed = bool(ledger and ledger.get("verdict") == "PASS")
         return ReviewResult(passed, combined.strip(), raw, ledger)
+
+    def _reviewer_command_audit_available(self, stdout: str) -> bool:
+        del stdout
+        return True
 
     @staticmethod
     def _only_reports_orchestrator_bookkeeping(output: str) -> bool:
@@ -808,6 +843,20 @@ class AntigravityRunner(CodexRunner):
     def _process_cwd(self, worktree: Path, *, writable: bool) -> Path | None:
         del writable
         return worktree
+
+    def _reviewer_command_audit_available(self, stdout: str) -> bool:
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                isinstance(event, dict)
+                and event.get("event") == "step_update"
+                and self._antigravity_command_values(event)
+            ):
+                return True
+        return False
 
 
 class RoleRoutedAgentRunner:

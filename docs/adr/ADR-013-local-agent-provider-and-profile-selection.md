@@ -31,7 +31,9 @@ orchestration authority.
 - Expose provider capabilities in the Settings page. A provider/role combination is selectable
   only when the installed adapter can preserve that role's machine-checkable contract.
 - Antigravity CLI versions without machine-readable command events are not eligible for the
-  strict read-only Reviewer role. Codex remains the Reviewer default and fallback is never silent.
+  strict read-only Reviewer role. Eligibility requires the documented enriched-tool-event release,
+  and every Antigravity review must emit auditable command telemetry at runtime or fail closed.
+  Codex remains the Reviewer default and fallback is never silent.
 - Settings changes are validated and written atomically. They apply to newly constructed runners;
   the UI clearly reports when a dashboard restart is required.
 - Dashboard command buttons call typed server-side actions. The browser never assembles or runs a

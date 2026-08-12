@@ -129,7 +129,9 @@ profiles above remain the defaults. Codex and Antigravity commands are construct
 adapters with fixed argv; arbitrary executables and argument templates are not accepted. Missing
 providers and unsupported role combinations fail closed without fallback. Antigravity may be
 used for planning, Builder, Conflict Resolver, and Reviewer work when the installed CLI supports
-`stream-json` tool evidence. Older text-only versions remain ineligible for strict Reviewer work.
+the documented enriched `stream-json` tool evidence. Older versions remain ineligible for strict
+Reviewer work. An eligible Antigravity Reviewer must also emit at least one auditable command event
+during each review; a ledger without that runtime evidence fails closed.
 
 ## 6. Live Codex observability
 
