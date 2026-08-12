@@ -288,6 +288,12 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(review_call["verification_report_path"])
             self.assertTrue((root / review_call["builder_manifest_path"]).is_file())
             self.assertTrue((root / review_call["verification_report_path"]).is_file())
+            transaction = (
+                root
+                / ".commerceos/orchestrator/commerceos/evidence/TASK-0100/completion-transaction.json"
+            )
+            self.assertTrue(transaction.is_file())
+            self.assertTrue(json.loads(transaction.read_text(encoding="utf-8"))["pushEligible"])
 
     def test_invalid_builder_manifest_prevents_verification_and_review(self):
         with tempfile.TemporaryDirectory() as td:

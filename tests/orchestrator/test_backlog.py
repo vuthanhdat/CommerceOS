@@ -27,6 +27,41 @@ class YamlSubsetTests(unittest.TestCase):
 
 
 class BacklogReaderTests(unittest.TestCase):
+    def test_completion_failure_restores_the_full_canonical_snapshot(self):
+        class FailingWriter(BacklogWriter):
+            def _update_master(self, snapshot, completed_task_id):
+                super()._update_master(snapshot, completed_task_id)
+                raise RuntimeError("injected after master update")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"])
+            watched = (
+                root / "tasks/BACKLOG.v2.yaml",
+                root / "tasks/backlog-v2/00.yaml",
+                root / "tasks/backlog/TASK-0100-spec.md",
+            )
+            before = {path: path.read_bytes() for path in watched}
+            snapshot = BacklogReader(root).load()
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                FailingWriter(root).finalize_task(snapshot, snapshot.tasks["TASK-0100"], "done")
+            self.assertEqual({path: path.read_bytes() for path in watched}, before)
+            self.assertFalse((root / "tasks/completed/TASK-0100-spec.md").exists())
+            self.assertEqual(BacklogReader(root).load().tasks["TASK-0100"].lifecycle_state, "Backlog")
+
+    def test_completion_is_canonically_valid_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"])
+            snapshot = BacklogReader(root).load()
+            writer = BacklogWriter(root)
+            destination = writer.finalize_task(snapshot, snapshot.tasks["TASK-0100"], "done")
+            completed = BacklogReader(root).load()
+            writer.finalize_task(completed, completed.tasks["TASK-0100"], "done")
+            writer.validate_completed(completed.tasks["TASK-0100"], destination)
+            self.assertFalse((root / "tasks/backlog/TASK-0100-spec.md").exists())
+            self.assertTrue((root / destination).is_file())
+
     def test_atomic_canonical_write_never_exposes_partial_document(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "BACKLOG.v2.yaml"

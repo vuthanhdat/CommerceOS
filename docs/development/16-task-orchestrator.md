@@ -356,3 +356,8 @@ The real Codex executable is intentionally not required by tests.
 Reviewer decisions use `ReviewLedger/v1`: exact AC/file coverage, stable structured findings,
 and a fail-closed PASS rule. Reviewer processes are read-only and full-suite commands are rejected;
 the validated ledger artifact, not free text, drives routing and merge eligibility.
+
+Finalization is a serialized `CompletionTransaction/v1`. Canonical lifecycle writes are
+filesystem-transactional, validated for spec/path/status/index consistency, then committed and
+verified before a non-force push. Any unpushed failure restores trusted `origin/main`; recovery
+accepts only a valid completed snapshot or resumes from a valid open snapshot.

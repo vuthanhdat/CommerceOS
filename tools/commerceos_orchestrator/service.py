@@ -930,6 +930,13 @@ class TaskOrchestrator:
                         phase="post-bookkeeping",
                         commit_sha=final_commit,
                     )
+                    completion_transaction_path = self._completion_transaction_artifact(
+                        task,
+                        integrated_sha=post_merge_commit,
+                        bookkeeping_sha=final_commit,
+                        completed_path=merged_task.spec_path.replace("/backlog/", "/completed/"),
+                        push_eligible=final_verification.success,
+                    )
                     try:
                         self._authoritative_verification_report(
                             task,
@@ -946,6 +953,7 @@ class TaskOrchestrator:
                         success=final_verification.success,
                         evidence_artifact_ids=(
                             final_verification.log_path or f"{task.id}:post-bookkeeping:audit",
+                            completion_transaction_path,
                         ),
                         failure_route=(
                             None
@@ -992,6 +1000,13 @@ class TaskOrchestrator:
                             phase="recovery-bookkeeping",
                             commit_sha=recovery_commit,
                         )
+                        completion_transaction_path = self._completion_transaction_artifact(
+                            task,
+                            integrated_sha=recovery_commit,
+                            bookkeeping_sha=recovery_commit,
+                            completed_path=current_task.spec_path.replace("/backlog/", "/completed/"),
+                            push_eligible=final_verification.success,
+                        )
                         try:
                             self._authoritative_verification_report(
                                 task,
@@ -1009,6 +1024,7 @@ class TaskOrchestrator:
                             evidence_artifact_ids=(
                                 final_verification.log_path
                                 or f"{task.id}:recovery-bookkeeping:audit",
+                                completion_transaction_path,
                             ),
                             failure_route=(
                                 None
@@ -1049,7 +1065,7 @@ class TaskOrchestrator:
                     self.workspace.cleanup(completed_task)
                 except Exception as cleanup_error:
                     self.state.add_event(task.id, "CLEANUP_WARNING", repr(cleanup_error))
-            except (IntegrationError, BacklogValidationError, WorkspaceError) as exc:
+            except Exception as exc:
                 try:
                     if integration_checkout_prepared:
                         self.integration.rollback_unpushed_main()
@@ -1058,6 +1074,32 @@ class TaskOrchestrator:
                 except Exception as rollback_error:
                     self.state.add_event(task.id, "ROLLBACK_WARNING", repr(rollback_error))
                 self._block(task, "INTEGRATION_ERROR", str(exc))
+
+    def _completion_transaction_artifact(
+        self,
+        task: CanonicalTask,
+        *,
+        integrated_sha: str,
+        bookkeeping_sha: str,
+        completed_path: str,
+        push_eligible: bool,
+    ) -> str:
+        return write_evidence_artifact(
+            self.root,
+            task.catalog,
+            task.id,
+            "completion-transaction.json",
+            {
+                "contractVersion": "CompletionTransaction/v1",
+                "taskId": task.id,
+                "catalog": task.catalog,
+                "integratedSha": integrated_sha,
+                "bookkeepingSha": bookkeeping_sha,
+                "completedPath": completed_path,
+                "canonicalValidation": "PASS" if push_eligible else "BLOCKED",
+                "pushEligible": push_eligible,
+            },
+        )
 
     def _block(self, task: CanonicalTask, code: str, detail: str) -> None:
         if code == "PLANNING_REQUIRED":

@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 import time
+from datetime import date
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
@@ -319,34 +320,87 @@ class BacklogWriter:
             completed_root = PurePosixPath("tasks/completed")
         completed_relative = str(completed_root / source.name)
         destination = self.root / completed_relative
+        catalog_index = self.root / "tasks" / task.catalog / "BACKLOG.md"
+        guarded_paths = (source, destination, self.root / task.shard_path, self.root / BacklogReader.MASTER_PATH, catalog_index)
+        before = {
+            path: path.read_bytes() if path.is_file() else None for path in guarded_paths
+        }
         destination.parent.mkdir(parents=True, exist_ok=True)
-        text = _read_text(source)
-        text = re.sub(r"^Status:\s*.*$", "Status: Completed", text, count=1, flags=re.MULTILINE)
-        text = re.sub(
-            r"^Specification maturity:\s*.*$",
-            "Specification maturity: Completed",
-            text,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        text = re.sub(
-            r"^Execution permission:\s*.*$",
-            "Execution permission: NO — completed",
-            text,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        if "## Completion summary" not in text:
-            text = text.rstrip() + "\n\n## Completion summary\n\n" + completion_summary.strip() + "\n"
-        _atomic_write_text(destination, text)
-
-        # Preserve a valid canonical snapshot at every observable step: create the
-        # new spec, repoint shard, update lifecycle/frontier, then remove old spec.
-        self._update_shard(task, completed_relative)
-        self._update_master(snapshot, task.id)
-        if destination != source:
-            source.unlink()
+        try:
+            text = _read_text(source)
+            text = re.sub(r"^Status:\s*.*$", "Status: Completed", text, count=1, flags=re.MULTILINE)
+            text = re.sub(
+                r"^Specification maturity:\s*.*$", "Specification maturity: Completed",
+                text, count=1, flags=re.MULTILINE,
+            )
+            text = re.sub(
+                r"^Execution permission:\s*.*$", "Execution permission: NO — completed",
+                text, count=1, flags=re.MULTILINE,
+            )
+            if not re.search(r"^Completed:\s*", text, flags=re.MULTILINE):
+                updated_text = re.sub(
+                    r"^(Created:\s*.*)$", rf"\1\nCompleted: {date.today().isoformat()}",
+                    text, count=1, flags=re.MULTILINE,
+                )
+                if updated_text == text:
+                    updated_text = re.sub(
+                        r"^(Execution permission:\s*.*)$",
+                        rf"\1\nCompleted: {date.today().isoformat()}",
+                        text, count=1, flags=re.MULTILINE,
+                    )
+                text = updated_text
+            if "## Completion summary" not in text:
+                text = text.rstrip() + "\n\n## Completion summary\n\n" + completion_summary.strip() + "\n"
+            _atomic_write_text(destination, text)
+            self._update_shard(task, completed_relative)
+            self._update_master(snapshot, task.id)
+            self._update_catalog_index(task)
+            if destination != source:
+                source.unlink()
+            self.validate_completed(task, completed_relative)
+        except Exception:
+            for path, content in before.items():
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    _atomic_write_text(path, content.decode("utf-8"))
+            raise
         return completed_relative
+
+    def _update_catalog_index(self, task: CanonicalTask) -> None:
+        path = self.root / "tasks" / task.catalog / "BACKLOG.md"
+        if not path.is_file():
+            return
+        text = _read_text(path)
+        completed_line = f"- `{task.id}` — {task.title} (`Completed`)."
+        if completed_line in text:
+            return
+        marker = "Recently completed:\n"
+        if marker not in text:
+            raise BacklogValidationError(f"{task.catalog}: Recently completed index not found")
+        _atomic_write_text(path, text.replace(marker, marker + "\n" + completed_line + "\n", 1))
+
+    def validate_completed(self, task: CanonicalTask, completed_relative: str) -> None:
+        source = self.root / task.spec_path
+        destination = self.root / completed_relative
+        if source != destination and source.exists():
+            raise BacklogValidationError(f"{task.id}: backlog completion copy still exists")
+        if not destination.is_file():
+            raise BacklogValidationError(f"{task.id}: completed task spec is missing")
+        text = _read_text(destination)
+        required = (
+            "Status: Completed", "Specification maturity: Completed",
+            "Execution permission: NO — completed", "Completed:", "## Completion summary",
+        )
+        if not all(value in text for value in required):
+            raise BacklogValidationError(f"{task.id}: completed spec metadata is inconsistent")
+        snapshot = BacklogReader(self.root).load()
+        completed = snapshot.tasks.get(task.id)
+        if not completed or completed.lifecycle_state != "Completed" or completed.spec_path != completed_relative:
+            raise BacklogValidationError(f"{task.id}: canonical lifecycle/path is inconsistent")
+        index = self.root / "tasks" / task.catalog / "BACKLOG.md"
+        if index.is_file() and f"`{task.id}`" not in _read_text(index):
+            raise BacklogValidationError(f"{task.id}: catalog completion index is missing")
 
     def _update_shard(self, task: CanonicalTask, completed_relative: str) -> None:
         path = _repo_path(
