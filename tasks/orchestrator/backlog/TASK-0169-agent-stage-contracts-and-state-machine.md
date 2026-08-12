@@ -74,11 +74,31 @@ route; none advance to merge or completion.
 The role matrix and workflow document list the same actors, inputs, outputs, and terminal
 conditions as the executable contract; a structural test checks the referenced contract version.
 
-## Architecture/security/runtime impact
+## Architecture impact
 
-Harness-only. No tenant data, application modules, AWS-style capability, or LocalStack runtime is
-changed. Persisted local state may require an additive schema migration; migration must preserve
-all existing task records.
+Harness-only. The authoritative transition table and versioned stage records live in the
+repository-local Python Orchestrator boundary. Persisted local state may use an additive SQLite
+schema migration; migration must preserve every existing task record.
+
+## Security and tenant impact
+
+Agent and runner outputs remain untrusted until contract validation succeeds. No tenant data,
+authentication, authorization, application module, or external network boundary changes.
+
+## Reliability and idempotency impact
+
+Invalid transitions and malformed outputs fail closed to a named route. Restart migration is
+additive and repeatable, and existing runs must remain readable without duplicate records.
+
+## Observability impact
+
+Each accepted transition persists the contract version and relevant input/output artifact IDs;
+rejected transitions remain inspectable in the event timeline.
+
+## Cost impact
+
+No Codex quota is consumed by tests. No AWS or LocalStack resources or external services are
+introduced.
 
 ## Quantified Definition of Done
 
