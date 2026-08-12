@@ -264,7 +264,10 @@ class TaskOrchestrator:
             if resume:
                 try:
                     self._rehydrate_completion_entry_gate(task)
-                except (CompletionContractError, OSError, json.JSONDecodeError) as exc:
+                except (
+                    CompletionContractError, EvidenceValidationError, ReviewLedgerError,
+                    OSError, json.JSONDecodeError,
+                ) as exc:
                     self._block(
                         task,
                         "FINALIZATION_ENTRY_GATE_RESTORE_REQUIRED",
@@ -568,7 +571,16 @@ class TaskOrchestrator:
                 if review_output_id is None:
                     return
                 entry_gate = CompletionEntryGate(
-                    task.id, commit_sha, manifest_path, verification_report_path, ledger_path
+                    task.id, commit_sha, manifest_path, verification_report_path, ledger_path,
+                    tuple(item.ac_id for item in manifest.acceptance_criteria),
+                    changed_files,
+                    tuple(self.verification.required_command_ids),
+                    tuple(dict.fromkeys((
+                        manifest_path,
+                        verification_report_path,
+                        *(result.log_artifact for result in report.command_results),
+                        *(reference for finding in ledger.findings for reference in finding.evidence_refs),
+                    ))),
                 )
                 write_evidence_artifact(
                     self.root, task.catalog, task.id, Path(manifest_path).name, manifest.to_dict()
@@ -1156,15 +1168,35 @@ class TaskOrchestrator:
             artifact_path.relative_to(self.root)
             if not artifact_path.is_file():
                 raise CompletionContractError(f"completion evidence artifact is missing: {artifact}")
-        manifest = json.loads((self.root / gate.builder_manifest_path).read_text(encoding="utf-8"))
-        report = json.loads((self.root / gate.verification_report_path).read_text(encoding="utf-8"))
-        ledger = json.loads((self.root / gate.review_ledger_path).read_text(encoding="utf-8"))
-        if manifest.get("taskId") != task.id or manifest.get("taskCommitSha") != gate.task_commit_sha:
-            raise CompletionContractError("Builder manifest entry-gate binding mismatch")
-        if report.get("taskId") != task.id or report.get("taskCommitSha") != gate.task_commit_sha or report.get("success") is not True:
-            raise CompletionContractError("VerificationReport entry-gate binding mismatch")
-        if ledger.get("taskId") != task.id or ledger.get("reviewedCommitSha") != gate.task_commit_sha or ledger.get("verdict") != "PASS":
-            raise CompletionContractError("ReviewLedger entry-gate binding mismatch")
+        manifest_payload = json.loads((self.root / gate.builder_manifest_path).read_text(encoding="utf-8"))
+        report_payload = json.loads((self.root / gate.verification_report_path).read_text(encoding="utf-8"))
+        ledger_payload = json.loads((self.root / gate.review_ledger_path).read_text(encoding="utf-8"))
+        manifest = BuilderResultManifest.from_dict(
+            manifest_payload,
+            expected_task_id=task.id,
+            expected_commit_sha=gate.task_commit_sha,
+            expected_ac_ids=gate.acceptance_criterion_ids,
+            expected_changed_files=gate.changed_files,
+            expected_required_command_ids=gate.required_command_ids,
+        )
+        report = VerificationReport.from_dict(report_payload)
+        if report.task_id != task.id:
+            raise EvidenceValidationError("Verification report taskId mismatch")
+        report.validate(
+            expected_commands=self.verification.expected_commands(manifest.additional_commands),
+            expected_commit_sha=gate.task_commit_sha,
+        )
+        ledger = ReviewLedger.from_dict(
+            ledger_payload,
+            expected_task_id=task.id,
+            expected_commit_sha=gate.task_commit_sha,
+            expected_ac_ids=gate.acceptance_criterion_ids,
+            expected_changed_files=gate.changed_files,
+            allowed_evidence_refs=gate.allowed_evidence_refs,
+            expected_review_round=ledger_payload.get("reviewRound"),
+        )
+        if ledger.verdict != "PASS":
+            raise CompletionContractError("ReviewLedger entry gate did not pass")
         return gate
 
     def _block(self, task: CanonicalTask, code: str, detail: str) -> None:

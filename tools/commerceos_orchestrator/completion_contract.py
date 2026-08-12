@@ -19,12 +19,18 @@ class CompletionEntryGate:
     builder_manifest_path: str
     verification_report_path: str
     review_ledger_path: str
+    acceptance_criterion_ids: tuple[str, ...]
+    changed_files: tuple[str, ...]
+    required_command_ids: tuple[str, ...]
+    allowed_evidence_refs: tuple[str, ...]
 
     @classmethod
     def from_dict(cls, value: Any) -> "CompletionEntryGate":
         fields = {
             "contractVersion", "taskId", "taskCommitSha", "builderManifestPath",
             "verificationReportPath", "reviewLedgerPath",
+            "acceptanceCriterionIds", "changedFiles", "requiredCommandIds",
+            "allowedEvidenceRefs",
         }
         if not isinstance(value, dict) or set(value) != fields:
             raise CompletionContractError("invalid CompletionEntryGate/v1 fields")
@@ -40,9 +46,20 @@ class CompletionEntryGate:
             path = PurePosixPath(value[name])
             if path.is_absolute() or ".." in path.parts:
                 raise CompletionContractError("completion entry gate has an unsafe artifact path")
+        sequences = (
+            "acceptanceCriterionIds", "changedFiles", "requiredCommandIds",
+            "allowedEvidenceRefs",
+        )
+        if any(not isinstance(value[name], list) or not all(
+            isinstance(item, str) and item for item in value[name]
+        ) or len(value[name]) != len(set(value[name])) for name in sequences):
+            raise CompletionContractError("completion entry gate has invalid binding inventory")
         return cls(
             value["taskId"], value["taskCommitSha"], value["builderManifestPath"],
             value["verificationReportPath"], value["reviewLedgerPath"],
+            tuple(value["acceptanceCriterionIds"]), tuple(value["changedFiles"]),
+            tuple(value["requiredCommandIds"]),
+            tuple(value["allowedEvidenceRefs"]),
         )
 
     @property
@@ -61,6 +78,10 @@ class CompletionEntryGate:
             "builderManifestPath": self.builder_manifest_path,
             "verificationReportPath": self.verification_report_path,
             "reviewLedgerPath": self.review_ledger_path,
+            "acceptanceCriterionIds": list(self.acceptance_criterion_ids),
+            "changedFiles": list(self.changed_files),
+            "requiredCommandIds": list(self.required_command_ids),
+            "allowedEvidenceRefs": list(self.allowed_evidence_refs),
         }
 
 

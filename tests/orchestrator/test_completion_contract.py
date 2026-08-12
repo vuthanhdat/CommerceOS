@@ -10,11 +10,26 @@ if str(TOOLS) not in sys.path:
 
 from commerceos_orchestrator.completion_contract import (
     CompletionContractError,
+    CompletionEntryGate,
     CompletionTransaction,
 )
 
 
 class CompletionTransactionTests(unittest.TestCase):
+    def test_entry_gate_requires_complete_binding_inventory(self):
+        payload = {
+            "contractVersion": "CompletionEntryGate/v1", "taskId": "TASK-0100",
+            "taskCommitSha": "abc", "builderManifestPath": "builder.json",
+            "verificationReportPath": "verification.json", "reviewLedgerPath": "review.json",
+            "acceptanceCriterionIds": [], "changedFiles": ["x"],
+            "requiredCommandIds": ["task-verification"],
+            "allowedEvidenceRefs": ["builder.json", "verification.json"],
+        }
+        self.assertEqual(CompletionEntryGate.from_dict(payload).changed_files, ("x",))
+        payload.pop("changedFiles")
+        with self.assertRaises(CompletionContractError):
+            CompletionEntryGate.from_dict(payload)
+
     def test_valid_transaction_round_trips(self):
         transaction = CompletionTransaction.create(
             task_id="TASK-0100",

@@ -188,6 +188,43 @@ class VerificationReport:
     test_totals: TestTotals
     success: bool
 
+    @classmethod
+    def from_dict(cls, payload: Any) -> "VerificationReport":
+        values = _required_object(
+            payload,
+            ("contractVersion", "taskId", "taskCommitSha", "commandResults", "testTotals", "success"),
+            "Verification report",
+        )
+        rows = _required_list(values["commandResults"], "commandResults")
+        results: list[VerificationCommandResult] = []
+        for index, row in enumerate(rows):
+            item = _required_object(
+                row, ("commandId", "argv", "exitCode", "logArtifact"),
+                f"commandResults[{index}]",
+            )
+            if not isinstance(item["exitCode"], int):
+                raise EvidenceValidationError("verification exitCode must be an integer")
+            results.append(VerificationCommandResult(
+                _required_string(item["commandId"], "commandId"),
+                _string_tuple(item["argv"], "argv", allow_empty=False),
+                item["exitCode"],
+                _required_string(item["logArtifact"], "logArtifact"),
+            ))
+        totals = _required_object(
+            values["testTotals"], ("discovered", "passed", "failed", "skipped_required"),
+            "testTotals",
+        )
+        if not all(isinstance(totals[name], int) for name in totals):
+            raise EvidenceValidationError("verification test totals must be integers")
+        if not isinstance(values["success"], bool):
+            raise EvidenceValidationError("verification success must be a boolean")
+        return cls(
+            _required_string(values["contractVersion"], "contractVersion"),
+            _required_string(values["taskId"], "taskId"),
+            _required_string(values["taskCommitSha"], "taskCommitSha"),
+            tuple(results), TestTotals(**totals), values["success"],
+        )
+
     def validate(
         self,
         *,

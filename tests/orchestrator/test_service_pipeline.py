@@ -126,9 +126,28 @@ def write_completion_entry_gate(root: Path, task_id: str = "TASK-0100") -> None:
     evidence_root = root / f".commerceos/orchestrator/commerceos/evidence/{task_id}"
     evidence_root.mkdir(parents=True, exist_ok=True)
     artifacts = {
-        "builder.json": {"taskId": task_id, "taskCommitSha": "abc"},
-        "verification.json": {"taskId": task_id, "taskCommitSha": "abc", "success": True},
-        "review.json": {"taskId": task_id, "reviewedCommitSha": "abc", "verdict": "PASS"},
+        "builder.json": {
+            "contractVersion": "BuilderResultManifest/v1", "taskId": task_id,
+            "taskCommitSha": "abc", "acceptanceCriteria": [], "changedFiles": ["x"],
+            "requiredCommandIds": ["task-verification"], "additionalCommands": [],
+            "limitations": [], "followUps": [],
+        },
+        "verification.json": {
+            "contractVersion": "VerificationReport/v1", "taskId": task_id,
+            "taskCommitSha": "abc", "commandResults": [{
+                "commandId": "task-verification", "argv": ["fake-verify"],
+                "exitCode": 0, "logArtifact": "verification.log",
+            }],
+            "testTotals": {"discovered": 1, "passed": 1, "failed": 0, "skipped_required": 0},
+            "success": True,
+        },
+        "review.json": {
+            "contractVersion": "ReviewLedger/v1", "taskId": task_id,
+            "reviewedCommitSha": "abc", "reviewRound": "INITIAL",
+            "acceptanceCriteria": [],
+            "changedFiles": [{"path": "x", "classification": "IN_SCOPE"}],
+            "findings": [], "verdict": "PASS",
+        },
     }
     for name, payload in artifacts.items():
         (evidence_root / name).write_text(json.dumps(payload), encoding="utf-8")
@@ -139,6 +158,9 @@ def write_completion_entry_gate(root: Path, task_id: str = "TASK-0100") -> None:
             "taskCommitSha": "abc", "builderManifestPath": f"{prefix}/builder.json",
             "verificationReportPath": f"{prefix}/verification.json",
             "reviewLedgerPath": f"{prefix}/review.json",
+            "acceptanceCriterionIds": [], "changedFiles": ["x"],
+            "requiredCommandIds": ["task-verification"],
+            "allowedEvidenceRefs": [f"{prefix}/builder.json", f"{prefix}/verification.json", "verification.log"],
         }),
         encoding="utf-8",
     )
@@ -172,6 +194,53 @@ def reviewer_environment_failure() -> ReviewResult:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_malformed_resumed_evidence_is_blocked_before_integration(self):
+        for artifact in ("builder.json", "verification.json", "review.json"):
+            with self.subTest(artifact=artifact), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+                write_completion_entry_gate(root)
+                path = root / f".commerceos/orchestrator/commerceos/evidence/TASK-0100/{artifact}"
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if artifact == "builder.json":
+                    payload.pop("contractVersion")
+                elif artifact == "verification.json":
+                    payload["testTotals"]["failed"] = 1
+                else:
+                    payload["findings"] = [{
+                        "findingId": "F-001", "status": "OPEN", "severity": "HIGH",
+                        "owner": "BUILDER", "route": "BUILDER_FIX", "title": "blocking",
+                        "evidenceRefs": [
+                            ".commerceos/orchestrator/commerceos/evidence/TASK-0100/builder.json"
+                        ],
+                        "affectedPaths": ["x"], "acceptanceCondition": "must close",
+                    }]
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                state = RunStateStore(root / "state.db")
+                self.assertTrue(state.claim_task("TASK-0100"))
+                connection = sqlite3.connect(root / "state.db")
+                try:
+                    connection.execute(
+                        "UPDATE task_runs SET execution_state = ? WHERE task_id = ?",
+                        (TaskExecutionState.FINALIZING.value, "TASK-0100"),
+                    )
+                    connection.commit()
+                finally:
+                    connection.close()
+                integration = FakeIntegrationManager()
+                orch = TaskOrchestrator(
+                    root, state, FakeAgentRunner(), FakeVerificationRunner([True]),
+                    workspace_manager=FakeWorkspaceManager(root),
+                    integration_manager=integration,
+                )
+                orch._execute_task(BacklogReader(root).load().tasks["TASK-0100"], resume=True)
+                self.assertNotIn("prepare", integration.calls)
+                self.assertNotIn("push", integration.calls)
+                self.assertEqual(
+                    state.task_run("TASK-0100").blocker_code,
+                    "FINALIZATION_ENTRY_GATE_RESTORE_REQUIRED",
+                )
+
     def test_late_completion_failures_never_leave_an_unhandled_push(self):
         for fail_on in ("bookkeeping", "transaction", "finalization", "push"):
             with self.subTest(fail_on=fail_on), tempfile.TemporaryDirectory() as td:

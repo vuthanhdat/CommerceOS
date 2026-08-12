@@ -76,6 +76,7 @@ class ReviewLedger:
         allowed_evidence_refs: tuple[str, ...],
         previous: "ReviewLedger | None" = None,
         repair_changed_files: tuple[str, ...] = (),
+        expected_review_round: str | None = None,
     ) -> "ReviewLedger":
         required = {
             "contractVersion", "taskId", "reviewedCommitSha", "reviewRound",
@@ -87,7 +88,9 @@ class ReviewLedger:
             raise ReviewLedgerError("unsupported review ledger contract version")
         if value["taskId"] != expected_task_id or value["reviewedCommitSha"] != expected_commit_sha:
             raise ReviewLedgerError("review ledger task/commit binding mismatch")
-        expected_round = "REPAIR" if previous else "INITIAL"
+        expected_round = expected_review_round or ("REPAIR" if previous else "INITIAL")
+        if expected_round not in {"INITIAL", "REPAIR"}:
+            raise ReviewLedgerError("invalid expected review round")
         if value["reviewRound"] != expected_round:
             raise ReviewLedgerError(f"reviewRound must be {expected_round}")
 
