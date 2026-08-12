@@ -478,6 +478,11 @@ Additional commands are optional; when needed, use objects shaped as
 {{"commandId":"additional-short-name","argv":["python","-m","unittest","..."]}}.
 The Orchestrator validates this untrusted manifest against the task, Git, and its trusted command
 policy, then runs deterministic verification and independent review.
+If the diagnostics file contains `REPAIR_PACKET_JSON`, this is a finding-scoped repair. Change
+only packet-authorized paths and add a `repairManifest` object to the same Builder JSON with
+`contractVersion: RepairManifest/v1`, exact packet task/baseline and current repaired SHA,
+one `ADDRESSED|BLOCKED` disposition per packet finding, and every repair-delta path mapped to
+one or more packet finding IDs.
 """
 
     @staticmethod
@@ -716,6 +721,23 @@ class FakeAgentRunner:
                     "followUps": [],
                 },
             )
+        if result.success and result.evidence is not None and feedback and "REPAIR_PACKET_JSON:" in feedback:
+            packet = json.loads(feedback.split("REPAIR_PACKET_JSON:", 1)[1])
+            evidence = dict(result.evidence)
+            evidence["repairManifest"] = {
+                "contractVersion": "RepairManifest/v1",
+                "taskId": task.id,
+                "baselineSha": packet["baselineSha"],
+                "repairedSha": "abc",
+                "findingDispositions": [
+                    {"findingId": finding["findingId"], "disposition": "ADDRESSED"}
+                    for finding in packet["findings"]
+                ],
+                "changedFiles": [
+                    {"path": "x", "findingIds": [packet["findings"][0]["findingId"]]}
+                ],
+            }
+            result = replace(result, evidence=evidence)
         return result
 
     def run_reviewer(

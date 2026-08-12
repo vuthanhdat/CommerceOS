@@ -49,6 +49,10 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 The Builder may update implementation documentation and may report completion evidence, but a
 task remains `Backlog`/`Ready` in the Builder worktree until the Orchestrator finalizes it.
 
+On a finding-scoped repair, Builder reads the validated `RepairPacket/v1`, changes only
+finding-authorized paths, and emits `RepairManifest/v1` with exact finding disposition and repair
+delta coverage. General refactoring and follow-up work are prohibited during repair.
+
 ## Stop conditions
 
 - `IMPLEMENTATION COMPLETE` only after task scope, tests, documentation, and required verification are complete;

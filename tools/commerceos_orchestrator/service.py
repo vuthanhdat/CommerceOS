@@ -41,6 +41,7 @@ from .review_contract import (
     ReviewLedgerError,
     next_hop,
 )
+from .repair_contract import RepairContractError, RepairManifest, RepairPacket
 
 
 @dataclass(frozen=True)
@@ -240,6 +241,8 @@ class TaskOrchestrator:
         review_context: str | None = None
         previous_ledger: ReviewLedger | None = None
         previous_review_commit: str | None = None
+        repair_packet: RepairPacket | None = None
+        repair_packet_path: str | None = None
         repair_resume = False
         if resume and prior_run:
             feedback = f"Resume safely after interrupted local state {prior_run.execution_state.value}. Inspect existing worktree before editing."
@@ -309,8 +312,10 @@ class TaskOrchestrator:
                     return
                 if agent.evidence is None:
                     raise EvidenceValidationError("Builder result manifest is missing")
+                builder_evidence = dict(agent.evidence)
+                repair_evidence = builder_evidence.pop("repairManifest", None)
                 manifest = BuilderResultManifest.from_dict(
-                    agent.evidence,
+                    builder_evidence,
                     expected_task_id=task.id,
                     expected_commit_sha=commit_sha,
                     expected_ac_ids=acceptance_criterion_ids(workspace.path / task.spec_path),
@@ -321,6 +326,28 @@ class TaskOrchestrator:
                     raise EvidenceValidationError(
                         "Builder manifest contains BLOCKED acceptance criteria"
                     )
+                repair_manifest_path: str | None = None
+                if is_repair and repair_packet is not None:
+                    if previous_review_commit is None:
+                        raise RepairContractError("repair baseline is missing")
+                    repair_delta = tuple(
+                        self.workspace.changed_files_between(
+                            workspace, previous_review_commit, commit_sha
+                        )
+                    )
+                    repair_manifest = RepairManifest.from_dict(
+                        repair_evidence,
+                        packet=repair_packet,
+                        repaired_sha=commit_sha,
+                        repair_delta=repair_delta,
+                    )
+                    repair_manifest_path = write_evidence_artifact(
+                        workspace.path,
+                        task.catalog,
+                        task.id,
+                        f"repair-manifest-{fix_round}.json",
+                        repair_manifest.to_dict(),
+                    )
                 manifest_path = write_evidence_artifact(
                     workspace.path,
                     task.catalog,
@@ -328,7 +355,7 @@ class TaskOrchestrator:
                     f"builder-manifest-{fix_round}.json",
                     manifest.to_dict(),
                 )
-            except (WorkspaceError, EvidenceValidationError, AttributeError) as exc:
+            except (WorkspaceError, EvidenceValidationError, RepairContractError, AttributeError) as exc:
                 self._block(task, "BUILDER_EVIDENCE_INVALID", str(exc))
                 return
 
@@ -339,6 +366,7 @@ class TaskOrchestrator:
                 evidence_artifact_ids=(
                     agent.log_path or f"{task.id}:{builder_stage}:audit",
                     manifest_path,
+                    *(() if repair_manifest_path is None else (repair_manifest_path,)),
                 ),
             )
             if builder_output_id is None:
@@ -591,6 +619,23 @@ class TaskOrchestrator:
             review_context = ledger_path
             previous_ledger = ledger
             previous_review_commit = commit_sha
+            try:
+                repair_packet = RepairPacket.from_ledger(ledger, ledger_path)
+                repair_packet_path = write_evidence_artifact(
+                    workspace.path,
+                    task.catalog,
+                    task.id,
+                    f"repair-packet-{fix_round}.json",
+                    repair_packet.to_dict(),
+                )
+                feedback = (
+                    f"REPAIR_PACKET_PATH: {repair_packet_path}\n"
+                    "REPAIR_PACKET_JSON: "
+                    + json.dumps(repair_packet.to_dict(), separators=(",", ":"))
+                )
+            except RepairContractError as exc:
+                self._block(task, "INVALID_REPAIR_PACKET", str(exc))
+                return
             review_output_id = self._validated_stage_output(
                 task,
                 "reviewer",
@@ -598,6 +643,7 @@ class TaskOrchestrator:
                 evidence_artifact_ids=(
                     review.raw.log_path or f"{task.id}:reviewer:audit",
                     ledger_path,
+                    repair_packet_path,
                 ),
                 failure_route=TaskExecutionState.REPAIR_REQUIRED,
             )

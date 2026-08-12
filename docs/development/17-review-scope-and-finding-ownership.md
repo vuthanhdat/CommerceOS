@@ -79,3 +79,8 @@ and must not run `scripts/harness_check.py` or repository full test suites. A ne
 check is represented as a routed finding. On Windows the read-only Codex process starts from the
 primary checkout and inspects the absolute sibling worktree because the restricted runner cannot
 spawn from sibling worktrees.
+
+Open Builder findings produce `RepairPacket/v1`. The repair Builder may change only paths matched
+by those findings and must emit `RepairManifest/v1` mapping every repair-delta file to a stable
+finding ID. Unknown IDs, unmatched paths, blocked dispositions, and opportunistic scope changes
+fail before Verification or re-review.
