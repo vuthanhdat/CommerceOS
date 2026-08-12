@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0177` — Configure Codex sandbox by agent role (`Completed`).
+
 - `TASK-0176` — Add dashboard command controls and agent settings (`Completed`).
 
 - `TASK-0175` — Switch the coding execution profile from Luna to Terra (`Completed`).
@@ -31,7 +33,6 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0177` - Configure Codex sandbox by agent role (`Ready`).
 
 
 ## Strict workflow boundary program

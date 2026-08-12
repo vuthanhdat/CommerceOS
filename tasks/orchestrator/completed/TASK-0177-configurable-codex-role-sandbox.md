@@ -1,11 +1,12 @@
 # TASK-0177 - Configure Codex sandbox by agent role
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder - Engineering / Harness
 Recommended implementation model: gpt-5.6-terra, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: TASK-0176, ADR-013
 Cloud verification: No
 
@@ -119,23 +120,35 @@ sandbox dropdown exposes only valid options, explains the risk, and preserves ex
 
 ### What changed
 
-- Pending implementation.
+- Added a validated per-role Codex sandbox setting and propagated it into fixed Codex argv and
+  live start events.
+- Added role-aware Settings dropdowns: writable Codex roles can select `workspace-write` or
+  `danger-full-access`; Reviewer is fixed to `read-only`; Antigravity-owned controls are disabled.
+- Added backward-compatible settings behavior, regression tests, risk copy, and documentation.
 
 ### Verification
 
-- `python3 scripts/harness_check.py`: pending.
+- `py -3 -m unittest discover -s tests/orchestrator -p 'test_*.py'`: PASS (137 tests).
+- `py -3 scripts/harness_check.py`: PASS.
+- Browser QA: desktop save/reload and Reviewer lock PASS; 480px viewport has no horizontal
+  overflow.
 
 ### Acceptance criteria status
 
-- AC01-AC04: pending.
+- AC01-AC04: satisfied.
 
 ### Architecture/security/runtime notes
 
-- Pending implementation.
+- Reviewer remains process-level `read-only`; unsafe Reviewer/provider combinations fail
+  validation.
+- `danger-full-access` is an explicit local operator choice for trusted Codex writable roles only;
+  it does not authorize real AWS.
+- No tenant, domain, LocalStack resource, or hosted infrastructure behavior changed.
 
 ### Harness improvement
 
-- Pending implementation.
+- Added regression coverage for legacy settings, unsafe API input, effective runner argv, and live
+  sandbox observability.
 
 ### Follow-up tasks
 
