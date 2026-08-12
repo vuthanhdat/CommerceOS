@@ -133,6 +133,13 @@ the documented enriched `stream-json` tool evidence. Older versions remain ineli
 Reviewer work. An eligible Antigravity Reviewer must also emit at least one auditable command event
 during each review; a ledger without that runtime evidence fails closed.
 
+The Settings page also exposes a typed Codex sandbox selector. Planning, Builder, and Conflict
+Resolver default to `workspace-write` and may be explicitly changed to `danger-full-access` for
+trusted local tasks that need Docker, Git child processes, or other host integrations. Reviewer is
+always `read-only`, regardless of the saved profile. Antigravity owns its own sandbox behavior, so
+the Codex selector is disabled while that provider is selected. Sandbox access does not imply
+real-cloud authorization.
+
 ## 6. Live Codex observability
 
 Codex automation uses `codex exec --json` with a streaming `subprocess.Popen` adapter. stdout JSONL is consumed while Codex is running, stderr is drained concurrently, and both are retained in audit logs.

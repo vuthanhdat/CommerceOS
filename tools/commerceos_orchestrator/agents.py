@@ -61,6 +61,7 @@ class CodexExecutionProfile:
     # Human-facing policy name. Codex CLI represents Standard/non-Fast as the
     # default service tier, while Fast maps to fast/priority.
     service_tier: str = "standard"
+    sandbox_mode: str = "workspace-write"
 
     @property
     def codex_service_tier(self) -> str:
@@ -287,7 +288,9 @@ CONFLICT_RESULT: RESOLVED
         # Windows cannot start the restricted runner from sibling worktrees. Reviewers
         # therefore start from the primary root but inspect the absolute sibling path;
         # the process-level sandbox remains read-only on every platform.
-        sandbox = "workspace-write" if writable else "read-only"
+        # Reviewer isolation is a role invariant. Writable roles may opt into
+        # full local access explicitly through the validated operator settings.
+        sandbox = self.profile.sandbox_mode if writable else "read-only"
         execution_root = self.root if os.name == "nt" and not writable else worktree
         return [
             executable,
@@ -354,7 +357,7 @@ CONFLICT_RESULT: RESOLVED
             provider=self.PROVIDER,
             reasoning_effort=self.profile.reasoning_effort,
             service_tier=self.profile.service_tier,
-            sandbox="workspace-write" if writable else "read-only",
+            sandbox=self.profile.sandbox_mode if writable else "read-only",
             model_class=task.model_class,
         )
 

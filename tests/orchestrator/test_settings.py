@@ -33,6 +33,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(value.profiles["planning"].model, "gpt-5.6-sol")
         self.assertEqual(value.profiles["builder"].model, "gpt-5.6-terra")
         self.assertEqual(value.profiles["reviewer"].provider, "codex")
+        self.assertEqual(value.profiles["builder"].sandbox_mode, "workspace-write")
+        self.assertEqual(value.profiles["reviewer"].sandbox_mode, "read-only")
         self.assertFalse(value.allow_cloud)
 
     def test_antigravity_builder_is_valid_but_reviewer_fails_closed(self):
@@ -59,6 +61,33 @@ class SettingsTests(unittest.TestCase):
         raw["max_builders"] = 3
         with self.assertRaisesRegex(SettingsValidationError, "between 1 and 2"):
             parse_settings(raw, capabilities=CAPABILITIES)
+
+    def test_full_access_is_explicit_and_reviewer_remains_read_only(self):
+        raw = asdict(default_settings())
+        raw["profiles"]["builder"]["sandbox_mode"] = "danger-full-access"
+        value = parse_settings(raw, capabilities=CAPABILITIES)
+        self.assertEqual(value.profiles["builder"].sandbox_mode, "danger-full-access")
+
+        raw["profiles"]["reviewer"]["sandbox_mode"] = "danger-full-access"
+        with self.assertRaisesRegex(SettingsValidationError, "read-only"):
+            parse_settings(raw, capabilities=CAPABILITIES)
+
+        raw = asdict(default_settings())
+        raw["profiles"]["builder"].update(
+            provider="antigravity",
+            model="gemini-3.1-pro",
+            sandbox_mode="danger-full-access",
+        )
+        with self.assertRaisesRegex(SettingsValidationError, "only supported by Codex"):
+            parse_settings(raw, capabilities=CAPABILITIES)
+
+    def test_legacy_settings_receive_role_safe_sandbox_defaults(self):
+        raw = asdict(default_settings())
+        for profile in raw["profiles"].values():
+            profile.pop("sandbox_mode")
+        value = parse_settings(raw, capabilities=CAPABILITIES)
+        self.assertEqual(value.profiles["builder"].sandbox_mode, "workspace-write")
+        self.assertEqual(value.profiles["reviewer"].sandbox_mode, "read-only")
 
     def test_store_writes_atomically_and_reset_restores_defaults(self):
         with tempfile.TemporaryDirectory() as td:

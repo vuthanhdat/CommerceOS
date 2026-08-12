@@ -25,6 +25,7 @@ PROVIDERS = ("codex", "antigravity")
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$")
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
 SERVICE_TIERS = ("standard", "priority")
+WRITABLE_SANDBOX_MODES = ("workspace-write", "danger-full-access")
 
 
 class SettingsValidationError(ValueError):
@@ -37,12 +38,14 @@ class AgentProfileSettings:
     model: str
     reasoning_effort: str = "medium"
     service_tier: str = "standard"
+    sandbox_mode: str = "workspace-write"
 
     def codex_profile(self) -> CodexExecutionProfile:
         return CodexExecutionProfile(
             self.model,
             reasoning_effort=self.reasoning_effort,
             service_tier=self.service_tier,
+            sandbox_mode=self.sandbox_mode,
         )
 
 
@@ -62,12 +65,14 @@ def default_settings() -> LocalOrchestratorSettings:
         PLANNING_CODEX_PROFILE.model,
         PLANNING_CODEX_PROFILE.reasoning_effort,
         PLANNING_CODEX_PROFILE.service_tier,
+        "workspace-write",
     )
     coding = AgentProfileSettings(
         "codex",
         CODING_CODEX_PROFILE.model,
         CODING_CODEX_PROFILE.reasoning_effort,
         CODING_CODEX_PROFILE.service_tier,
+        "workspace-write",
     )
     return LocalOrchestratorSettings(
         catalog="commerceos",
@@ -77,7 +82,13 @@ def default_settings() -> LocalOrchestratorSettings:
         profiles={
             "planning": planning,
             "builder": coding,
-            "reviewer": coding,
+            "reviewer": AgentProfileSettings(
+                coding.provider,
+                coding.model,
+                coding.reasoning_effort,
+                coding.service_tier,
+                "read-only",
+            ),
             "conflict_resolver": coding,
         },
     )
@@ -148,6 +159,7 @@ def provider_capabilities() -> dict[str, dict[str, object]]:
             "supported_roles": list(ROLE_KEYS),
             "supports_reasoning_effort": True,
             "supports_service_tier": True,
+            "supports_sandbox_mode": True,
             "models": [
                 {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol"},
                 {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra"},
@@ -162,6 +174,7 @@ def provider_capabilities() -> dict[str, dict[str, object]]:
             ],
             "supports_reasoning_effort": agy_stream,
             "supports_service_tier": False,
+            "supports_sandbox_mode": False,
             "supports_stream_json": agy_stream,
             "supports_reviewer_command_audit": agy_reviewer_audit,
             "models": _probe_antigravity_models(agy),
@@ -199,15 +212,26 @@ def _validate_profile(
         raise SettingsValidationError(f"{role}: model is not reported by Antigravity")
     reasoning = str(raw.get("reasoning_effort", "medium"))
     service = str(raw.get("service_tier", "standard"))
+    sandbox_default = "read-only" if role == "reviewer" else "workspace-write"
+    sandbox = str(raw.get("sandbox_mode", sandbox_default))
     if reasoning not in REASONING_EFFORTS:
         raise SettingsValidationError(f"{role}: unsupported reasoning effort")
     if service not in SERVICE_TIERS:
         raise SettingsValidationError(f"{role}: unsupported service tier")
+    allowed_sandboxes = ("read-only",) if role == "reviewer" else WRITABLE_SANDBOX_MODES
+    if sandbox not in allowed_sandboxes:
+        raise SettingsValidationError(
+            f"{role}: sandbox mode must be one of {', '.join(allowed_sandboxes)}"
+        )
+    if provider != "codex" and sandbox != sandbox_default:
+        raise SettingsValidationError(
+            f"{role}: sandbox mode {sandbox!r} is only supported by Codex"
+        )
     if provider == "antigravity":
         if not capability.get("supports_reasoning_effort", False):
             reasoning = "medium"
         service = "standard"
-    return AgentProfileSettings(provider, model, reasoning, service)
+    return AgentProfileSettings(provider, model, reasoning, service, sandbox)
 
 
 def parse_settings(

@@ -49,6 +49,9 @@ class DashboardTests(unittest.TestCase):
                 for command in ("Validate", "Plan", "Dry run", "Run", "Resume", "Cleanup"):
                     self.assertIn(f">{command}<", html)
                 self.assertIn("Agent settings", html)
+                self.assertIn("Sandbox", html)
+                self.assertIn("danger-full-access", html)
+                self.assertIn("Reviewer is always read-only.", html)
                 self.assertIn("X-CommerceOS-Dashboard", html)
                 self.assertIn("window.confirm", html)
                 with urlopen(server.url + "api/status", timeout=2) as response:
@@ -86,6 +89,7 @@ class DashboardTests(unittest.TestCase):
                 updated = view["settings"]
                 updated["catalog"] = "orchestrator"
                 updated["max_builders"] = 1
+                updated["profiles"]["builder"]["sandbox_mode"] = "danger-full-access"
                 request = self.control_request(
                     server.url + "api/settings", method="PUT", payload=updated
                 )
@@ -93,7 +97,20 @@ class DashboardTests(unittest.TestCase):
                     saved = json.load(response)
                 self.assertTrue(saved["accepted"])
                 self.assertTrue(saved["restart_required"])
+                self.assertEqual(
+                    saved["settings"]["profiles"]["builder"]["sandbox_mode"],
+                    "danger-full-access",
+                )
                 self.assertTrue((root / ".commerceos/orchestrator/settings.json").is_file())
+
+                updated["profiles"]["reviewer"]["sandbox_mode"] = "danger-full-access"
+                unsafe = self.control_request(
+                    server.url + "api/settings", method="PUT", payload=updated
+                )
+                with self.assertRaises(HTTPError) as unsafe_error:
+                    urlopen(unsafe, timeout=3)
+                self.assertEqual(unsafe_error.exception.code, HTTPStatus.BAD_REQUEST)
+                updated["profiles"]["reviewer"]["sandbox_mode"] = "read-only"
 
                 forbidden = Request(
                     server.url + "api/settings", method="PUT",

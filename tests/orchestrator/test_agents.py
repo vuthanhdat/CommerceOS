@@ -14,6 +14,7 @@ from commerceos_orchestrator.agents import (
     AntigravityRunner,
     CODING_CODEX_PROFILE,
     PLANNING_CODEX_PROFILE,
+    CodexExecutionProfile,
     CodexRunner,
     antigravity_supports_reviewer_audit,
     antigravity_supports_stream_json,
@@ -241,6 +242,21 @@ class CodexPromptBoundaryTests(unittest.TestCase):
                 self.assertEqual(command[command.index("-C") + 1], str(root.resolve()))
                 self.assertNotEqual(str(root.resolve()), str(sibling.resolve()))
 
+    def test_full_access_profile_applies_only_to_writable_roles(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            profile = CodexExecutionProfile("gpt-5.6-terra", sandbox_mode="danger-full-access")
+            runner = CodexRunner(root, root / "logs", profile=profile)
+            writable = runner._build_command(
+                "codex", worktree=root, writable=True, prompt="build"
+            )
+            reviewer = runner._build_command(
+                "codex", worktree=root, writable=False, prompt="review"
+            )
+            self.assertIn("danger-full-access", writable)
+            self.assertIn("read-only", reviewer)
+            self.assertNotIn("danger-full-access", reviewer)
+
     def test_codex_jsonl_is_published_before_process_wait_and_retained_in_audit_log(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -287,6 +303,8 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             ]
             kinds = [record["kind"] for record in records]
             self.assertIn("codex_started", kinds)
+            started = next(record for record in records if record["kind"] == "codex_started")
+            self.assertEqual(started["sandbox"], "workspace-write")
             self.assertIn("codex_event", kinds)
             self.assertIn("codex_stderr", kinds)
             self.assertEqual(kinds[-1], "codex_finished")

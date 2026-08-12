@@ -36,6 +36,10 @@ orchestration authority.
   Codex remains the Reviewer default and fallback is never silent.
 - Settings changes are validated and written atomically. They apply to newly constructed runners;
   the UI clearly reports when a dashboard restart is required.
+- Configure Codex sandbox mode per logical role. Writable roles may use the safe default
+  `workspace-write` or explicitly opt into `danger-full-access`; Reviewer remains fixed to
+  `read-only`. Full access is for trusted local engineering tasks and does not grant cloud
+  authorization.
 - Dashboard command buttons call typed server-side actions. The browser never assembles or runs a
   shell command and cannot mutate canonical backlog YAML directly.
 
@@ -88,7 +92,7 @@ Option C is accepted.
   process failure, and restart-required state are explicit.
 - Retry/recovery: existing Orchestrator retry policy remains authoritative; provider fallback is
   not automatic.
-- Observability: status and live feed identify provider, model, and role.
+- Observability: status and live feed identify provider, model, role, and effective sandbox.
 - Operational burden: provider capability probes and settings validation are covered by tests.
 
 ## Cost impact

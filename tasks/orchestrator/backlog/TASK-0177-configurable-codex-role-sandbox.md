@@ -101,6 +101,12 @@ sandbox dropdown exposes only valid options, explains the risk, and preserves ex
 - `danger-full-access` intentionally permits task-owned Docker/Git/Node processes when selected.
 - No real AWS use is authorized.
 
+## Cost impact
+
+- No hosted infrastructure or real-cloud cost is introduced.
+- Provider usage continues to follow the operator's local account and selected model.
+- Cost-model update required? No.
+
 ## Test plan
 
 - Unit: defaults, validation, persistence, role constraints, argv construction.
