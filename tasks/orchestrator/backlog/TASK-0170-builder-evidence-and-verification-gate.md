@@ -1,12 +1,36 @@
 # TASK-0170 — Require Builder evidence before independent review
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — waits for TASK-0169
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Engineering / Harness
+Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
-Depends on: TASK-0169
+Depends on: completed TASK-0169
 Cloud verification: No
+
+## Planning readiness
+
+- Owning domain: Engineering / Harness.
+- Product/domain/tenant decisions: N/A.
+- Technical boundary: extend `commerceos.orchestrator.stage/v1` with repository-local JSON
+  evidence artifacts; SQLite stores references, not duplicated evidence bodies.
+- Required command authority: trusted Orchestrator policy plus the Ready task test plan. Builder
+  may declare additional commands but cannot remove or downgrade required commands.
+- Remaining blockers: None.
+
+## Evidence contract
+
+`BuilderResultManifest/v1` contains `contractVersion`, `taskId`, `taskCommitSha`, exactly one
+verdict per task AC ID, the Git-derived changed-file inventory, declared additional verification
+commands, limitations, and follow-ups. Each AC verdict is `SATISFIED` or `BLOCKED` and references
+one or more evidence IDs.
+
+`VerificationReport/v1` contains `contractVersion`, `taskId`, `taskCommitSha`, the trusted required
+command set, one command result per required/additional command (`argv`, exit code, log artifact),
+aggregate discovered/passed/failed/skipped-required test totals, and a final success predicate.
+The Orchestrator derives changed files from Git and required commands from trusted policy/task
+metadata, then rejects any manifest/report mismatch before Reviewer dispatch.
 
 ## Goal
 
@@ -66,10 +90,28 @@ Reviewer input includes the validated Builder manifest and Verification report. 
 contain zero requirements to create/check completion summaries, lifecycle status, or completed
 task paths.
 
-## Architecture/security/runtime impact
+## Architecture impact
 
-Harness-only. Evidence is untrusted task output until schema, task ID, and commit binding pass.
-No CommerceOS or LocalStack behavior changes.
+Harness-only extension of the accepted stage contract. Evidence is stored as versioned JSON
+artifacts and referenced by the existing stage timeline; no new service or persistence boundary.
+
+## Security and tenant impact
+
+Builder evidence is untrusted until schema, task ID, commit SHA, Git changed-file inventory, and
+trusted required-command set match. Paths remain worktree-contained. No tenant behavior changes.
+
+## Reliability and idempotency impact
+
+Repeated validation of the same task/commit is deterministic. Missing, duplicate, stale, skipped,
+or failed required evidence blocks Reviewer dispatch without mutating lifecycle state.
+
+## Observability impact
+
+Validated manifest/report artifact IDs and command logs remain inspectable from the task timeline.
+
+## Cost impact
+
+Fake-runner tests consume no Codex quota. No AWS, external cloud, or LocalStack resource impact.
 
 ## Quantified Definition of Done
 
@@ -87,4 +129,3 @@ No CommerceOS or LocalStack behavior changes.
 - Premature lifecycle mutation restoration tests.
 - Prompt snapshots proving completion evidence is not Reviewer scope.
 - LocalStack verification: N/A.
-
