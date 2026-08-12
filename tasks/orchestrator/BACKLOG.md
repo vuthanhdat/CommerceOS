@@ -27,6 +27,7 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0175` — Switch the coding execution profile from Luna to Terra (`Ready`).
 
 ## Strict workflow boundary program
 
