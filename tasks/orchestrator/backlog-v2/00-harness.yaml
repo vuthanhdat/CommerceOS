@@ -13,7 +13,7 @@ tasks:
   - [TASK-0176, Completed, harness, Engineering/Harness, "Add dashboard command controls and agent settings", "Expose typed CLI-equivalent dashboard actions and per-role Codex/Antigravity provider and model settings.", [TASK-0175], [], Builder, default, no, tasks/orchestrator/completed/TASK-0176-dashboard-command-controls-and-agent-settings.md]
   - [TASK-0177, Completed, harness, Engineering/Harness, "Configure Codex sandbox by agent role", "Expose validated per-role Codex sandbox selection, including explicit full access for writable roles while Reviewer remains read-only.", [TASK-0176], [], Builder, default, no, tasks/orchestrator/completed/TASK-0177-configurable-codex-role-sandbox.md]
   - [TASK-0178, Completed, harness, Engineering/Harness, "Expose planning candidates and contain the dashboard DAG", "Show the nearest planning candidate in read-only Plan output and keep wide dependency stages inside the DAG panel.", [TASK-0177], [], Builder, default, no, tasks/orchestrator/completed/TASK-0178-planning-preview-and-dag-containment.md]
-  - [TASK-0179, Ready, harness, Engineering/Harness, "Make worktree creation resilient to transient origin fetch failures", "Retry transient origin fetch failures and use only a verified synchronized cached main snapshot for worktree creation.", [TASK-0178], [], Builder, default, no, tasks/orchestrator/backlog/TASK-0179-resilient-worktree-fetch.md]
-    lifecycle_state: Backlog
+  - [TASK-0179, Completed, harness, Engineering/Harness, "Make worktree creation resilient to transient origin fetch failures", "Retry transient origin fetch failures and use only a verified synchronized cached main snapshot for worktree creation.", [TASK-0178], [], Builder, default, no, tasks/orchestrator/completed/TASK-0179-resilient-worktree-fetch.md]
+    lifecycle_state: Completed
     exclusive_resources: [repository-task-state, git-worktrees, orchestrator-runtime]
     merge_policy: verified_serial_main

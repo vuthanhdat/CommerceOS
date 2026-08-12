@@ -1,11 +1,12 @@
 # TASK-0179 - Make worktree creation resilient to transient origin fetch failures
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder - Engineering / Harness
 Recommended implementation model: gpt-5.6-terra, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: TASK-0178
 Cloud verification: No
 
@@ -90,4 +91,28 @@ cloud-service cost changes.
 
 ## Completion summary
 
-Pending implementation.
+### What changed
+
+- Worktree preparation recognizes a bounded set of transient network failures and retries once.
+- After two transient failures it proceeds only when local `main` and cached `origin/main` resolve
+  to the same commit; otherwise it preserves a blocking Git error.
+- Authentication and other non-network failures are never retried or hidden by cached fallback.
+- A warning records the exact cached commit used.
+
+### Verification
+
+- Orchestrator suite: PASS (143 tests).
+- `py -3 scripts/harness_check.py`: PASS.
+
+### Acceptance criteria status
+
+- AC01-AC03: satisfied.
+
+### Architecture/security/runtime notes
+
+- No product, tenant, LocalStack, or cloud boundary changed.
+- Fallback is limited to equal trusted refs and therefore fails closed on stale/divergent state.
+
+### Follow-up tasks
+
+- None identified.

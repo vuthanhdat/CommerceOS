@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0179` — Make worktree creation resilient to transient origin fetch failures (`Completed`).
+
 - `TASK-0178` — Expose planning candidates and contain the dashboard DAG (`Completed`).
 
 - `TASK-0177` — Configure Codex sandbox by agent role (`Completed`).
@@ -34,8 +36,6 @@ Recently completed:
 - `TASK-0168` — Separate CommerceOS and Orchestrator task catalogs (`Completed`).
 
 ## Ready frontier
-
-- `TASK-0179` — Make worktree creation resilient to transient origin fetch failures (`Ready`).
 
 
 
