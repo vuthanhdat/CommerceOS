@@ -42,7 +42,7 @@ from .review_contract import (
     next_hop,
 )
 from .repair_contract import RepairContractError, RepairManifest, RepairPacket
-from .completion_contract import CompletionTransaction
+from .completion_contract import CompletionContractError, CompletionEntryGate, CompletionTransaction
 
 
 @dataclass(frozen=True)
@@ -262,13 +262,15 @@ class TaskOrchestrator:
             TaskExecutionState.FINALIZING,
         }:
             if resume:
-                self._block(
-                    task,
-                    "FINALIZATION_ENTRY_GATE_RESTORE_REQUIRED",
-                    "Persisted VerificationReport/ReviewLedger artifact chain must be rehydrated "
-                    "before resuming merge or finalization.",
-                )
-                return
+                try:
+                    self._rehydrate_completion_entry_gate(task)
+                except (CompletionContractError, OSError, json.JSONDecodeError) as exc:
+                    self._block(
+                        task,
+                        "FINALIZATION_ENTRY_GATE_RESTORE_REQUIRED",
+                        f"Persisted completion entry gate is missing or stale: {exc}",
+                    )
+                    return
             self._integrate(task, workspace.branch, workspace.path)
             return
 
@@ -565,6 +567,23 @@ class TaskOrchestrator:
                 )
                 if review_output_id is None:
                     return
+                entry_gate = CompletionEntryGate(
+                    task.id, commit_sha, manifest_path, verification_report_path, ledger_path
+                )
+                write_evidence_artifact(
+                    self.root, task.catalog, task.id, Path(manifest_path).name, manifest.to_dict()
+                )
+                write_evidence_artifact(
+                    self.root, task.catalog, task.id, Path(verification_report_path).name,
+                    report.to_dict(),
+                )
+                write_evidence_artifact(
+                    self.root, task.catalog, task.id, Path(ledger_path).name, ledger.to_dict()
+                )
+                write_evidence_artifact(
+                    self.root, task.catalog, task.id, "completion-entry-gate.json",
+                    entry_gate.to_dict(),
+                )
                 self.state.update_task(
                     task.id,
                     TaskExecutionState.MERGE_QUEUED,
@@ -854,6 +873,7 @@ class TaskOrchestrator:
                 self.state.update_task(task.id, TaskExecutionState.INTEGRATING)
             integration_checkout_prepared = False
             try:
+                entry_gate = self._rehydrate_completion_entry_gate(task)
                 self.integration.prepare_main()
                 integration_checkout_prepared = True
                 already_remote = self.integration.branch_is_on_remote_main(branch)
@@ -962,7 +982,11 @@ class TaskOrchestrator:
                         integrated_sha=post_merge_commit,
                         bookkeeping_sha=final_commit,
                         completed_path=merged_task.spec_path.replace("/backlog/", "/completed/"),
-                        evidence_artifact_ids=(integration_output_id, final_verification.log_path),
+                        evidence_artifact_ids=(
+                            *entry_gate.evidence_artifact_ids,
+                            integration_output_id,
+                            final_verification.log_path,
+                        ),
                     )
                     finalization_output_id = self._validated_stage_output(
                         task,
@@ -975,6 +999,7 @@ class TaskOrchestrator:
                         failure_route=None,
                     )
                     if finalization_output_id is None:
+                        self.integration.rollback_unpushed_main()
                         return
                     self.integration.push_main()
                 else:
@@ -1031,7 +1056,11 @@ class TaskOrchestrator:
                             integrated_sha=recovery_integrated_commit,
                             bookkeeping_sha=recovery_commit,
                             completed_path=current_task.spec_path.replace("/backlog/", "/completed/"),
-                            evidence_artifact_ids=(integration_output_id, final_verification.log_path),
+                            evidence_artifact_ids=(
+                                *entry_gate.evidence_artifact_ids,
+                                integration_output_id,
+                                final_verification.log_path,
+                            ),
                         )
                         finalization_output_id = self._validated_stage_output(
                             task,
@@ -1045,6 +1074,7 @@ class TaskOrchestrator:
                             failure_route=None,
                         )
                         if finalization_output_id is None:
+                            self.integration.rollback_unpushed_main()
                             return
                         self.integration.push_main()
 
@@ -1097,6 +1127,11 @@ class TaskOrchestrator:
             completed_path=completed_path,
             original_task_path=task.spec_path,
             evidence_artifact_ids=evidence_artifact_ids,
+            pre_finalization_lifecycle="Backlog",
+            canonical_validation="PASS",
+            authoritative_verification="PASS",
+            rollback_outcome="NOT_REQUIRED",
+            push_eligible=True,
         )
         return write_evidence_artifact(
             self.root,
@@ -1105,6 +1140,32 @@ class TaskOrchestrator:
             "completion-transaction.json",
             transaction.to_dict(),
         )
+
+    def _rehydrate_completion_entry_gate(self, task: CanonicalTask) -> CompletionEntryGate:
+        relative = (
+            Path(".commerceos/orchestrator") / task.catalog / "evidence" / task.id
+            / "completion-entry-gate.json"
+        )
+        path = (self.root / relative).resolve()
+        path.relative_to(self.root)
+        gate = CompletionEntryGate.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        if gate.task_id != task.id:
+            raise CompletionContractError("completion entry gate task binding mismatch")
+        for artifact in gate.evidence_artifact_ids:
+            artifact_path = (self.root / artifact).resolve()
+            artifact_path.relative_to(self.root)
+            if not artifact_path.is_file():
+                raise CompletionContractError(f"completion evidence artifact is missing: {artifact}")
+        manifest = json.loads((self.root / gate.builder_manifest_path).read_text(encoding="utf-8"))
+        report = json.loads((self.root / gate.verification_report_path).read_text(encoding="utf-8"))
+        ledger = json.loads((self.root / gate.review_ledger_path).read_text(encoding="utf-8"))
+        if manifest.get("taskId") != task.id or manifest.get("taskCommitSha") != gate.task_commit_sha:
+            raise CompletionContractError("Builder manifest entry-gate binding mismatch")
+        if report.get("taskId") != task.id or report.get("taskCommitSha") != gate.task_commit_sha or report.get("success") is not True:
+            raise CompletionContractError("VerificationReport entry-gate binding mismatch")
+        if ledger.get("taskId") != task.id or ledger.get("reviewedCommitSha") != gate.task_commit_sha or ledger.get("verdict") != "PASS":
+            raise CompletionContractError("ReviewLedger entry-gate binding mismatch")
+        return gate
 
     def _block(self, task: CanonicalTask, code: str, detail: str) -> None:
         if code == "PLANNING_REQUIRED":

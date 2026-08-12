@@ -316,6 +316,10 @@ class BacklogWriter:
     def finalize_task(
         self, snapshot: BacklogSnapshot, task: CanonicalTask, completion_summary: str
     ) -> str:
+        if task.lifecycle_state == "Completed":
+            self.validate_completed(task, task.spec_path)
+            return task.spec_path
+        self.validate_finalizable(task)
         source = _repo_path(
             self.root,
             task.spec_path,
@@ -370,7 +374,7 @@ class BacklogWriter:
             self._update_master(full_snapshot_before, task.id)
             self._update_catalog_index(task)
             if destination != source:
-                source.unlink()
+                self._remove_source(source)
             self.validate_completed(task, completed_relative)
         except Exception:
             for path, content in before.items():
@@ -380,6 +384,28 @@ class BacklogWriter:
                     _atomic_write_text(path, content.decode("utf-8"))
             raise
         return completed_relative
+
+    def _remove_source(self, source: Path) -> None:
+        source.unlink()
+
+    def validate_finalizable(self, task: CanonicalTask) -> None:
+        if task.lifecycle_state != "Backlog" or task.maturity != "Ready":
+            raise BacklogValidationError(
+                f"{task.id}: finalization requires Ready/Backlog canonical state"
+            )
+        if "/backlog/" not in task.spec_path.replace("\\", "/"):
+            raise BacklogValidationError(f"{task.id}: finalizable task path is not in backlog")
+        copies = self._canonical_task_copies(task)
+        expected = (self.root / task.spec_path).resolve()
+        if copies != [expected]:
+            raise BacklogValidationError(
+                f"{task.id}: expected exactly one backlog task file; found {len(copies)}"
+            )
+        index = self.root / "tasks" / task.catalog / "BACKLOG.md"
+        if index.is_file():
+            entries = self._catalog_index_entries(task, index)
+            if len(entries) != 1 or "(`Ready`)" not in entries[0]:
+                raise BacklogValidationError(f"{task.id}: catalog ready index is inconsistent")
 
     def _update_catalog_index(self, task: CanonicalTask) -> None:
         path = self.root / "tasks" / task.catalog / "BACKLOG.md"
@@ -418,12 +444,36 @@ class BacklogWriter:
         if completed.maturity != "Completed":
             raise BacklogValidationError(f"{task.id}: canonical maturity is inconsistent")
         if index.is_file():
-            entries = [
-                line for line in _read_text(index).splitlines()
-                if line.lstrip().startswith("-") and f"`{task.id}`" in line
-            ]
+            entries = self._catalog_index_entries(task, index)
             if len(entries) != 1 or "(`Completed`)" not in entries[0]:
                 raise BacklogValidationError(f"{task.id}: catalog completion index is inconsistent")
+        copies = self._canonical_task_copies(task)
+        if copies != [destination.resolve()]:
+            raise BacklogValidationError(
+                f"{task.id}: expected exactly one completed task file; found {len(copies)}"
+            )
+
+    def _canonical_task_copies(self, task: CanonicalTask) -> list[Path]:
+        raw = PurePosixPath(task.spec_path)
+        if len(raw.parts) >= 3 and raw.parts[:2] in {
+            ("tasks", "commerceos"), ("tasks", "orchestrator")
+        }:
+            base = self.root / raw.parts[0] / raw.parts[1]
+        else:
+            base = self.root / "tasks"
+        copies: list[Path] = []
+        for lifecycle in ("backlog", "active", "completed"):
+            directory = base / lifecycle
+            if directory.is_dir():
+                copies.extend(path.resolve() for path in directory.glob(f"{task.id}*.md"))
+        return sorted(copies, key=str)
+
+    @staticmethod
+    def _catalog_index_entries(task: CanonicalTask, index: Path) -> list[str]:
+        return [
+            line for line in _read_text(index).splitlines()
+            if line.lstrip().startswith("-") and f"`{task.id}`" in line
+        ]
 
     def _update_shard(self, task: CanonicalTask, completed_relative: str) -> None:
         path = _repo_path(

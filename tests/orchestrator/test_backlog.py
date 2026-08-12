@@ -28,7 +28,10 @@ class YamlSubsetTests(unittest.TestCase):
 
 class BacklogReaderTests(unittest.TestCase):
     def test_every_completion_write_failure_restores_all_canonical_files(self):
-        methods = ("_update_shard", "_update_master", "_update_catalog_index", "validate_completed")
+        methods = (
+            "_update_shard", "_update_master", "_update_catalog_index", "_remove_source",
+            "validate_completed",
+        )
         for method_name in methods:
             with self.subTest(method=method_name), tempfile.TemporaryDirectory() as td:
                 root = Path(td)
@@ -127,6 +130,26 @@ class BacklogReaderTests(unittest.TestCase):
                 reader.join()
             self.assertEqual(errors, [])
 
+    def test_completion_rejects_duplicate_active_copy_and_blocked_lifecycle(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"])
+            snapshot = BacklogReader(root).load()
+            active = root / "tasks/active"
+            active.mkdir()
+            (active / "TASK-0100-duplicate.md").write_text("duplicate", encoding="utf-8")
+            with self.assertRaisesRegex(BacklogValidationError, "exactly one backlog"):
+                BacklogWriter(root).finalize_task(
+                    snapshot, snapshot.tasks["TASK-0100"], "done"
+                )
+            active.joinpath("TASK-0100-duplicate.md").unlink()
+            blocked = snapshot.tasks["TASK-0100"]
+            blocked = blocked.__class__(
+                **{**blocked.__dict__, "lifecycle_state": "Blocked"}
+            )
+            with self.assertRaisesRegex(BacklogValidationError, "Ready/Backlog"):
+                BacklogWriter(root).finalize_task(snapshot, blocked, "done")
+
     def test_atomic_canonical_write_never_exposes_partial_document(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "BACKLOG.v2.yaml"
@@ -207,6 +230,43 @@ class BacklogReaderTests(unittest.TestCase):
                 [task.id for task in BacklogReader.ready_frontier(BacklogReader(root).load(), set())],
                 ["TASK-0100"],
             )
+
+    def test_named_commerceos_catalog_updates_destination_and_single_index_entry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"])
+            named_shard = root / "tasks/commerceos/backlog-v2/00.yaml"
+            named_shard.parent.mkdir(parents=True)
+            legacy_shard = root / "tasks/backlog-v2/00.yaml"
+            named_shard.write_text(
+                legacy_shard.read_text(encoding="utf-8").replace(
+                    "tasks/backlog/", "tasks/commerceos/backlog/"
+                ),
+                encoding="utf-8",
+            )
+            legacy_shard.unlink()
+            named_spec = root / "tasks/commerceos/backlog/TASK-0100-spec.md"
+            named_spec.parent.mkdir(parents=True)
+            (root / "tasks/backlog/TASK-0100-spec.md").rename(named_spec)
+            master = root / "tasks/BACKLOG.v2.yaml"
+            master.write_text(
+                master.read_text(encoding="utf-8").replace(
+                    "tasks/backlog-v2/00.yaml", "tasks/commerceos/backlog-v2/00.yaml"
+                ),
+                encoding="utf-8",
+            )
+            index = root / "tasks/commerceos/BACKLOG.md"
+            index.parent.mkdir(exist_ok=True)
+            index.write_text(
+                "Ready:\n\n- `TASK-0100` — TASK-0100 (`Ready`).\n\nRecently completed:\n",
+                encoding="utf-8",
+            )
+            snapshot = BacklogReader(root, "commerceos").load()
+            destination = BacklogWriter(root).finalize_task(
+                snapshot, snapshot.tasks["TASK-0100"], "done"
+            )
+            self.assertEqual(destination, "tasks/commerceos/completed/TASK-0100-spec.md")
+            self.assertEqual(index.read_text(encoding="utf-8").count("`TASK-0100`"), 1)
 
     def test_unknown_catalog_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:

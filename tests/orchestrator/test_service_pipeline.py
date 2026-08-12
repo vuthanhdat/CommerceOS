@@ -85,6 +85,65 @@ class MalformedStageOutputOrchestrator(TaskOrchestrator):
         return payload
 
 
+class FailingCompletionOrchestrator(TaskOrchestrator):
+    def __init__(self, *args, fail_on: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fail_on = fail_on
+
+    def _completion_transaction_artifact(self, *args, **kwargs):
+        if self.fail_on == "transaction":
+            raise RuntimeError("injected transaction write failure")
+        return super()._completion_transaction_artifact(*args, **kwargs)
+
+    @staticmethod
+    def _stage_output_payload(*args, **kwargs):
+        payload = TaskOrchestrator._stage_output_payload(*args, **kwargs)
+        if payload["stage"] == "finalization" and getattr(
+            FailingCompletionOrchestrator, "malform_finalization", False
+        ):
+            payload.pop("contract_version")
+        return payload
+
+
+class FailingIntegrationManager(FakeIntegrationManager):
+    def __init__(self, fail_on: str):
+        super().__init__()
+        self.fail_on = fail_on
+
+    def commit_bookkeeping(self, task):
+        self.calls.append("bookkeeping")
+        if self.fail_on == "bookkeeping":
+            raise RuntimeError("injected bookkeeping failure")
+
+    def push_main(self):
+        self.calls.append("push")
+        if self.fail_on == "push":
+            raise RuntimeError("injected push failure")
+        self.remote = True
+
+
+def write_completion_entry_gate(root: Path, task_id: str = "TASK-0100") -> None:
+    evidence_root = root / f".commerceos/orchestrator/commerceos/evidence/{task_id}"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    artifacts = {
+        "builder.json": {"taskId": task_id, "taskCommitSha": "abc"},
+        "verification.json": {"taskId": task_id, "taskCommitSha": "abc", "success": True},
+        "review.json": {"taskId": task_id, "reviewedCommitSha": "abc", "verdict": "PASS"},
+    }
+    for name, payload in artifacts.items():
+        (evidence_root / name).write_text(json.dumps(payload), encoding="utf-8")
+    prefix = f".commerceos/orchestrator/commerceos/evidence/{task_id}"
+    (evidence_root / "completion-entry-gate.json").write_text(
+        json.dumps({
+            "contractVersion": "CompletionEntryGate/v1", "taskId": task_id,
+            "taskCommitSha": "abc", "builderManifestPath": f"{prefix}/builder.json",
+            "verificationReportPath": f"{prefix}/verification.json",
+            "reviewLedgerPath": f"{prefix}/review.json",
+        }),
+        encoding="utf-8",
+    )
+
+
 def review(passed: bool, text: str) -> ReviewResult:
     raw = AgentResult(True, 0, text, "", "")
     return ReviewResult(passed, text, raw)
@@ -113,6 +172,41 @@ def reviewer_environment_failure() -> ReviewResult:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_late_completion_failures_never_leave_an_unhandled_push(self):
+        for fail_on in ("bookkeeping", "transaction", "finalization", "push"):
+            with self.subTest(fail_on=fail_on), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+                state = RunStateStore(root / "state.db")
+                integration = FailingIntegrationManager(fail_on)
+                if fail_on in {"transaction", "finalization"}:
+                    FailingCompletionOrchestrator.malform_finalization = fail_on == "finalization"
+                    orchestrator_type = FailingCompletionOrchestrator
+                    extra = {"fail_on": fail_on}
+                else:
+                    orchestrator_type = TaskOrchestrator
+                    extra = {}
+                try:
+                    orch = orchestrator_type(
+                        root, state,
+                        FakeAgentRunner(review_results=[review(True, "REVIEW_RESULT: PASS")]),
+                        FakeVerificationRunner([True, True, True]),
+                        workspace_manager=FakeWorkspaceManager(root),
+                        integration_manager=integration,
+                        config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+                        **extra,
+                    )
+                    orch.run()
+                finally:
+                    FailingCompletionOrchestrator.malform_finalization = False
+                self.assertIn("rollback", integration.calls)
+                if fail_on != "push":
+                    self.assertNotIn("push", integration.calls)
+                self.assertNotEqual(
+                    state.task_run("TASK-0100").execution_state,
+                    TaskExecutionState.COMPLETED,
+                )
+
     def test_already_remote_partial_completion_fails_closed_without_push(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -140,6 +234,7 @@ class PipelineTests(unittest.TestCase):
                 connection.close()
             integration = FakeIntegrationManager()
             integration.remote = True
+            write_completion_entry_gate(root)
             orch = TaskOrchestrator(
                 root, state, FakeAgentRunner(), FakeVerificationRunner([True]),
                 workspace_manager=FakeWorkspaceManager(root),
@@ -153,6 +248,36 @@ class PipelineTests(unittest.TestCase):
                 state.task_run(task.id).execution_state,
                 TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED,
             )
+
+    def test_valid_finalization_entry_gate_resumes_after_restart(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            task = BacklogReader(root).load().tasks["TASK-0100"]
+            write_completion_entry_gate(root)
+            state = RunStateStore(root / "state.db")
+            self.assertTrue(state.claim_task(task.id))
+            connection = sqlite3.connect(root / "state.db")
+            try:
+                connection.execute(
+                    "UPDATE task_runs SET execution_state = ? WHERE task_id = ?",
+                    (TaskExecutionState.FINALIZING.value, task.id),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            integration = FakeIntegrationManager()
+            integration.remote = True
+            orch = TaskOrchestrator(
+                root, state, FakeAgentRunner(), FakeVerificationRunner([True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=integration,
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            orch._execute_task(task, resume=True)
+            self.assertEqual(state.task_run(task.id).execution_state, TaskExecutionState.COMPLETED)
+            self.assertIn("push", integration.calls)
+            self.assertTrue((root / "tasks/completed/TASK-0100-spec.md").is_file())
 
     def test_missing_configured_repair_manifest_blocks_before_second_verification(self):
         with tempfile.TemporaryDirectory() as td:

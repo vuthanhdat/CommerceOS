@@ -13,6 +13,58 @@ class CompletionContractError(ValueError):
 
 
 @dataclass(frozen=True)
+class CompletionEntryGate:
+    task_id: str
+    task_commit_sha: str
+    builder_manifest_path: str
+    verification_report_path: str
+    review_ledger_path: str
+
+    @classmethod
+    def from_dict(cls, value: Any) -> "CompletionEntryGate":
+        fields = {
+            "contractVersion", "taskId", "taskCommitSha", "builderManifestPath",
+            "verificationReportPath", "reviewLedgerPath",
+        }
+        if not isinstance(value, dict) or set(value) != fields:
+            raise CompletionContractError("invalid CompletionEntryGate/v1 fields")
+        if value["contractVersion"] != "CompletionEntryGate/v1":
+            raise CompletionContractError("unsupported completion entry-gate version")
+        names = (
+            "taskId", "taskCommitSha", "builderManifestPath", "verificationReportPath",
+            "reviewLedgerPath",
+        )
+        if any(not isinstance(value[name], str) or not value[name].strip() for name in names):
+            raise CompletionContractError("completion entry gate has an empty field")
+        for name in names[2:]:
+            path = PurePosixPath(value[name])
+            if path.is_absolute() or ".." in path.parts:
+                raise CompletionContractError("completion entry gate has an unsafe artifact path")
+        return cls(
+            value["taskId"], value["taskCommitSha"], value["builderManifestPath"],
+            value["verificationReportPath"], value["reviewLedgerPath"],
+        )
+
+    @property
+    def evidence_artifact_ids(self) -> tuple[str, ...]:
+        return (
+            self.builder_manifest_path,
+            self.verification_report_path,
+            self.review_ledger_path,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "contractVersion": "CompletionEntryGate/v1",
+            "taskId": self.task_id,
+            "taskCommitSha": self.task_commit_sha,
+            "builderManifestPath": self.builder_manifest_path,
+            "verificationReportPath": self.verification_report_path,
+            "reviewLedgerPath": self.review_ledger_path,
+        }
+
+
+@dataclass(frozen=True)
 class CompletionTransaction:
     task_id: str
     catalog: str
@@ -33,6 +85,11 @@ class CompletionTransaction:
         completed_path: str,
         original_task_path: str,
         evidence_artifact_ids: tuple[str, ...],
+        pre_finalization_lifecycle: str,
+        canonical_validation: str,
+        authoritative_verification: str,
+        rollback_outcome: str,
+        push_eligible: bool,
     ) -> "CompletionTransaction":
         return cls.from_dict(
             {
@@ -43,14 +100,14 @@ class CompletionTransaction:
                 "bookkeepingSha": bookkeeping_sha,
                 "completedPath": completed_path,
                 "preFinalizationSnapshot": {
-                    "lifecycle": "Backlog",
+                    "lifecycle": pre_finalization_lifecycle,
                     "taskPath": original_task_path,
                 },
                 "evidenceArtifactIds": list(evidence_artifact_ids),
-                "canonicalValidation": "PASS",
-                "authoritativeVerification": "PASS",
-                "rollbackOutcome": "NOT_REQUIRED",
-                "pushEligible": True,
+                "canonicalValidation": canonical_validation,
+                "authoritativeVerification": authoritative_verification,
+                "rollbackOutcome": rollback_outcome,
+                "pushEligible": push_eligible,
             }
         )
 

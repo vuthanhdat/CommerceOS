@@ -24,6 +24,11 @@ class CompletionTransactionTests(unittest.TestCase):
             completed_path="tasks/commerceos/completed/TASK-0100-spec.md",
             original_task_path="tasks/commerceos/backlog/TASK-0100-spec.md",
             evidence_artifact_ids=("integration-output", "verification-report"),
+            pre_finalization_lifecycle="Backlog",
+            canonical_validation="PASS",
+            authoritative_verification="PASS",
+            rollback_outcome="NOT_REQUIRED",
+            push_eligible=True,
         )
         self.assertEqual(
             CompletionTransaction.from_dict(transaction.to_dict()),
@@ -39,6 +44,11 @@ class CompletionTransactionTests(unittest.TestCase):
             completed_path="tasks/commerceos/completed/TASK-0100-spec.md",
             original_task_path="tasks/commerceos/backlog/TASK-0100-spec.md",
             evidence_artifact_ids=("integration-output", "verification-report"),
+            pre_finalization_lifecycle="Backlog",
+            canonical_validation="PASS",
+            authoritative_verification="PASS",
+            rollback_outcome="NOT_REQUIRED",
+            push_eligible=True,
         ).to_dict()
         payload["authoritativeVerification"] = "STALE"
         with self.assertRaises(CompletionContractError):
