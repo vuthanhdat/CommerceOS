@@ -1,11 +1,12 @@
 # TASK-0169 — Define machine-checkable agent stage contracts and workflow states
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: completed TASK-0090, completed TASK-0168, completed TASK-0167
 Cloud verification: No
 
@@ -114,3 +115,38 @@ introduced.
 - State-store migration and restart tests.
 - Pipeline tests for every success, retry, routed, and invalid-output edge.
 - LocalStack verification: N/A — repository harness only.
+
+## Completion summary
+
+TASK-0169 is complete. The Orchestrator now uses the versioned
+`commerceos.orchestrator.stage/v1` contract, distinct persisted workflow states, one canonical
+transition table, fail-closed transition/output validation, additive SQLite migration, and
+artifact-linked timeline events.
+
+### Acceptance criteria status
+
+- AC01 — Satisfied: every production edge, including failure routes, is materialized in the
+  canonical transition table and structurally tested.
+- AC02 — Satisfied: each planning/build/verification/review/repair/integration/finalization stage
+  has one versioned input and output type; missing-field fixtures fail and production outputs are
+  validated before handoff.
+- AC03 — Satisfied: initial build, repair build, both verification/review phases, integration,
+  and finalization are distinct; direct review-to-initial-build transitions fail closed.
+- AC04 — Satisfied: invalid transitions and malformed stage outputs route to named terminal states
+  and cannot advance to merge or completion.
+- AC05 — Satisfied: workflow and role documentation references the executable contract version
+  and stage inventory, with structural parity coverage.
+
+### Verification evidence
+
+- `python -m unittest discover -s tests/orchestrator -p "test_*.py"` — 66 tests passed.
+- `python scripts/harness_check.py` — passed before integration; post-integration Orchestrator
+  verification also passed.
+- Independent review — PASS after two Builder findings were repaired and re-reviewed.
+
+### Scope and impact
+
+- Harness-only Python/SQLite/dashboard/docs changes; additive migration preserves existing runs.
+- Agent outputs remain untrusted until validated; no tenant, CommerceOS product, cloud, or
+  LocalStack runtime behavior changed.
+- LocalStack verification: N/A.
