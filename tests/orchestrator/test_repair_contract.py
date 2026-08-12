@@ -29,6 +29,11 @@ class RepairContractTests(unittest.TestCase):
     def test_manifest_exactly_maps_delta_to_packet_findings(self):
         manifest = RepairManifest.from_dict(self._manifest(), packet=self._packet(), repaired_sha="head", repair_delta=("src/x.py",))
         self.assertEqual(manifest.changed_files[0][0], "src/x.py")
+        self.assertTrue(RepairManifest._matches("tests/unit/test_x.py", "tests/**"))
+        self.assertTrue(RepairManifest._matches("src/x.py", "src/*.py"))
+        self.assertFalse(RepairManifest._matches("src/nested/x.py", "src/*.py"))
+        self.assertFalse(RepairManifest._matches("src/x.py", "../src/**"))
+        self.assertFalse(RepairManifest._matches("src/x.py", "/src/**"))
 
     def test_invalid_scope_ids_coverage_and_disposition_fail_closed(self):
         mutations = []
@@ -37,9 +42,12 @@ class RepairContractTests(unittest.TestCase):
         traversal = self._manifest(); traversal["changedFiles"][0]["path"] = "../x"; mutations.append(traversal)
         duplicate = self._manifest(); duplicate["findingDispositions"] *= 2; mutations.append(duplicate)
         blocked = self._manifest(); blocked["findingDispositions"][0]["disposition"] = "BLOCKED"; mutations.append(blocked)
+        repeated = self._manifest(); repeated["changedFiles"][0]["findingIds"] *= 2; mutations.append(repeated)
+        unmapped = self._manifest(); unmapped["changedFiles"] = []; mutations.append(unmapped)
         for value in mutations:
             with self.subTest(value=value), self.assertRaises(RepairContractError):
-                RepairManifest.from_dict(value, packet=self._packet(), repaired_sha="head", repair_delta=(value["changedFiles"][0]["path"],))
+                delta = tuple(row["path"] for row in value["changedFiles"])
+                RepairManifest.from_dict(value, packet=self._packet(), repaired_sha="head", repair_delta=delta)
 
 
 if __name__ == "__main__":

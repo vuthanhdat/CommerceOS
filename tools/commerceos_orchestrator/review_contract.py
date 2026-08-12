@@ -210,12 +210,11 @@ class ReviewLedger:
             not isinstance(paths, list)
             or not paths
             or not all(isinstance(value, str) for value in paths)
-            or not set(paths).issubset(allowed_paths)
         ):
             raise ReviewLedgerError("finding affected paths are unknown or empty")
         for path in paths:
             pure = PurePosixPath(path)
-            if pure.is_absolute() or ".." in pure.parts:
+            if pure.is_absolute() or ".." in pure.parts or path.startswith(("/", "\\")):
                 raise ReviewLedgerError("unsafe finding affected path")
         title, condition = raw["title"], raw["acceptanceCondition"]
         if not isinstance(title, str) or not title.strip() or not isinstance(condition, str) or not condition.strip():

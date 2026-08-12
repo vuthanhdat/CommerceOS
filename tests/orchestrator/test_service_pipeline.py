@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
@@ -112,6 +113,66 @@ def reviewer_environment_failure() -> ReviewResult:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_missing_configured_repair_manifest_blocks_before_second_verification(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            evidence = {
+                "contractVersion": "BuilderResultManifest/v1", "taskId": "TASK-0100",
+                "taskCommitSha": "abc", "acceptanceCriteria": [], "changedFiles": ["x"],
+                "requiredCommandIds": ["task-verification"], "additionalCommands": [],
+                "limitations": [], "followUps": [],
+            }
+            agents = FakeAgentRunner(
+                builder_results=[
+                    AgentResult(True, 0, "", "", "", evidence=evidence),
+                    AgentResult(True, 0, "", "", "", evidence=evidence),
+                ],
+                review_results=[review(False, "REVIEW_RESULT: FIX_REQUIRED")],
+            )
+            verify = FakeVerificationRunner([True, True])
+            state = RunStateStore(root / "state.db")
+            orch = TaskOrchestrator(
+                root, state, agents, verify,
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, max_fix_attempts=1, poll_seconds=0.01),
+            )
+            orch.run()
+            self.assertEqual(state.task_run("TASK-0100").blocker_code, "BUILDER_EVIDENCE_INVALID")
+            self.assertEqual(len(verify.calls), 1)
+            self.assertEqual(agents.reviewer_calls, 1)
+
+    def test_resume_without_persisted_repair_context_fails_before_builder(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            self.assertTrue(state.claim_task("TASK-0100"))
+            connection = sqlite3.connect(root / "state.db")
+            try:
+                connection.execute(
+                    "UPDATE task_runs SET execution_state = ? WHERE task_id = ?",
+                    (TaskExecutionState.REPAIR_REQUIRED.value, "TASK-0100"),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            agents = FakeAgentRunner()
+            orch = TaskOrchestrator(
+                root, state, agents, FakeVerificationRunner([True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            task = BacklogReader(root).load().tasks["TASK-0100"]
+            orch._execute_task(task, resume=True)
+            self.assertEqual(
+                state.task_run("TASK-0100").blocker_code,
+                "REPAIR_CONTEXT_RESTORE_REQUIRED",
+            )
+            self.assertEqual(agents.builder_calls, 0)
+
     def test_reviewer_write_attempt_blocks_even_with_pass_result(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

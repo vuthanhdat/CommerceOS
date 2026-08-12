@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
@@ -107,12 +108,13 @@ class RepairManifest:
                 raise RepairContractError("unsafe repair changed path")
             if not isinstance(finding_ids, list) or not finding_ids or not all(isinstance(item, str) for item in finding_ids):
                 raise RepairContractError("repair changed path has no finding mapping")
+            if len(set(finding_ids)) != len(finding_ids):
+                raise RepairContractError("duplicate finding mapping for repair path")
             if not set(finding_ids).issubset(packet_findings):
                 raise RepairContractError("repair changed path references unknown finding")
-            if not any(
-                cls._matches(path, pattern)
+            if not all(
+                any(cls._matches(path, pattern) for pattern in packet_findings[finding_id].affected_paths)
                 for finding_id in finding_ids
-                for pattern in packet_findings[finding_id].affected_paths
             ):
                 raise RepairContractError(f"repair path is outside finding allow-list: {path}")
             rows.append((path, tuple(finding_ids)))
@@ -120,6 +122,12 @@ class RepairManifest:
             raise RepairContractError("repair changed-file coverage is not exact or ordered")
         if any(disposition == "BLOCKED" for _, disposition in dispositions):
             raise RepairContractError("repair manifest contains BLOCKED finding")
+        mapped_ids = {finding_id for _, finding_ids in rows for finding_id in finding_ids}
+        if any(
+            disposition == "ADDRESSED" and finding_id not in mapped_ids
+            for finding_id, disposition in dispositions
+        ):
+            raise RepairContractError("ADDRESSED finding has no repair-delta path")
         return cls(packet.task_id, packet.baseline_sha, repaired_sha, tuple(dispositions), tuple(rows))
 
     @staticmethod
@@ -129,7 +137,10 @@ class RepairManifest:
 
     @staticmethod
     def _matches(path: str, pattern: str) -> bool:
-        return RepairManifest._safe_path(pattern) and PurePosixPath(path).match(pattern)
+        if not RepairManifest._safe_path(pattern):
+            return False
+        expression = re.escape(pattern).replace(r"\*\*", ".*").replace(r"\*", "[^/]*")
+        return re.fullmatch(expression, path) is not None
 
     def to_dict(self) -> dict[str, Any]:
         return {

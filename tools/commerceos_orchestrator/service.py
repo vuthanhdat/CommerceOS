@@ -271,6 +271,15 @@ class TaskOrchestrator:
         }:
             self.state.update_task(task.id, TaskExecutionState.REPAIR_REQUIRED)
 
+        if repair_resume:
+            self._block(
+                task,
+                "REPAIR_CONTEXT_RESTORE_REQUIRED",
+                "Persisted RepairPacket/v1 and ReviewLedger/v1 continuity is unavailable; "
+                "refusing to dispatch an unscoped repair Builder after restart.",
+            )
+            return
+
         for fix_round in range(self.config.max_fix_attempts + 1):
             is_repair = repair_resume or fix_round > 0
             self.state.update_task(
@@ -465,6 +474,10 @@ class TaskOrchestrator:
                     tuple(self.workspace.changed_files_between(workspace, previous_review_commit, commit_sha))
                     if previous_review_commit else ()
                 ),
+                repair_packet_path=repair_packet_path,
+                repair_manifest_path=repair_manifest_path,
+                repair_baseline_sha=previous_review_commit or "",
+                repaired_sha=commit_sha,
             )
             if review.raw.marker == "ENVIRONMENT_UNAVAILABLE":
                 if self._validated_stage_output(
