@@ -16,9 +16,9 @@ The infrastructure invariant under ADR-012 is:
 
 ## 2. Model policy
 
-CommerceOS preserves a **Luna-first implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors should start with the Luna Builder profile defined by the repository unless the task's accepted planning artifacts explicitly require stronger reasoning.
+CommerceOS preserves a **Terra-first implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors should start with the Terra Builder profile defined by the repository unless the task's accepted planning artifacts explicitly require stronger reasoning.
 
-Planning roles use the stronger Sol reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use Luna. Interactive Codex/TUI model settings do not override the repository role policy used by the Task Orchestrator.
+Planning roles use the stronger Sol reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use Terra. Interactive Codex/TUI model settings do not override the repository role policy used by the Task Orchestrator.
 
 Escalate based on reasoning difficulty/risk, not task size alone. Architecture, security/tenant isolation, accounting, payment ambiguity/idempotency, concurrency, and difficult distributed-system design belong in planning artifacts before Builder execution rather than being silently delegated to a stronger coding model.
 
@@ -34,7 +34,7 @@ Escalate based on reasoning difficulty/risk, not task size alone. Architecture, 
 
 ### Builder
 
-- use the Luna-first implementation profile unless repository policy explicitly escalates it;
+- use the Terra-first implementation profile unless repository policy explicitly escalates it;
 - work from one Ready task;
 - modify only its task worktree;
 - add/update tests/docs;
@@ -102,7 +102,7 @@ Ready TASK
    ↓
 create task branch/worktree
    ↓
-Luna-first Builder
+Terra-first Builder
    ↓
 local harness/tests
    ↓
@@ -195,7 +195,7 @@ Avoid: normal feature implementation directly on main, mixing task changes, unco
 
 ## 15. Prompt guidance
 
-Builder prompts should preserve the Luna-first execution policy, require the task's declared verification, and say **LocalStack**, not AWS cloud deployment, when infrastructure semantics are in scope.
+Builder prompts should preserve the Terra-first execution policy, require the task's declared verification, and say **LocalStack**, not AWS cloud deployment, when infrastructure semantics are in scope.
 
 Technical Architect prompts should describe capabilities first and map them to LocalStack-supported AWS-style services only after the capability/contract is defined.
 

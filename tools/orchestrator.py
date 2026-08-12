@@ -79,7 +79,7 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
         root,
         state,
         # Autonomous implementation/review/conflict execution is pinned by CodexRunner
-        # to Luna / medium / Standard. Interactive Codex TUI settings are not inherited.
+        # to Terra / medium / Standard. Interactive Codex TUI settings are not inherited.
         CodexRunner(root, logs_root, cloud_authorized=args.allow_cloud),
         verification,
         config=OrchestratorConfig(

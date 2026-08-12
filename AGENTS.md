@@ -108,7 +108,7 @@ Agents communicate through repository artifacts, tasks, ADRs/contracts, review f
 CommerceOS uses role-based Codex profiles so planning quality and routine execution cost/throughput are predictable.
 
 - Planning roles — Domain Architect, Technical Architect, Backlog Planner — use `gpt-5.6-sol`, reasoning `medium`, Standard service tier.
-- Builder and routine Reviewer/Verification/Conflict Resolver work use `gpt-5.6-luna`, reasoning `medium`, Standard service tier.
+- Builder and routine Reviewer/Verification/Conflict Resolver work use `gpt-5.6-terra`, reasoning `medium`, Standard service tier.
 - Do not enable Fast/priority or different models unless the human explicitly changes the assignment or repository policy.
 
 Parallel writable work follows:

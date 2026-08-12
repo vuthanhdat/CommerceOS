@@ -230,8 +230,10 @@ def check_development_strategy(errors: list[str]) -> None:
     if codex_path.exists():
         text = codex_path.read_text(encoding="utf-8")
         lower = text.lower()
-        if "luna" not in lower:
-            fail("Codex operating model must preserve the Luna-first policy", errors)
+        if "terra" not in lower:
+            fail("Codex operating model must preserve the Terra-first policy", errors)
+        if "luna-first" in lower or "builder/routine implementation roles use luna" in lower:
+            fail("Codex operating model contains stale Luna-first policy", errors)
         if "one writable task = one branch = one worktree" not in lower:
             fail("Codex operating model must preserve one-task/one-branch/one-worktree isolation", errors)
         if "maximum **2 active builder-style coding tasks in parallel**" not in lower:

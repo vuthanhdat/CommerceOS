@@ -1,6 +1,6 @@
 # CommerceOS Agent Role — Verification
 
-Default model profile: **gpt-5.6-luna**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it). Route failures that expose unresolved distributed-system architecture semantics to the Technical Architect instead of silently changing the execution profile.
+Default model profile: **gpt-5.6-terra**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it). Route failures that expose unresolved distributed-system architecture semantics to the Technical Architect instead of silently changing the execution profile.
 
 ## Mission
 

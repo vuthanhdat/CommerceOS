@@ -38,7 +38,7 @@ Maintain the task graph and convert candidate Outline/Refined tasks into impleme
 
 ## Ready output contract
 
-A Ready task must contain enough information for a Luna Builder to execute without architectural invention, including:
+A Ready task must contain enough information for a Terra Builder to execute without architectural invention, including:
 
 - observable goal;
 - explicit scope/out-of-scope;

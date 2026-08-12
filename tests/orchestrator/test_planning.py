@@ -294,7 +294,7 @@ class PlanningCoordinatorTests(unittest.TestCase):
             self.assertIn("gpt-5.6-sol", command)
             self.assertIn('model_reasoning_effort="medium"', command)
             self.assertIn('service_tier="default"', command)
-            self.assertNotIn("gpt-5.6-luna", command)
+            self.assertNotIn("gpt-5.6-terra", command)
 
 
 if __name__ == "__main__":

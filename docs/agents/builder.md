@@ -1,6 +1,6 @@
 # CommerceOS Agent Role — Builder
 
-Default model profile: **gpt-5.6-luna**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it).
+Default model profile: **gpt-5.6-terra**, reasoning effort **medium**, service tier **standard** (Fast disabled unless the human explicitly overrides it).
 
 ## Mission
 

@@ -118,7 +118,7 @@ Execution roles
   Reviewer
   verification-oriented agent work
   Conflict Resolver
-      → gpt-5.6-luna / medium / Standard
+      → gpt-5.6-terra / medium / Standard
 ```
 
 The Orchestrator never enables Fast/priority service implicitly. Planning agents receive no real-cloud authorization. Tests use fake agent/planning runners and consume no Codex quota.
@@ -213,7 +213,7 @@ For `PLANNING_RESULT: READY`, the candidate is accepted only if canonical valida
 - dependency-satisfied;
 - represented by a valid detailed Ready spec and consistent canonical `ready_frontier`.
 
-After planning artifacts are pushed to authoritative `main`, the scheduler reloads the DAG and the normal Luna Builder pipeline may claim the newly Ready task.
+After planning artifacts are pushed to authoritative `main`, the scheduler reloads the DAG and the normal Terra Builder pipeline may claim the newly Ready task.
 
 ## 10. Implementation execution and completion
 
@@ -244,11 +244,11 @@ Ready
   ↓
 claim + isolated worktree
   ↓
-Builder — Luna/medium/Standard
+Builder — Terra/medium/Standard
   ↓
 deterministic verification
   ↓
-independent Reviewer — Luna/medium/Standard
+independent Reviewer — Terra/medium/Standard
   ↓
 serialized merge queue
   ↓
@@ -347,7 +347,7 @@ The repository harness runs the Orchestrator Python test suite before applicatio
 - canonical shard/spec path containment;
 - untrusted agent evidence isolation from privileged prompts;
 - live JSONL publication and audit retention;
-- Sol/Luna profile command construction;
+- Sol/Terra profile command construction;
 - Planner-first candidate selection and on-demand Domain/Technical routing using fake planning agents;
 - completion bookkeeping.
 

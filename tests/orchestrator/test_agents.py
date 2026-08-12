@@ -198,7 +198,7 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         self.assertEqual(PLANNING_CODEX_PROFILE.reasoning_effort, "medium")
         self.assertEqual(PLANNING_CODEX_PROFILE.service_tier, "standard")
         self.assertEqual(PLANNING_CODEX_PROFILE.codex_service_tier, "default")
-        self.assertEqual(CODING_CODEX_PROFILE.model, "gpt-5.6-luna")
+        self.assertEqual(CODING_CODEX_PROFILE.model, "gpt-5.6-terra")
         self.assertEqual(CODING_CODEX_PROFILE.reasoning_effort, "medium")
         self.assertEqual(CODING_CODEX_PROFILE.service_tier, "standard")
         self.assertEqual(CODING_CODEX_PROFILE.codex_service_tier, "default")
@@ -214,7 +214,7 @@ class CodexPromptBoundaryTests(unittest.TestCase):
                 prompt="test prompt",
             )
             self.assertEqual(command[0:3], ["codex", "exec", "--json"])
-            self.assertIn("gpt-5.6-luna", command)
+            self.assertIn("gpt-5.6-terra", command)
             self.assertIn('model_reasoning_effort="medium"', command)
             self.assertIn('service_tier="default"', command)
             self.assertIn("workspace-write", command)

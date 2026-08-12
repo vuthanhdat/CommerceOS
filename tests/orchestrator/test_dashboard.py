@@ -67,7 +67,7 @@ class DashboardTests(unittest.TestCase):
                 "TASK-0100",
                 "codex_started",
                 role="builder",
-                model="gpt-5.6-luna",
+                model="gpt-5.6-terra",
                 reasoning_effort="medium",
                 service_tier="standard",
             )
@@ -86,7 +86,7 @@ class DashboardTests(unittest.TestCase):
                             break
                 self.assertIsNotNone(record)
                 self.assertEqual(record["kind"], "codex_started")
-                self.assertEqual(record["model"], "gpt-5.6-luna")
+                self.assertEqual(record["model"], "gpt-5.6-terra")
             finally:
                 server.shutdown()
                 thread.join(timeout=2)

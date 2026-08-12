@@ -70,7 +70,7 @@ class CodexExecutionProfile:
 # Human-approved CommerceOS model policy. Planning agents are documented to use
 # PLANNING_CODEX_PROFILE; the V1 Orchestrator executes coding/review/conflict roles only.
 PLANNING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-sol")
-CODING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-luna")
+CODING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-terra")
 
 
 class CodexRunner:
