@@ -1,11 +1,12 @@
 # TASK-0175 — Switch the coding execution profile from Luna to Terra
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-terra, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: TASK-0174
 Cloud verification: No
 
@@ -92,3 +93,7 @@ cost is introduced.
 - Contract: harness enforces Terra-first policy and rejects active Luna-first policy drift.
 - Repository: `python scripts/harness_check.py`.
 - LocalStack/infrastructure verification: N/A.
+
+## Completion summary
+
+Switched Builder, routine Reviewer, Verification, and Conflict Resolver execution to gpt-5.6-terra while retaining gpt-5.6-sol for planning roles. Added exact active-policy harness checks, updated role and orchestrator documentation, and updated profile tests. Independent review passed; the full repository harness passed with 119 orchestrator tests. No product, tenant, security, infrastructure, or LocalStack behavior changed.

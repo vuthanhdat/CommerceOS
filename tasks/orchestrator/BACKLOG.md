@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0175` — Switch the coding execution profile from Luna to Terra (`Completed`).
+
 - `TASK-0174` — Expose and verify the strict Orchestrator workflow end to end (`Completed`).
 
 - `TASK-0173` — Make completion an Orchestrator-owned verified transaction (`Completed`).
@@ -27,7 +29,6 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0175` — Switch the coding execution profile from Luna to Terra (`Ready`).
 
 ## Strict workflow boundary program
 
