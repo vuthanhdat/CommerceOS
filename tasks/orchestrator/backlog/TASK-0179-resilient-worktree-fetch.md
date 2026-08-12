@@ -59,10 +59,28 @@ workspace error and creates no task worktree.
 
 Automated tests cover retry success, safe cached fallback, and rejection of unsafe fallback.
 
-## Architecture and security impact
+## Architecture impact
 
-No product/domain boundary changes. The fallback validates immutable commit IDs and never trusts a
-working-tree file comparison or an arbitrary task-supplied ref.
+No product/domain boundary changes and no ADR is required.
+
+## Security and tenant impact
+
+The fallback validates immutable commit IDs and never trusts a working-tree file comparison or an
+arbitrary task-supplied ref. No tenant or authorization behavior changes.
+
+## Reliability and idempotency impact
+
+Worktree preparation retries once and remains repeatable. Cached fallback is fail-closed unless both
+trusted local refs identify the same commit.
+
+## Observability impact
+
+A warning records the cached commit used when transient network failures force local fallback.
+
+## Cost impact
+
+One additional fetch attempt occurs only after a recognized transient network failure. No agent or
+cloud-service cost changes.
 
 ## Test plan
 
