@@ -12,12 +12,9 @@ product/runtime work.
 - Run with `python tools/orchestrator.py --catalog orchestrator <command>`.
 - Default state/log root: `.commerceos/orchestrator/orchestrator/`.
 
-## Current task
-
-- `TASK-0167` — Stream Codex agent activity and pin role-based model profiles (`Active`).
-
 Recently completed:
 
+- `TASK-0167` — Stream Codex agent activity and pin role-based model profiles (`Completed`).
 - `TASK-0168` — Separate CommerceOS and Orchestrator task catalogs (`Completed`).
 
 ## Strict workflow boundary program
@@ -37,5 +34,5 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-All six tasks are `Refined`. TASK-0169 becomes eligible for Ready promotion after TASK-0167 is
-completed; each later task follows its declared dependency gate.
+TASK-0169 is the next planning candidate now that TASK-0167 is completed; each later task follows
+its declared dependency gate.

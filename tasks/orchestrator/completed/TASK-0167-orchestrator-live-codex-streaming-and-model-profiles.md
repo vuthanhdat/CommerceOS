@@ -1,11 +1,12 @@
 # TASK-0167 — Stream Codex agent activity and pin role-based model profiles
 
-Status: Active
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-11
+Completed: 2026-08-12
 Depends on: completed TASK-0090
 Cloud verification: No
 Exclusive resources when Active: `repository-task-state`, `orchestrator-ui`, `codex-runner`
@@ -108,3 +109,36 @@ No AWS cost. Model policy intentionally uses Sol for planning and Luna for codin
 - Verify dry-run shows the next planning candidate/model only when no Ready task is dispatchable.
 - DOM regression checks for no `innerHTML`/inline `onclick`.
 - Run complete Orchestrator tests and repository harness.
+
+## Completion summary
+
+TASK-0167 is complete. Codex execution now streams JSONL activity into retained per-task audit
+feeds, exposes the feed through a loopback-only SSE endpoint, and renders untrusted activity with
+safe DOM APIs. Autonomous execution uses the repository-pinned Luna/medium/Standard profile for
+coding roles and Sol/medium/Standard for planning roles. The serial Planning Coordinator enters
+through Backlog Planner, routes architects only when requested, validates protocol and write
+scope, and integrates only verified planning artifacts.
+
+### Acceptance criteria status
+
+- AC01–AC05 — Satisfied: streaming `codex exec --json`, concurrent stderr draining, retained
+  audit evidence, loopback SSE delivery, and safe DOM rendering are implemented and covered.
+- AC06–AC08 — Satisfied: coding and planning role profiles are pinned at the execution boundary
+  and do not inherit interactive TUI/Fast settings.
+- AC09–AC17 — Satisfied: Ready work precedes planning; candidate selection, Planner-first
+  routing, canonical Ready validation, protocol isolation, scope guards, bounded failure paths,
+  and planning-only integration are implemented and tested.
+- AC18–AC20 — Satisfied: tests use fake agents without Codex quota, existing scheduling/stop/
+  merge behavior remains green, and the full repository harness passes.
+
+### Verification evidence
+
+- `python -m unittest discover -s tests/orchestrator -p "test_*.py"` — 59 tests passed.
+- `python scripts/harness_check.py` — passed, including Orchestrator, .NET, frontend, architecture,
+  and CDK checks.
+
+### Scope and impact
+
+- Repository-local Orchestrator harness, agent profiles, planning flow, dashboard, and docs only.
+- No CommerceOS product, tenant, domain, external cloud, or LocalStack runtime behavior changed.
+- LocalStack verification: N/A.
