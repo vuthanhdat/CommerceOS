@@ -31,6 +31,7 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0177` - Configure Codex sandbox by agent role (`Ready`).
 
 
 ## Strict workflow boundary program
