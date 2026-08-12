@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,6 +46,15 @@ class FakeIntegrationManager:
     def commit_current_merge(self, task): self.calls.append("commit-merge")
     def commit_bookkeeping(self, task): self.calls.append("bookkeeping")
     def push_main(self): self.calls.append("push"); self.remote = True
+
+
+class MalformedStageOutputOrchestrator(TaskOrchestrator):
+    @staticmethod
+    def _stage_output_payload(*args, **kwargs):
+        payload = TaskOrchestrator._stage_output_payload(*args, **kwargs)
+        if payload["stage"] == "builder":
+            payload.pop("contract_version")
+        return payload
 
 
 def review(passed: bool, text: str) -> ReviewResult:
@@ -97,6 +107,15 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(snap.tasks["TASK-0100"].lifecycle_state, "Completed")
             self.assertEqual(snap.ready_frontier_declared, ())
             self.assertEqual(state.control_state(), OrchestratorState.IDLE)
+            validated = {
+                json.loads(event["detail"])["stage"]
+                for event in state.recent_events(100)
+                if event["kind"] == "STAGE_OUTPUT_VALIDATED"
+            }
+            self.assertEqual(
+                validated,
+                {"builder", "verification", "reviewer", "integration", "finalization"},
+            )
 
     def test_verification_failure_enters_bounded_fix_loop(self):
         with tempfile.TemporaryDirectory() as td:
@@ -110,6 +129,35 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(agents.builder_calls, 2)
             self.assertEqual(state.task_run("TASK-0100").fix_attempt, 1)
             self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.COMPLETED)
+            validated = [
+                json.loads(event["detail"])["stage"]
+                for event in state.recent_events(100)
+                if event["kind"] == "STAGE_OUTPUT_VALIDATED"
+            ]
+            self.assertIn("repair_builder", validated)
+
+    def test_malformed_production_stage_output_fails_closed_before_verification(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner(review_results=[review(True, "REVIEW_RESULT: PASS")])
+            verify = FakeVerificationRunner([True])
+            orch = MalformedStageOutputOrchestrator(
+                root,
+                state,
+                agents,
+                verify,
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=FakeIntegrationManager(),
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            orch.run()
+            run = state.task_run("TASK-0100")
+            self.assertEqual(run.execution_state, TaskExecutionState.HUMAN_REQUIRED)
+            self.assertEqual(run.blocker_code, "INVALID_STAGE_OUTPUT")
+            self.assertEqual(verify.calls, [])
+            self.assertEqual(agents.reviewer_calls, 0)
 
     def test_reviewer_finding_returns_to_builder(self):
         with tempfile.TemporaryDirectory() as td:

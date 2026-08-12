@@ -13,6 +13,7 @@ from commerceos_orchestrator.stage_contracts import (
     TRANSITION_TABLE,
     StageContractError,
     declared_edges,
+    transition_rule,
 )
 from commerceos_orchestrator.state import InvalidTransitionError, RunStateStore
 
@@ -61,6 +62,9 @@ class StageContractTests(unittest.TestCase):
     def test_transition_table_has_unique_edges_and_covers_every_executable_state(self):
         edges = [(rule.from_state, rule.to_state) for rule in TRANSITION_TABLE]
         self.assertEqual(len(edges), len(set(edges)))
+        self.assertEqual(declared_edges(), frozenset(edges))
+        for edge in edges:
+            self.assertIsNotNone(transition_rule(*edge))
         represented = {state for edge in declared_edges() for state in edge}
         self.assertEqual(represented, set(TaskExecutionState))
         self.assertNotIn(

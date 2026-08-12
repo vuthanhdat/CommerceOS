@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import threading
@@ -21,6 +22,7 @@ from .models import (
 )
 from .scheduler import Scheduler
 from .state import RunStateStore
+from .stage_contracts import CONTRACT_VERSION, StageContractError, stage_contract
 from .verification import VerificationRunner
 from .workspace import GitIntegrationManager, GitWorkspaceManager, IntegrationError, WorkspaceError
 from .review_contract import FindingOwner, FindingRoute, next_hop, parse_review_findings
@@ -261,6 +263,16 @@ class TaskOrchestrator:
             agent = self._run_builder_with_capacity_retry(task, workspace.path, feedback=feedback)
             if agent is None:
                 return
+            builder_stage = "repair_builder" if is_repair else "builder"
+            builder_output_id = self._validated_stage_output(
+                task,
+                builder_stage,
+                success=agent.success,
+                evidence_artifact_ids=(agent.log_path or f"{task.id}:{builder_stage}:audit",),
+                failure_route=None if agent.success else TaskExecutionState.HUMAN_REQUIRED,
+            )
+            if builder_output_id is None:
+                return
             if not agent.success:
                 code = "EXTERNAL_ENVIRONMENT" if agent.marker == "ENVIRONMENT_UNAVAILABLE" else "BUILDER_FAILED"
                 self._block(task, code, agent.stderr or agent.stdout)
@@ -273,8 +285,29 @@ class TaskOrchestrator:
                 TaskExecutionState.PRE_REVIEW_VERIFICATION
                 if not is_repair
                 else TaskExecutionState.REPAIR_VERIFICATION,
+                input_artifact_id=builder_output_id,
             )
             verification = self.verification.run(task, workspace.path, phase=f"builder-{fix_round}")
+            verification_route = (
+                None
+                if verification.success
+                else (
+                    TaskExecutionState.BLOCKED
+                    if fix_round >= self.config.max_fix_attempts
+                    else TaskExecutionState.REPAIR_REQUIRED
+                )
+            )
+            verification_output_id = self._validated_stage_output(
+                task,
+                "verification",
+                success=verification.success,
+                evidence_artifact_ids=(
+                    verification.log_path or f"{task.id}:verification:audit",
+                ),
+                failure_route=verification_route,
+            )
+            if verification_output_id is None:
+                return
             if not verification.success:
                 if fix_round >= self.config.max_fix_attempts:
                     self._block(
@@ -287,7 +320,11 @@ class TaskOrchestrator:
                     "Deterministic verification failed. Fix the implementation; do not weaken checks.\n"
                     + (verification.stdout + "\n" + verification.stderr)[-20000:]
                 )
-                self.state.update_task(task.id, TaskExecutionState.REPAIR_REQUIRED)
+                self.state.update_task(
+                    task.id,
+                    TaskExecutionState.REPAIR_REQUIRED,
+                    input_artifact_id=verification_output_id,
+                )
                 continue
 
             try:
@@ -309,6 +346,7 @@ class TaskOrchestrator:
                 TaskExecutionState.FIRST_REVIEW
                 if not is_repair
                 else TaskExecutionState.RE_REVIEW,
+                input_artifact_id=verification_output_id,
             )
             review = self.agent_runner.run_reviewer(
                 task,
@@ -332,11 +370,35 @@ class TaskOrchestrator:
                     review.raw,
                 )
             if review_passed:
-                self.state.update_task(task.id, TaskExecutionState.MERGE_QUEUED)
+                review_output_id = self._validated_stage_output(
+                    task,
+                    "reviewer",
+                    success=True,
+                    evidence_artifact_ids=(
+                        review.raw.log_path or f"{task.id}:reviewer:audit",
+                    ),
+                )
+                if review_output_id is None:
+                    return
+                self.state.update_task(
+                    task.id,
+                    TaskExecutionState.MERGE_QUEUED,
+                    input_artifact_id=review_output_id,
+                )
                 self._integrate(task, workspace.branch, workspace.path)
                 return
 
             if review.raw.marker == "ENVIRONMENT_UNAVAILABLE":
+                if self._validated_stage_output(
+                    task,
+                    "reviewer",
+                    success=False,
+                    evidence_artifact_ids=(
+                        review.raw.log_path or f"{task.id}:reviewer:audit",
+                    ),
+                    failure_route=TaskExecutionState.HUMAN_REQUIRED,
+                ) is None:
+                    return
                 self._block(
                     task,
                     "REVIEWER_ENVIRONMENT_UNAVAILABLE",
@@ -365,6 +427,23 @@ class TaskOrchestrator:
                     if first.route == FindingRoute.PLANNING_REQUIRED
                     else first.route.value
                 )
+                route_state = (
+                    TaskExecutionState.PLANNING_REQUIRED
+                    if route_code == "PLANNING_REQUIRED"
+                    else TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
+                    if route_code == "ORCHESTRATOR_ACTION_REQUIRED"
+                    else TaskExecutionState.HUMAN_REQUIRED
+                )
+                if self._validated_stage_output(
+                    task,
+                    "reviewer",
+                    success=False,
+                    evidence_artifact_ids=(
+                        review.raw.log_path or f"{task.id}:reviewer:audit",
+                    ),
+                    failure_route=route_state,
+                ) is None:
+                    return
                 self._block(
                     task,
                     route_code,
@@ -374,6 +453,16 @@ class TaskOrchestrator:
                 return
 
             if fix_round >= self.config.max_fix_attempts:
+                if self._validated_stage_output(
+                    task,
+                    "reviewer",
+                    success=False,
+                    evidence_artifact_ids=(
+                        review.raw.log_path or f"{task.id}:reviewer:audit",
+                    ),
+                    failure_route=TaskExecutionState.BLOCKED,
+                ) is None:
+                    return
                 self._block(
                     task,
                     "RETRY_LIMIT_EXCEEDED",
@@ -383,7 +472,22 @@ class TaskOrchestrator:
                 return
             feedback = "Independent Reviewer findings:\n" + review.findings[-20000:]
             review_context = self._write_review_context(task, workspace.path, review.findings)
-            self.state.update_task(task.id, TaskExecutionState.REPAIR_REQUIRED)
+            review_output_id = self._validated_stage_output(
+                task,
+                "reviewer",
+                success=False,
+                evidence_artifact_ids=(
+                    review.raw.log_path or f"{task.id}:reviewer:audit",
+                ),
+                failure_route=TaskExecutionState.REPAIR_REQUIRED,
+            )
+            if review_output_id is None:
+                return
+            self.state.update_task(
+                task.id,
+                TaskExecutionState.REPAIR_REQUIRED,
+                input_artifact_id=review_output_id,
+            )
 
     @staticmethod
     def _write_review_context(task: CanonicalTask, worktree: Path, findings: str) -> str:
@@ -482,6 +586,21 @@ class TaskOrchestrator:
 
             detail = self._agent_failure_detail(agent)
             if capacity_retry >= self.config.max_capacity_retries:
+                current_state = self.state.task_run(task.id)
+                stage = (
+                    "repair_builder"
+                    if current_state
+                    and current_state.execution_state == TaskExecutionState.REPAIR_BUILD
+                    else "builder"
+                )
+                if self._validated_stage_output(
+                    task,
+                    stage,
+                    success=False,
+                    evidence_artifact_ids=(agent.log_path or f"{task.id}:{stage}:audit",),
+                    failure_route=TaskExecutionState.BLOCKED,
+                ) is None:
+                    return None
                 self.state.update_task(
                     task.id,
                     TaskExecutionState.BLOCKED,
@@ -551,12 +670,31 @@ class TaskOrchestrator:
                         self.integration.commit_current_merge(task)
 
                     post_merge = self.verification.run(task, self.root, phase="post-integration")
+                    integration_output_id = self._validated_stage_output(
+                        task,
+                        "integration",
+                        success=post_merge.success,
+                        evidence_artifact_ids=(
+                            post_merge.log_path or f"{task.id}:post-integration:audit",
+                        ),
+                        failure_route=(
+                            None
+                            if post_merge.success
+                            else TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
+                        ),
+                    )
+                    if integration_output_id is None:
+                        return
                     if not post_merge.success:
                         self.integration.rollback_unpushed_main()
                         self._block(task, "POST_INTEGRATION_VERIFICATION_FAILED", f"log={post_merge.log_path}")
                         return
 
-                    self.state.update_task(task.id, TaskExecutionState.FINALIZING)
+                    self.state.update_task(
+                        task.id,
+                        TaskExecutionState.FINALIZING,
+                        input_artifact_id=integration_output_id,
+                    )
 
                     snapshot = BacklogReader(self.root, self.catalog).load()
                     merged_task = snapshot.tasks.get(task.id)
@@ -567,6 +705,21 @@ class TaskOrchestrator:
                     BacklogWriter(self.root).finalize_task(snapshot, merged_task, summary)
                     self.integration.commit_bookkeeping(task)
                     final_verification = self.verification.run(task, self.root, phase="post-bookkeeping")
+                    finalization_output_id = self._validated_stage_output(
+                        task,
+                        "finalization",
+                        success=final_verification.success,
+                        evidence_artifact_ids=(
+                            final_verification.log_path or f"{task.id}:post-bookkeeping:audit",
+                        ),
+                        failure_route=(
+                            None
+                            if final_verification.success
+                            else TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
+                        ),
+                    )
+                    if finalization_output_id is None:
+                        return
                     if not final_verification.success:
                         self.integration.rollback_unpushed_main()
                         self._block(
@@ -577,14 +730,43 @@ class TaskOrchestrator:
                         return
                     self.integration.push_main()
                 else:
-                    self.state.update_task(task.id, TaskExecutionState.FINALIZING)
+                    integration_output_id = self._validated_stage_output(
+                        task,
+                        "integration",
+                        success=True,
+                        evidence_artifact_ids=(f"{task.id}:already-on-remote-main",),
+                    )
+                    if integration_output_id is None:
+                        return
+                    self.state.update_task(
+                        task.id,
+                        TaskExecutionState.FINALIZING,
+                        input_artifact_id=integration_output_id,
+                    )
                     snapshot = BacklogReader(self.root, self.catalog).load()
                     current_task = snapshot.tasks.get(task.id)
+                    finalization_output_id: str | None = None
                     if current_task and current_task.lifecycle_state != "Completed":
                         summary = self._completion_summary(task)
                         BacklogWriter(self.root).finalize_task(snapshot, current_task, summary)
                         self.integration.commit_bookkeeping(task)
                         final_verification = self.verification.run(task, self.root, phase="recovery-bookkeeping")
+                        finalization_output_id = self._validated_stage_output(
+                            task,
+                            "finalization",
+                            success=final_verification.success,
+                            evidence_artifact_ids=(
+                                final_verification.log_path
+                                or f"{task.id}:recovery-bookkeeping:audit",
+                            ),
+                            failure_route=(
+                                None
+                                if final_verification.success
+                                else TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
+                            ),
+                        )
+                        if finalization_output_id is None:
+                            return
                         if not final_verification.success:
                             self.integration.rollback_unpushed_main()
                             self._block(
@@ -595,7 +777,21 @@ class TaskOrchestrator:
                             return
                         self.integration.push_main()
 
-                self.state.update_task(task.id, TaskExecutionState.COMPLETED)
+                    if finalization_output_id is None:
+                        finalization_output_id = self._validated_stage_output(
+                            task,
+                            "finalization",
+                            success=True,
+                            evidence_artifact_ids=(f"{task.id}:canonical-completed",),
+                        )
+                        if finalization_output_id is None:
+                            return
+
+                self.state.update_task(
+                    task.id,
+                    TaskExecutionState.COMPLETED,
+                    input_artifact_id=finalization_output_id,
+                )
                 try:
                     refreshed = BacklogReader(self.root, self.catalog).load()
                     completed_task = refreshed.tasks.get(task.id, task)
@@ -633,6 +829,69 @@ class TaskOrchestrator:
             blocker_code=code,
             blocker_detail=detail[-20000:],
         )
+
+    def _validated_stage_output(
+        self,
+        task: CanonicalTask,
+        stage: str,
+        *,
+        success: bool,
+        evidence_artifact_ids: tuple[str, ...],
+        failure_route: TaskExecutionState | None = None,
+    ) -> str | None:
+        run = self.state.task_run(task.id)
+        attempt = run.attempt if run else 0
+        fix_attempt = run.fix_attempt if run else 0
+        artifact_id = f"{task.id}:{stage}:output:{attempt}:{fix_attempt}"
+        payload = self._stage_output_payload(
+            task,
+            stage,
+            artifact_id=artifact_id,
+            success=success,
+            evidence_artifact_ids=evidence_artifact_ids,
+            failure_route=failure_route,
+        )
+        try:
+            record = stage_contract(stage).output_type.from_dict(payload)
+        except StageContractError as exc:
+            self._block(task, "INVALID_STAGE_OUTPUT", f"stage={stage}: {exc}")
+            return None
+        self.state.add_event(
+            task.id,
+            "STAGE_OUTPUT_VALIDATED",
+            json.dumps(
+                {
+                    "stage": stage,
+                    "artifact_id": record.artifact_id,
+                    "contract_version": record.contract_version,
+                    "success": record.success,
+                    "failure_route": record.failure_route,
+                },
+                sort_keys=True,
+            ),
+        )
+        return record.artifact_id
+
+    @staticmethod
+    def _stage_output_payload(
+        task: CanonicalTask,
+        stage: str,
+        *,
+        artifact_id: str,
+        success: bool,
+        evidence_artifact_ids: tuple[str, ...],
+        failure_route: TaskExecutionState | None,
+    ) -> dict[str, object]:
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "task_id": task.id,
+            "stage": stage,
+            "artifact_id": artifact_id,
+            "success": success,
+            "commit_sha": "workspace-pending",
+            "evidence_artifact_ids": list(evidence_artifact_ids),
+            "failure_route": failure_route.value if failure_route else None,
+        }
 
     def _completion_summary(self, task: CanonicalTask) -> str:
         run = self.state.task_run(task.id)

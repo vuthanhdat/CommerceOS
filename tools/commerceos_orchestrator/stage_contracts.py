@@ -190,6 +190,15 @@ STAGE_CONTRACTS: tuple[StageContract, ...] = (
     StageContract("finalization", "ORCHESTRATOR", FinalizationInput, FinalizationOutput),
 )
 
+_CONTRACT_BY_STAGE = {contract.stage: contract for contract in STAGE_CONTRACTS}
+
+
+def stage_contract(stage: str) -> StageContract:
+    try:
+        return _CONTRACT_BY_STAGE[stage]
+    except KeyError as exc:
+        raise StageContractError(f"unknown stage: {stage!r}") from exc
+
 
 @dataclass(frozen=True)
 class TransitionRule:
@@ -216,7 +225,7 @@ def _rule(
     return TransitionRule(source, target, actor, input_kind, output_kind, predicate, retry, failure)
 
 
-TRANSITION_TABLE: tuple[TransitionRule, ...] = (
+_SUCCESS_TRANSITIONS: tuple[TransitionRule, ...] = (
     _rule(TaskExecutionState.QUEUED, TaskExecutionState.PLANNING, "BACKLOG_PLANNER", "planning_input", "planning_output", "dependency-satisfied planning candidate selected"),
     _rule(TaskExecutionState.PLANNING, TaskExecutionState.PLANNING_COMPLETED, "ORCHESTRATOR", "planning_output", "canonical_ready_snapshot", "verified planning artifacts integrated"),
     _rule(TaskExecutionState.QUEUED, TaskExecutionState.INITIAL_BUILD, "BUILDER", "builder_input", "builder_output", "valid builder input"),
@@ -244,6 +253,37 @@ ROUTED_STATES = (
     TaskExecutionState.BLOCKED,
 )
 
+_FAILURE_SOURCES = tuple(
+    state
+    for state in TaskExecutionState
+    if state
+    not in {
+        TaskExecutionState.PLANNING_COMPLETED,
+        TaskExecutionState.COMPLETED,
+        *ROUTED_STATES,
+    }
+)
+
+_FAILURE_TRANSITIONS: tuple[TransitionRule, ...] = tuple(
+    _rule(
+        source,
+        target,
+        "ORCHESTRATOR",
+        "stage_failure",
+        "route_decision",
+        f"validated route to {target.value}",
+        failure=target.value,
+    )
+    for source in _FAILURE_SOURCES
+    for target in ROUTED_STATES
+    if (source, target)
+    not in {(rule.from_state, rule.to_state) for rule in _SUCCESS_TRANSITIONS}
+)
+
+# This is the sole production transition inventory. Generated failure rows are materialized in
+# the tuple so runtime lookup and structural coverage inspect the same canonical table.
+TRANSITION_TABLE: tuple[TransitionRule, ...] = _SUCCESS_TRANSITIONS + _FAILURE_TRANSITIONS
+
 _RULE_BY_EDGE = {(rule.from_state, rule.to_state): rule for rule in TRANSITION_TABLE}
 
 
@@ -255,34 +295,11 @@ def transition_rule(
     rule = _RULE_BY_EDGE.get((source, target))
     if rule is not None:
         return rule
-    if source not in {
-        TaskExecutionState.COMPLETED,
-        TaskExecutionState.PLANNING_COMPLETED,
-        TaskExecutionState.PLANNING_REQUIRED,
-        TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED,
-        TaskExecutionState.HUMAN_REQUIRED,
-        TaskExecutionState.BLOCKED,
-    } and target in ROUTED_STATES:
-        return _rule(
-            source,
-            target,
-            "ORCHESTRATOR",
-            "stage_failure",
-            "route_decision",
-            f"validated route to {target.value}",
-            failure=target.value,
-        )
     return None
 
 
 def declared_edges() -> frozenset[tuple[TaskExecutionState, TaskExecutionState]]:
-    edges = set(_RULE_BY_EDGE)
-    non_terminal = set(TaskExecutionState) - set(ROUTED_STATES) - {
-        TaskExecutionState.COMPLETED,
-        TaskExecutionState.PLANNING_COMPLETED,
-    }
-    edges.update((source, target) for source in non_terminal for target in ROUTED_STATES)
-    return frozenset(edges)
+    return frozenset(_RULE_BY_EDGE)
 
 
 def _validate_common(record: StageInput | StageOutput, expected_stage: str) -> None:
