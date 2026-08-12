@@ -101,7 +101,7 @@ cloud-service cost changes.
 
 ### Verification
 
-- Orchestrator suite: PASS (143 tests).
+- Orchestrator suite: PASS (144 tests).
 - `py -3 scripts/harness_check.py`: PASS.
 
 ### Acceptance criteria status
@@ -116,3 +116,8 @@ cloud-service cost changes.
 ### Follow-up tasks
 
 - None identified.
+
+### Harness improvement
+
+- The orchestrator test suite now parses both real repository catalogs through the runtime reader,
+  preventing malformed shard data from passing the harness while breaking the dashboard.

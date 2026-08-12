@@ -16,6 +16,9 @@ from commerceos_orchestrator.backlog import (
 from commerceos_orchestrator.yaml_subset import parse_document, parse_inline_sequence
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
 class YamlSubsetTests(unittest.TestCase):
     def test_nested_inline_lists_and_quotes(self):
         value = parse_inline_sequence('[TASK-1, "hello, world", [A, B], [], true]')
@@ -27,6 +30,12 @@ class YamlSubsetTests(unittest.TestCase):
 
 
 class BacklogReaderTests(unittest.TestCase):
+    def test_repository_catalogs_parse_with_runtime_reader(self):
+        for catalog in ("commerceos", "orchestrator"):
+            with self.subTest(catalog=catalog):
+                snapshot = BacklogReader(REPOSITORY_ROOT, catalog=catalog).load()
+                self.assertTrue(snapshot.tasks)
+
     def test_every_completion_write_failure_restores_all_canonical_files(self):
         methods = (
             "_update_shard", "_update_master", "_update_catalog_index", "_remove_source",
