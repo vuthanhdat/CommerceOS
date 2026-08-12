@@ -13,6 +13,7 @@ This Markdown file is the human-readable execution plan. Detailed task specifica
 
 Ready now:
 
+- `TASK-0095` — Establish CI LocalStack infrastructure verification (`Ready`).
 
 Recently completed:
 
@@ -56,9 +57,11 @@ Dependencies, human/product/domain/architecture/security gates, and exclusive-re
 
 | Task | Maturity | Why it is Ready |
 |---|---|---|
-| None | — | TASK-0095 remains Refined pending Backlog Planner readiness reconciliation against TASK-0094 evidence. |
+| `TASK-0095` — Establish CI LocalStack infrastructure verification | **Ready** | TASK-0094 is Completed on authoritative `main`; its pinned LocalStack lifecycle, task-instance isolation, reset/redeploy evidence, and bounded emulator limitations resolve TASK-0095's only remaining gate. |
 
 Completed spec: `tasks/commerceos/completed/TASK-0094-localstack-foundation-lifecycle.md`.
+
+Ready spec: `tasks/commerceos/backlog/TASK-0095-ci-localstack-infrastructure-verification.md`.
 
 TASK-0094 proved the repository-owned development infrastructure loop:
 
@@ -84,11 +87,10 @@ It also establishes task-instance port/resource isolation so future worktrees do
 
 | Task | Maturity | Gate |
 |---|---|---|
-| `TASK-0095` — Establish CI LocalStack infrastructure verification | **Refined** | Waits only for TASK-0094 completion evidence so CI can reuse the exact proven lifecycle instead of inventing a second setup path. |
 | `TASK-0096` — SubscriptionBilling plan catalog and Trial entitlement authority | Outline | Depends on TASK-0095; refine after the infrastructure harness is proven. |
 | `TASK-0097` — Merchant authentication identity edge | Outline | Depends on TASK-0095; refine against actual LocalStack Cognito support/limitations without weakening trusted Tenant authority. |
 
-After TASK-0094 completes, Backlog Planner should re-check TASK-0095 immediately. If TASK-0094 exposes no blocking LocalStack limitation, TASK-0095 is expected to be the next Ready foundation task.
+TASK-0095 is the sole Ready task. It must reuse the TASK-0094 launcher and pinned Community 4.8.1 assumptions; CI-specific behavior must not become a second lifecycle implementation or introduce real-AWS credentials/OIDC.
 
 After TASK-0095 completes, `TASK-0096` and `TASK-0097` become the first business-foundation refinement pair. They may only be promoted/parallelized after their detailed specs show stable boundaries and no shared exclusive-resource conflict.
 
@@ -96,7 +98,7 @@ After TASK-0095 completes, `TASK-0096` and `TASK-0097` become the first business
 
 | Area | Canonical tasks | Current plan |
 |---|---|---|
-| CommerceOS Phase 0 foundation | `TASK-0094`–`TASK-0095` | 0094 Completed; 0095 Refined |
+| CommerceOS Phase 0 foundation | `TASK-0094`–`TASK-0095` | 0094 Completed; 0095 Ready |
 | Subscription foundation / Tenancy / Merchant Access / Audit | `TASK-0096`–`TASK-0103` | Outline; first business refinement begins with 0096/0097 after 0095 |
 | Files/Media and Catalog | `TASK-0104`–`TASK-0108` | Outline |
 | Product Data Ingestion | `TASK-0109`–`TASK-0116` | Outline; queue/storage/scheduling map to LocalStack-supported capabilities |
@@ -145,8 +147,8 @@ Execution should now proceed as:
 
 ```text
 TASK-0094  COMPLETED
-   ↓ complete + record LocalStack lifecycle/limitations
-TASK-0095  re-evaluate -> Ready when evidence passes
+   ↓ lifecycle/limitations evidence passed Ready gate
+TASK-0095  READY
    ↓ complete CI LocalStack harness
 TASK-0096 + TASK-0097  refine first business foundation
    ↓
@@ -159,4 +161,4 @@ continue dependency graph
 
 Do not promote distant tasks just because real-AWS gates disappeared. Removal of a cloud gate does not resolve unrelated domain, contract, persistence, or workflow decisions.
 
-**Current stop condition: TASK-0094 COMPLETED — CommerceOS Ready frontier is empty pending TASK-0095 readiness reconciliation.**
+**Current stop condition: TASK READY — CommerceOS Ready frontier = `TASK-0095`.**

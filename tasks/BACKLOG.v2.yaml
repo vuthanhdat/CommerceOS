@@ -158,3 +158,4 @@ task_shards:
   - tasks/orchestrator/backlog-v2/00-harness.yaml
 
 ready_frontier:
+  - TASK-0095
