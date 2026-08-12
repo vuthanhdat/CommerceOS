@@ -100,6 +100,10 @@ class GitWorkspaceManager:
         )
         return [line for line in result.stdout.splitlines() if line.strip()]
 
+    def changed_files_between(self, workspace: Workspace, base: str, head: str) -> list[str]:
+        result = self._run(["diff", "--name-only", f"{base}..{head}"], cwd=workspace.path)
+        return [line for line in result.stdout.splitlines() if line.strip()]
+
     def restore_task_lifecycle(self, task: CanonicalTask, directory: Path) -> None:
         """Discard Builder-owned lifecycle bookkeeping while preserving implementation work.
 

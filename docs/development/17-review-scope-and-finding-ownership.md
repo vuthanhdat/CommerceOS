@@ -56,6 +56,10 @@ then back to the implementation pipeline.
 
 ## Review protocol
 
+The executable decision is `ReviewLedger/v1`, validated against the reviewed commit, Ready-task
+AC inventory, Git changed-file inventory, accepted evidence references, and (for re-review) the
+previous ledger plus repair delta. Free text is audit context only.
+
 The Reviewer emits one machine-readable line for every finding:
 
 ```text
@@ -69,3 +73,9 @@ Allowed owners are `BUILDER`, `DOMAIN_ARCHITECT`, `TECHNICAL_ARCHITECT`, `BACKLO
 `FOLLOW_UP` findings are non-blocking and must not enter a repair loop. Completion bookkeeping
 (the selected catalog's `completed/` directory, canonical lifecycle indexes, and the completion summary written after
 integration) is Orchestrator-owned and is never a Builder finding.
+
+Reviewer execution is process-level read-only. Reviewer inspects validated Verification evidence
+and must not run `scripts/harness_check.py` or repository full test suites. A needed executable
+check is represented as a routed finding. On Windows the read-only Codex process starts from the
+primary checkout and inspects the absolute sibling worktree because the restricted runner cannot
+spawn from sibling worktrees.

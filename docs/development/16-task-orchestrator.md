@@ -352,3 +352,7 @@ The repository harness runs the Orchestrator Python test suite before applicatio
 - completion bookkeeping.
 
 The real Codex executable is intentionally not required by tests.
+
+Reviewer decisions use `ReviewLedger/v1`: exact AC/file coverage, stable structured findings,
+and a fail-closed PASS rule. Reviewer processes are read-only and full-suite commands are rejected;
+the validated ledger artifact, not free text, drives routing and merge eligibility.

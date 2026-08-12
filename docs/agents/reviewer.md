@@ -14,6 +14,7 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - full diff/PR
 - test/CI evidence
 - validated `BuilderResultManifest/v1` and `VerificationReport/v1` artifact paths
+- `ReviewLedger/v1` schema and prior validated ledger on repair review
 - `docs/development/17-review-scope-and-finding-ownership.md`
 
 ## Responsibilities
@@ -32,6 +33,8 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - inspect validated Builder/Verification evidence without recreating it or rerunning the full
   deterministic verification stage;
 - report findings by severity with concrete evidence.
+- emit exact AC and changed-file coverage in `ReviewLedger/v1`; free text is not the decision
+  authority;
 - assign exactly one owner and one route to every blocking finding using the shared contract.
 - do not review, require, or report completion bookkeeping/evidence; the Orchestrator owns
   task finalization after review, merge, and post-bookkeeping verification.
@@ -42,6 +45,7 @@ Independently assess whether a Builder change satisfies its Ready task and repos
 - redefine task scope during review;
 - approve merely because tests are green;
 - treat its own suggestions as accepted architecture changes.
+- run the repository harness or full test suites; executable checks route to Verification.
 
 ## Output
 

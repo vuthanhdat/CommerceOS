@@ -34,7 +34,13 @@ from .state import RunStateStore
 from .stage_contracts import CONTRACT_VERSION, StageContractError, stage_contract
 from .verification import VerificationRunner
 from .workspace import GitIntegrationManager, GitWorkspaceManager, IntegrationError, WorkspaceError
-from .review_contract import FindingOwner, FindingRoute, next_hop, parse_review_findings
+from .review_contract import (
+    FindingOwner,
+    FindingRoute,
+    ReviewLedger,
+    ReviewLedgerError,
+    next_hop,
+)
 
 
 @dataclass(frozen=True)
@@ -232,6 +238,8 @@ class TaskOrchestrator:
         run = self.state.task_run(task.id)
         feedback: str | None = None
         review_context: str | None = None
+        previous_ledger: ReviewLedger | None = None
+        previous_review_commit: str | None = None
         repair_resume = False
         if resume and prior_run:
             feedback = f"Resume safely after interrupted local state {prior_run.execution_state.value}. Inspect existing worktree before editing."
@@ -422,21 +430,72 @@ class TaskOrchestrator:
                 final_review=fix_round == self.config.max_fix_attempts,
                 builder_manifest_path=manifest_path,
                 verification_report_path=verification_report_path,
+                reviewed_commit_sha=commit_sha,
+                acceptance_ids=tuple(item.ac_id for item in manifest.acceptance_criteria),
+                changed_files=changed_files,
+                repair_changed_files=(
+                    tuple(self.workspace.changed_files_between(workspace, previous_review_commit, commit_sha))
+                    if previous_review_commit else ()
+                ),
             )
+            if review.raw.marker == "ENVIRONMENT_UNAVAILABLE":
+                if self._validated_stage_output(
+                    task,
+                    "reviewer",
+                    success=False,
+                    evidence_artifact_ids=(review.raw.log_path or f"{task.id}:reviewer:audit",),
+                    failure_route=TaskExecutionState.HUMAN_REQUIRED,
+                ) is None:
+                    return
+                self._block(
+                    task,
+                    "REVIEWER_ENVIRONMENT_UNAVAILABLE",
+                    "Reviewer could not start or access the task worktree; no review ledger was established. "
+                    + review.findings[-20000:],
+                )
+                return
+            try:
+                if not isinstance(review.ledger, dict):
+                    raise ReviewLedgerError("Reviewer returned no ReviewLedger/v1")
+                ledger = ReviewLedger.from_dict(
+                    review.ledger,
+                    expected_task_id=task.id,
+                    expected_commit_sha=commit_sha,
+                    expected_ac_ids=tuple(item.ac_id for item in manifest.acceptance_criteria),
+                    expected_changed_files=changed_files,
+                    allowed_evidence_refs=(
+                        manifest_path,
+                        verification_report_path,
+                        *(result.log_artifact for result in report.command_results),
+                        *(
+                            reference
+                            for finding in (previous_ledger.findings if previous_ledger else ())
+                            for reference in finding.evidence_refs
+                        ),
+                    ),
+                    previous=previous_ledger,
+                    repair_changed_files=(
+                        tuple(self.workspace.changed_files_between(workspace, previous_review_commit, commit_sha))
+                        if previous_review_commit else ()
+                    ),
+                )
+                ledger_path = write_evidence_artifact(
+                    workspace.path,
+                    task.catalog,
+                    task.id,
+                    f"review-ledger-{fix_round}.json",
+                    ledger.to_dict(),
+                )
+            except (ReviewLedgerError, WorkspaceError, AttributeError) as exc:
+                self._block(task, "INVALID_REVIEW_LEDGER", str(exc))
+                return
             self.state.add_event(
                 task.id,
                 "REVIEW_LEDGER",
                 f"round={fix_round}; final={fix_round == self.config.max_fix_attempts}; "
                 + review.findings[-12000:],
             )
-            review_passed = review.passed and not self._has_open_findings(review.findings)
-            if review.passed and not review_passed:
-                review = ReviewResult(
-                    False,
-                    review.findings
-                    + "\nOrchestrator rejected PASS because an explicit OPEN finding remains.",
-                    review.raw,
-                )
+            review_passed = ledger.verdict == "PASS"
             if review_passed:
                 review_output_id = self._validated_stage_output(
                     task,
@@ -444,6 +503,7 @@ class TaskOrchestrator:
                     success=True,
                     evidence_artifact_ids=(
                         review.raw.log_path or f"{task.id}:reviewer:audit",
+                        ledger_path,
                     ),
                 )
                 if review_output_id is None:
@@ -456,28 +516,8 @@ class TaskOrchestrator:
                 self._integrate(task, workspace.branch, workspace.path)
                 return
 
-            if review.raw.marker == "ENVIRONMENT_UNAVAILABLE":
-                if self._validated_stage_output(
-                    task,
-                    "reviewer",
-                    success=False,
-                    evidence_artifact_ids=(
-                        review.raw.log_path or f"{task.id}:reviewer:audit",
-                    ),
-                    failure_route=TaskExecutionState.HUMAN_REQUIRED,
-                ) is None:
-                    return
-                self._block(
-                    task,
-                    "REVIEWER_ENVIRONMENT_UNAVAILABLE",
-                    "Reviewer could not start or access the task worktree; no code finding was established. "
-                    + review.findings[-20000:],
-                )
-                return
-
             routed = tuple(
-                finding
-                for finding in parse_review_findings(review.findings)
+                finding for finding in ledger.findings
                 if finding.status == "OPEN" and finding.owner != FindingOwner.BUILDER
             )
             if routed:
@@ -538,14 +578,19 @@ class TaskOrchestrator:
                     + review.findings[-20000:],
                 )
                 return
-            feedback = "Independent Reviewer findings:\n" + review.findings[-20000:]
-            review_context = self._write_review_context(task, workspace.path, review.findings)
+            feedback = "Validated ReviewLedger/v1 findings:\n" + json.dumps(
+                ledger.to_dict(), ensure_ascii=False
+            )[-20000:]
+            review_context = ledger_path
+            previous_ledger = ledger
+            previous_review_commit = commit_sha
             review_output_id = self._validated_stage_output(
                 task,
                 "reviewer",
                 success=False,
                 evidence_artifact_ids=(
                     review.raw.log_path or f"{task.id}:reviewer:audit",
+                    ledger_path,
                 ),
                 failure_route=TaskExecutionState.REPAIR_REQUIRED,
             )
@@ -571,10 +616,6 @@ class TaskOrchestrator:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(findings[-50000:], encoding="utf-8")
         return relative.as_posix()
-
-    @staticmethod
-    def _has_open_findings(findings: str) -> bool:
-        return bool(re.search(r"FINDING\s+F-[0-9]+\s+STATUS:\s*OPEN\b", findings, flags=re.IGNORECASE))
 
     def _builder_left_task_open(self, task: CanonicalTask, worktree: Path) -> bool:
         """Reject premature task finalization before verification/review can proceed."""

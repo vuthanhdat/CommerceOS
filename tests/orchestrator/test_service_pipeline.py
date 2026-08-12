@@ -29,6 +29,8 @@ class FakeWorkspaceManager:
         return self.diff
     def changed_files(self, workspace):
         return ["x"] if self.diff.strip() else []
+    def changed_files_between(self, workspace, base, head):
+        return ["x"] if self.diff.strip() else []
     def cleanup(self, task, force: bool = False):
         self.cleanup_calls += 1
         return True
@@ -370,7 +372,10 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(agents.review_calls[1]["final"])
             self.assertTrue(agents.review_calls[0]["builder_manifest_path"])
             self.assertTrue(agents.review_calls[0]["verification_report_path"])
-            self.assertIn("FINDING F-001", Path(root / agents.review_calls[1]["context"]).read_text(encoding="utf-8"))
+            ledger = json.loads(
+                Path(root / agents.review_calls[1]["context"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(ledger["findings"][0]["findingId"], "F-001")
 
     def test_explicit_open_finding_cannot_be_hidden_behind_pass_marker(self):
         with tempfile.TemporaryDirectory() as td:

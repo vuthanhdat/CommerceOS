@@ -5,10 +5,93 @@ from commerceos_orchestrator.review_contract import (
     FindingRoute,
     next_hop,
     parse_review_findings,
+    ReviewLedger,
+    ReviewLedgerError,
 )
 
 
 class ReviewContractTests(unittest.TestCase):
+    def _ledger(self):
+        return {
+            "contractVersion": "ReviewLedger/v1",
+            "taskId": "TASK-0100",
+            "reviewedCommitSha": "abc",
+            "reviewRound": "INITIAL",
+            "acceptanceCriteria": [{"acId": "AC01", "verdict": "PASS"}],
+            "changedFiles": [{"path": "src/x.py", "classification": "IN_SCOPE"}],
+            "findings": [],
+            "verdict": "PASS",
+        }
+
+    def test_valid_ledger_has_exact_ac_and_file_coverage(self):
+        ledger = ReviewLedger.from_dict(
+            self._ledger(), expected_task_id="TASK-0100", expected_commit_sha="abc",
+            expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+            allowed_evidence_refs=("builder.json",),
+        )
+        self.assertEqual(ledger.verdict, "PASS")
+
+    def test_stale_duplicate_incomplete_and_pass_with_open_finding_fail_closed(self):
+        cases = []
+        stale = self._ledger(); stale["reviewedCommitSha"] = "old"; cases.append(stale)
+        duplicate = self._ledger(); duplicate["acceptanceCriteria"] *= 2; cases.append(duplicate)
+        incomplete = self._ledger(); incomplete["changedFiles"] = []; cases.append(incomplete)
+        open_finding = self._ledger(); open_finding["findings"] = [{
+            "findingId": "F-001", "status": "OPEN", "severity": "HIGH",
+            "owner": "BUILDER", "route": "BUILDER_FIX", "title": "broken",
+            "evidenceRefs": ["builder.json"], "affectedPaths": ["src/x.py"],
+            "acceptanceCondition": "Test demonstrates the fix.",
+        }]; cases.append(open_finding)
+        for value in cases:
+            with self.subTest(value=value), self.assertRaises(ReviewLedgerError):
+                ReviewLedger.from_dict(
+                    value, expected_task_id="TASK-0100", expected_commit_sha="abc",
+                    expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                    allowed_evidence_refs=("builder.json",),
+                )
+
+    def test_owner_route_unknown_evidence_and_unsafe_path_fail_closed(self):
+        base = self._ledger()
+        finding = {
+            "findingId": "F-001", "status": "OPEN", "severity": "MEDIUM",
+            "owner": "BUILDER", "route": "PLANNING_REQUIRED", "title": "broken",
+            "evidenceRefs": ["unknown"], "affectedPaths": ["../x"],
+            "acceptanceCondition": "A measurable condition.",
+        }
+        base["findings"] = [finding]; base["verdict"] = "FIX_REQUIRED"
+        with self.assertRaises(ReviewLedgerError):
+            ReviewLedger.from_dict(
+                base, expected_task_id="TASK-0100", expected_commit_sha="abc",
+                expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                allowed_evidence_refs=("builder.json",),
+            )
+
+    def test_rereview_preserves_ids_and_new_unrelated_blockers_are_follow_up(self):
+        first = self._ledger()
+        first["acceptanceCriteria"][0]["verdict"] = "FAIL"
+        first["findings"] = [{
+            "findingId": "F-001", "status": "OPEN", "severity": "MEDIUM",
+            "owner": "BUILDER", "route": "BUILDER_FIX", "title": "broken",
+            "evidenceRefs": ["builder.json"], "affectedPaths": ["src/x.py"],
+            "acceptanceCondition": "A measurable condition.",
+        }]
+        first["verdict"] = "FIX_REQUIRED"
+        previous = ReviewLedger.from_dict(
+            first, expected_task_id="TASK-0100", expected_commit_sha="abc",
+            expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+            allowed_evidence_refs=("builder.json",),
+        )
+        repair = self._ledger(); repair["reviewRound"] = "REPAIR"; repair["reviewedCommitSha"] = "def"
+        repair["findings"] = [{**first["findings"][0], "status": "RESOLVED"}, {
+            **first["findings"][0], "findingId": "F-002", "affectedPaths": ["src/x.py"],
+        }]
+        with self.assertRaisesRegex(ReviewLedgerError, "FOLLOW_UP"):
+            ReviewLedger.from_dict(
+                repair, expected_task_id="TASK-0100", expected_commit_sha="def",
+                expected_ac_ids=("AC01",), expected_changed_files=("src/x.py",),
+                allowed_evidence_refs=("builder.json",), previous=previous,
+                repair_changed_files=(),
+            )
     def test_domain_and_technical_findings_route_through_backlog_planner(self):
         findings = parse_review_findings(
             """FINDING F-001 STATUS: OPEN OWNER: DOMAIN_ARCHITECT ROUTE: PLANNING_REQUIRED TITLE: invariant conflict

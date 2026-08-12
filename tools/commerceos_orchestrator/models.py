@@ -121,6 +121,7 @@ class ReviewResult:
     passed: bool
     findings: str
     raw: AgentResult
+    ledger: Any | None = None
 
 
 @dataclass(frozen=True)
