@@ -25,6 +25,7 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0174` — Expose and verify the strict Orchestrator workflow end to end (`Ready`).
 
 ## Strict workflow boundary program
 
@@ -43,4 +44,4 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0172 is completed and TASK-0173 passed its planning gate.
+TASK-0172 and TASK-0173 are completed; TASK-0174 passed its planning gate.

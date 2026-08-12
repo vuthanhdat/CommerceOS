@@ -1,12 +1,27 @@
 # TASK-0174 — Expose and verify the strict Orchestrator workflow end to end
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — waits for TASK-0172 and TASK-0173
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Engineering / Harness
+Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
 Depends on: TASK-0172, TASK-0173
 Cloud verification: No
+
+## Planning readiness
+
+- Owning domain: Engineering / Harness; product and tenant domains are unaffected.
+- Dependencies TASK-0172 and TASK-0173 are canonically Completed.
+- Status semantics, actors, transition table, stage/evidence contracts, review ledger, repair
+  packet, and completion transaction are all versioned repository contracts.
+- Dashboard work extends the existing loopback-only read model and DOM-safe UI; no visual
+  redesign, persistence technology, remote monitoring, cloud service, or ADR decision is needed.
+- Evidence counters are derived from persisted JSON contract artifacts under the task evidence
+  directory and fail closed when artifacts are missing or malformed.
+- E2E scenarios use deterministic fake agents/runners and assert actor-call absence as well as
+  terminal state; no LocalStack or external account is involved.
+- Remaining planning blockers: None.
 
 ## Goal
 
@@ -66,10 +81,33 @@ from/to state, actor, contract version, and relevant artifact IDs.
 All named pipeline scenarios have deterministic automated coverage; scenario pass rate is 100%,
 and each asserts both final state and absence of unauthorized actor actions.
 
-## Architecture/security/runtime impact
+## Architecture impact
 
-Harness/dashboard only. Agent output remains untrusted text and loopback-only. No tenant,
-CommerceOS product, or LocalStack impact.
+Harness/dashboard read-model and tests only. Existing versioned workflow contracts and SQLite
+run state remain authoritative; no module, persistence, integration, or ADR change.
+
+## Security and tenant impact
+
+Agent output remains untrusted text and the dashboard remains loopback-only with DOM-safe text
+rendering. No authentication, authorization, tenant data, or secrets impact.
+
+## Reliability and idempotency impact
+
+Status is derived from persisted state and validated evidence artifacts. Missing/malformed
+artifacts fail closed; read-model refresh and restart scenarios are deterministic and idempotent.
+
+## Observability impact
+
+Every non-terminal state exposes one actor and next condition, evidence-derived counters, and a
+complete accepted/rejected transition audit record.
+
+## Cost impact
+
+Repository-local tests and dashboard reads only; no external or cloud cost.
+
+## Local runtime/resource impact
+
+Existing loopback dashboard, SQLite state, and repository-local evidence only. LocalStack: N/A.
 
 ## Quantified Definition of Done
 
@@ -87,4 +125,3 @@ CommerceOS product, or LocalStack impact.
 - Full fake-agent pipeline matrix, including stop/restart and recovery.
 - DOM safety regression checks.
 - LocalStack verification: N/A.
-
