@@ -1,11 +1,12 @@
 # TASK-0173 — Make completion an Orchestrator-owned verified transaction
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: completed TASK-0170, completed TASK-0171
 Cloud verification: No
 
@@ -130,3 +131,13 @@ No external/cloud cost.
 - Already-on-remote-main recovery and repeat-run idempotency tests.
 - Static role/prompt checks for lifecycle write ownership.
 - LocalStack verification: N/A.
+
+## Completion summary
+
+### Orchestrator evidence
+
+- Completion transaction and canonical rollback/recovery implemented.
+- Independent Reviewer result: PASS; all findings resolved.
+- 110 Orchestrator tests passed after integration.
+- Full repository harness passed before integration; post-bookkeeping harness follows.
+- Architecture/security: harness-only, repository-contained evidence; no tenant, cloud, or LocalStack impact.

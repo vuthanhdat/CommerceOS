@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0173` — Make completion an Orchestrator-owned verified transaction (`Completed`).
+
 - `TASK-0172` — Restrict Builder rework to accepted Reviewer findings (`Completed`).
 - `TASK-0171` — Enforce a bounded read-only Reviewer contract (`Completed`).
 - `TASK-0170` — Require Builder evidence before independent review (`Completed`).
@@ -23,7 +25,6 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0173` — Make completion an Orchestrator-owned verified transaction (`Ready`).
 
 ## Strict workflow boundary program
 
