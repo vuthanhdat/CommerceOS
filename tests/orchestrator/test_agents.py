@@ -145,6 +145,7 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             "python scripts/task_verification.py",
             "python ./scripts/harness_check.py",
             "python C:/repo/scripts/task_verification.py",
+            "C:/Python/python.exe C:/repo/scripts/harness_check.py",
             "python -m unittest tests.orchestrator",
             "python3 -m pytest tests",
             "pytest -q",

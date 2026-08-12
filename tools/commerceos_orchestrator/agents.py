@@ -556,7 +556,7 @@ policy, then runs deterministic verification and independent review.
         normalized = re.sub(r"[\\/]+", "/", command.lower())
         normalized = re.sub(r"[\"']", "", normalized)
         normalized = re.sub(r"\s+", " ", normalized).strip()
-        interpreter = r"(?:python(?:3|\.exe)?|py(?:\.exe)?)"
+        interpreter = r"(?:[^ ]*/)?(?:python(?:3|\.exe)?|py(?:\.exe)?)"
         return any(
             re.search(pattern, normalized)
             for pattern in (
