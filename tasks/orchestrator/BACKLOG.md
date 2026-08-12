@@ -33,6 +33,8 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0178` - Expose planning candidates and contain the dashboard DAG (`Ready`).
+
 
 
 ## Strict workflow boundary program
