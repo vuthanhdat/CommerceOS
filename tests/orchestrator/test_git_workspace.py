@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import TOOLS
 from commerceos_orchestrator.models import CanonicalTask, Workspace
@@ -16,6 +17,51 @@ def git(cwd: Path, *args: str) -> str:
 
 
 class GitWorkspaceTests(unittest.TestCase):
+    @staticmethod
+    def _git_result(returncode: int, stdout: str = "", stderr: str = ""):
+        return subprocess.CompletedProcess(["git"], returncode, stdout, stderr)
+
+    def test_transient_fetch_retries_and_then_succeeds(self):
+        manager = GitWorkspaceManager(Path.cwd())
+        transient = self._git_result(128, stderr="Failed to connect to github.com port 443")
+        success = self._git_result(0)
+
+        with patch.object(manager, "_run", side_effect=[transient, success]) as run:
+            manager._refresh_origin_main_for_worktree()
+
+        self.assertEqual(run.call_count, 2)
+
+    def test_transient_fetch_uses_only_synchronized_cached_main(self):
+        manager = GitWorkspaceManager(Path.cwd())
+        transient = self._git_result(128, stderr="Failed to connect to github.com port 443")
+        cached = self._git_result(0, stdout="abc123\n")
+
+        with patch.object(manager, "_run", side_effect=[transient, transient, cached, cached]):
+            with self.assertLogs("commerceos_orchestrator.workspace", level="WARNING") as logs:
+                manager._refresh_origin_main_for_worktree()
+
+        self.assertIn("synchronized cached main commit abc123", logs.output[0])
+
+    def test_transient_fetch_fails_closed_when_cached_main_is_not_synchronized(self):
+        manager = GitWorkspaceManager(Path.cwd())
+        transient = self._git_result(128, stderr="Failed to connect to github.com port 443")
+        local = self._git_result(0, stdout="abc123\n")
+        remote = self._git_result(0, stdout="def456\n")
+
+        with patch.object(manager, "_run", side_effect=[transient, transient, local, remote]):
+            with self.assertRaisesRegex(WorkspaceError, "Failed to connect"):
+                manager._refresh_origin_main_for_worktree()
+
+    def test_non_transient_fetch_failure_is_not_retried_or_cached(self):
+        manager = GitWorkspaceManager(Path.cwd())
+        denied = self._git_result(128, stderr="Authentication failed")
+
+        with patch.object(manager, "_run", return_value=denied) as run:
+            with self.assertRaisesRegex(WorkspaceError, "Authentication failed"):
+                manager._refresh_origin_main_for_worktree()
+
+        self.assertEqual(run.call_count, 1)
+
     def test_restore_task_lifecycle_preserves_implementation_changes(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)

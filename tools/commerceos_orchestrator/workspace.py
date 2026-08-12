@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
 from pathlib import Path
 
 from .models import CanonicalTask, Workspace
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class WorkspaceError(RuntimeError):
@@ -43,6 +47,69 @@ class GitWorkspaceManager:
     def primary_is_clean(self) -> bool:
         return self._run(["status", "--porcelain"]).stdout.strip() == ""
 
+    @staticmethod
+    def _is_transient_fetch_failure(result: subprocess.CompletedProcess[str]) -> bool:
+        output = f"{result.stderr}\n{result.stdout}".lower()
+        transient_markers = (
+            "failed to connect",
+            "could not connect",
+            "couldn't connect",
+            "could not resolve host",
+            "couldn't resolve host",
+            "connection timed out",
+            "operation timed out",
+            "connection reset",
+            "network is unreachable",
+            "recv failure",
+            "tls connection was non-properly terminated",
+        )
+        return any(marker in output for marker in transient_markers)
+
+    def _synchronized_cached_main(self) -> str | None:
+        local = self._run(
+            ["rev-parse", "--verify", "refs/heads/main^{commit}"], check=False
+        )
+        remote = self._run(
+            ["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], check=False
+        )
+        if local.returncode != 0 or remote.returncode != 0:
+            return None
+        local_sha = local.stdout.strip()
+        remote_sha = remote.stdout.strip()
+        return local_sha if local_sha and local_sha == remote_sha else None
+
+    def _refresh_origin_main_for_worktree(self) -> None:
+        fetch_args = ["fetch", "origin", "main"]
+        first = self._run(fetch_args, check=False)
+        if first.returncode == 0:
+            return
+        if not self._is_transient_fetch_failure(first):
+            self._raise_git_failure(fetch_args, first)
+
+        retry = self._run(fetch_args, check=False)
+        if retry.returncode == 0:
+            return
+        if not self._is_transient_fetch_failure(retry):
+            self._raise_git_failure(fetch_args, retry)
+
+        cached_sha = self._synchronized_cached_main()
+        if cached_sha is None:
+            self._raise_git_failure(fetch_args, retry)
+        LOGGER.warning(
+            "git fetch origin main failed twice due to a transient network error; "
+            "using synchronized cached main commit %s for worktree creation",
+            cached_sha,
+        )
+
+    @staticmethod
+    def _raise_git_failure(
+        args: list[str], result: subprocess.CompletedProcess[str]
+    ) -> None:
+        raise WorkspaceError(
+            f"git {' '.join(args)} failed ({result.returncode}): "
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+
     def workspace_for(self, task: CanonicalTask) -> Workspace:
         self.ensure_repository()
         self.worktrees_root.mkdir(parents=True, exist_ok=True)
@@ -58,7 +125,7 @@ class GitWorkspaceManager:
                 )
             return Workspace(branch=branch, path=directory, created=False)
 
-        self._run(["fetch", "origin", "main"])
+        self._refresh_origin_main_for_worktree()
         branch_exists = self._run(["show-ref", "--verify", f"refs/heads/{branch}"], check=False).returncode == 0
         if branch_exists:
             self._run(["worktree", "add", str(directory), branch])
