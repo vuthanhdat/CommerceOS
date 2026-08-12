@@ -1,11 +1,12 @@
 # TASK-0178 - Expose planning candidates and contain the dashboard DAG
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder - Engineering / Harness
 Recommended implementation model: gpt-5.6-terra, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: TASK-0177
 Cloud verification: No
 
@@ -106,23 +107,33 @@ viewport, and task titles wrap within nodes.
 
 ### What changed
 
-- Pending implementation.
+- Plan now reports the nearest dependency-satisfied Refined/Outline planning candidate while
+  preserving an empty Builder dispatch list.
+- Dashboard guidance directs the operator to Run or Start to launch Backlog Planner.
+- Retry reset clears stale HUMAN_REQUIRED control state when no retryable blocker remains.
+- The DAG keeps intrinsic stage width inside a dedicated horizontal scroller and wraps task titles.
 
 ### Verification
 
-- `py -3 scripts/harness_check.py`: pending.
+- `py -3 -m unittest discover -s tests/orchestrator -p 'test_*.py'`: PASS (139 tests).
+- `py -3 scripts/harness_check.py`: PASS.
+- Browser QA: TASK-0095 planning preview PASS; desktop document 1265/1265 with DAG 1191/5762;
+  480px document 465/465 with DAG 357/5762.
 
 ### Acceptance criteria status
 
-- AC01-AC04: pending.
+- AC01-AC04: satisfied.
 
 ### Architecture/security/runtime notes
 
-- Pending implementation.
+- Plan remains read-only and does not dispatch a Builder or mutate canonical maturity.
+- Run/Start remains the only route that starts planning agents.
+- No tenant, LocalStack, cloud authorization, or provider permission boundary changed.
 
 ### Harness improvement
 
-- Pending implementation.
+- Added regressions for planning preview, controller output, stale state reset, DAG containment,
+  and title wrapping.
 
 ### Follow-up tasks
 

@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0178` — Expose planning candidates and contain the dashboard DAG (`Completed`).
+
 - `TASK-0177` — Configure Codex sandbox by agent role (`Completed`).
 
 - `TASK-0176` — Add dashboard command controls and agent settings (`Completed`).
@@ -33,7 +35,6 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0178` - Expose planning candidates and contain the dashboard DAG (`Ready`).
 
 
 
