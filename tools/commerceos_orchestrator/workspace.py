@@ -259,6 +259,9 @@ class GitIntegrationManager:
         self._run(["switch", "main"])
         self._run(["pull", "--ff-only", "origin", "main"])
 
+    def current_commit(self) -> str:
+        return self._run(["rev-parse", "HEAD"]).stdout.strip()
+
 
     def branch_is_on_remote_main(self, branch: str) -> bool:
         self._run(["fetch", "origin", "main"])

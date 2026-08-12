@@ -12,6 +12,7 @@ from pathlib import Path
 from .agents import AgentRunner
 from .backlog import BacklogReader, BacklogWriter, BacklogValidationError
 from .evidence import (
+    AdditionalVerificationCommand,
     BuilderResultManifest,
     EvidenceValidationError,
     VerificationReport,
@@ -26,6 +27,7 @@ from .models import (
     TaskExecutionState,
     TaskRun,
     TERMINAL_TASK_STATES,
+    VerificationResult,
 )
 from .scheduler import Scheduler
 from .state import RunStateStore
@@ -348,42 +350,16 @@ class TaskOrchestrator:
                 commit_sha=commit_sha,
                 additional_commands=manifest.additional_commands,
             )
-            if not isinstance(verification.report, VerificationReport):
-                self._block(
+            try:
+                report = self._authoritative_verification_report(
                     task,
-                    "INVALID_VERIFICATION_REPORT",
-                    "Verification Runner returned no authoritative VerificationReport/v1",
+                    verification,
+                    expected_commit_sha=commit_sha,
+                    additional_commands=manifest.additional_commands,
                 )
+            except EvidenceValidationError as exc:
+                self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
                 return
-            report = verification.report
-            if report.task_id != task.id or report.task_commit_sha != commit_sha:
-                self._block(
-                    task,
-                    "INVALID_VERIFICATION_REPORT",
-                    "Verification report task/commit binding mismatch",
-                )
-                return
-            if any(
-                not Path(result.log_artifact).is_file()
-                for result in report.command_results
-            ):
-                self._block(
-                    task,
-                    "INVALID_VERIFICATION_REPORT",
-                    "Verification report references a missing command log artifact",
-                )
-                return
-            if verification.success:
-                try:
-                    report.validate(
-                        expected_commands=self.verification.expected_commands(
-                            manifest.additional_commands
-                        ),
-                        expected_commit_sha=commit_sha,
-                    )
-                except EvidenceValidationError as exc:
-                    self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
-                    return
             verification_report_path = write_evidence_artifact(
                 workspace.path,
                 task.catalog,
@@ -727,6 +703,34 @@ class TaskOrchestrator:
             or ("model" in combined and "at capacity" in combined and "try a different model" in combined)
         )
 
+    def _authoritative_verification_report(
+        self,
+        task: CanonicalTask,
+        verification: VerificationResult,
+        *,
+        expected_commit_sha: str,
+        additional_commands: tuple[AdditionalVerificationCommand, ...] = (),
+    ) -> VerificationReport:
+        if not isinstance(verification.report, VerificationReport):
+            raise EvidenceValidationError(
+                "Verification Runner returned no authoritative VerificationReport/v1"
+            )
+        report = verification.report
+        if report.task_id != task.id or report.task_commit_sha != expected_commit_sha:
+            raise EvidenceValidationError("Verification report task/commit binding mismatch")
+        if report.success != verification.success:
+            raise EvidenceValidationError("Verification result/report success mismatch")
+        if any(not Path(result.log_artifact).is_file() for result in report.command_results):
+            raise EvidenceValidationError(
+                "Verification report references a missing command log artifact"
+            )
+        if verification.success:
+            report.validate(
+                expected_commands=self.verification.expected_commands(additional_commands),
+                expected_commit_sha=expected_commit_sha,
+            )
+        return report
+
     def _integrate(self, task: CanonicalTask, branch: str, worktree: Path) -> None:
         with self._merge_lock:
             current_run = self.state.task_run(task.id)
@@ -761,7 +765,23 @@ class TaskOrchestrator:
                             return
                         self.integration.commit_current_merge(task)
 
-                    post_merge = self.verification.run(task, self.root, phase="post-integration")
+                    post_merge_commit = self.integration.current_commit()
+                    post_merge = self.verification.run(
+                        task,
+                        self.root,
+                        phase="post-integration",
+                        commit_sha=post_merge_commit,
+                    )
+                    try:
+                        self._authoritative_verification_report(
+                            task,
+                            post_merge,
+                            expected_commit_sha=post_merge_commit,
+                        )
+                    except EvidenceValidationError as exc:
+                        self.integration.rollback_unpushed_main()
+                        self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
+                        return
                     integration_output_id = self._validated_stage_output(
                         task,
                         "integration",
@@ -796,7 +816,23 @@ class TaskOrchestrator:
                     summary = self._completion_summary(task)
                     BacklogWriter(self.root).finalize_task(snapshot, merged_task, summary)
                     self.integration.commit_bookkeeping(task)
-                    final_verification = self.verification.run(task, self.root, phase="post-bookkeeping")
+                    final_commit = self.integration.current_commit()
+                    final_verification = self.verification.run(
+                        task,
+                        self.root,
+                        phase="post-bookkeeping",
+                        commit_sha=final_commit,
+                    )
+                    try:
+                        self._authoritative_verification_report(
+                            task,
+                            final_verification,
+                            expected_commit_sha=final_commit,
+                        )
+                    except EvidenceValidationError as exc:
+                        self.integration.rollback_unpushed_main()
+                        self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
+                        return
                     finalization_output_id = self._validated_stage_output(
                         task,
                         "finalization",
@@ -842,7 +878,23 @@ class TaskOrchestrator:
                         summary = self._completion_summary(task)
                         BacklogWriter(self.root).finalize_task(snapshot, current_task, summary)
                         self.integration.commit_bookkeeping(task)
-                        final_verification = self.verification.run(task, self.root, phase="recovery-bookkeeping")
+                        recovery_commit = self.integration.current_commit()
+                        final_verification = self.verification.run(
+                            task,
+                            self.root,
+                            phase="recovery-bookkeeping",
+                            commit_sha=recovery_commit,
+                        )
+                        try:
+                            self._authoritative_verification_report(
+                                task,
+                                final_verification,
+                                expected_commit_sha=recovery_commit,
+                            )
+                        except EvidenceValidationError as exc:
+                            self.integration.rollback_unpushed_main()
+                            self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
+                            return
                         finalization_output_id = self._validated_stage_output(
                             task,
                             "finalization",

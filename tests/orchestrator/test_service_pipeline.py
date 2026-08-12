@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from helpers import row, write_backlog
@@ -40,6 +41,7 @@ class FakeIntegrationManager:
         self.calls: list[str] = []
         self.remote = False
     def prepare_main(self): self.calls.append("prepare")
+    def current_commit(self): self.calls.append("current-commit"); return "abc"
     def branch_is_on_remote_main(self, branch): self.calls.append("ancestor"); return self.remote
     def merge_branch(self, task, branch): self.calls.append("merge"); return True
     def conflicted_files(self): return []
@@ -48,6 +50,27 @@ class FakeIntegrationManager:
     def commit_current_merge(self, task): self.calls.append("commit-merge")
     def commit_bookkeeping(self, task): self.calls.append("bookkeeping")
     def push_main(self): self.calls.append("push"); self.remote = True
+
+
+class StaleLateReportVerificationRunner(FakeVerificationRunner):
+    def __init__(self, stale_phase: str):
+        super().__init__([True, True, True])
+        self.stale_phase = stale_phase
+
+    def run(self, task, worktree, *, phase, commit_sha=None, additional_commands=()):
+        result = super().run(
+            task,
+            worktree,
+            phase=phase,
+            commit_sha=commit_sha,
+            additional_commands=additional_commands,
+        )
+        if phase == self.stale_phase:
+            return replace(
+                result,
+                report=replace(result.report, task_commit_sha="stale-commit"),
+            )
+        return result
 
 
 class MalformedStageOutputOrchestrator(TaskOrchestrator):
@@ -87,6 +110,43 @@ def reviewer_environment_failure() -> ReviewResult:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_late_verification_reports_are_commit_bound_before_advancing(self):
+        for phase, already_remote in (
+            ("post-integration", False),
+            ("post-bookkeeping", False),
+            ("recovery-bookkeeping", True),
+        ):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                write_backlog(
+                    root,
+                    [row("TASK-0100")],
+                    ready=["TASK-0100"],
+                    metadata={"TASK-0100": ""},
+                )
+                state = RunStateStore(root / "state.db")
+                agents = FakeAgentRunner(
+                    review_results=[review(True, "REVIEW_RESULT: PASS")]
+                )
+                integration = FakeIntegrationManager()
+                integration.remote = already_remote
+                orch = TaskOrchestrator(
+                    root,
+                    state,
+                    agents,
+                    StaleLateReportVerificationRunner(phase),
+                    workspace_manager=FakeWorkspaceManager(root),
+                    integration_manager=integration,
+                    config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+                )
+
+                orch.run()
+
+                run = state.task_run("TASK-0100")
+                self.assertEqual(run.blocker_code, "INVALID_VERIFICATION_REPORT")
+                self.assertIn("rollback", integration.calls)
+                self.assertNotIn("push", integration.calls)
+
     def test_builder_verify_review_merge_and_bookkeeping(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
