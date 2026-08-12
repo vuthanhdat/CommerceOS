@@ -318,10 +318,13 @@ class RunStateStore:
                     "TRANSITION_REJECTED",
                     json.dumps(
                         {
+                            "task_id": task_id,
                             "from": source.value,
                             "to": execution_state.value,
                             "actor": actor or "UNKNOWN",
                             "contract_version": CONTRACT_VERSION,
+                            "input_artifact_id": existing["output_artifact_id"],
+                            "output_artifact_id": None,
                             "reason": detail,
                         },
                         sort_keys=True,
@@ -351,7 +354,23 @@ class RunStateStore:
                     ),
                 )
                 connection.execute("COMMIT")
-                self.add_event(task_id, "TRANSITION_REJECTED", detail)
+                self.add_event(
+                    task_id,
+                    "TRANSITION_REJECTED",
+                    json.dumps(
+                        {
+                            "task_id": task_id,
+                            "from": source.value,
+                            "to": execution_state.value,
+                            "actor": actor,
+                            "contract_version": CONTRACT_VERSION,
+                            "input_artifact_id": existing["output_artifact_id"],
+                            "output_artifact_id": None,
+                            "reason": detail,
+                        },
+                        sort_keys=True,
+                    ),
+                )
                 raise InvalidTransitionError(detail)
             resolved_input = input_artifact_id or existing["output_artifact_id"]
             next_attempt = int(existing["attempt"]) + attempt_delta
@@ -392,6 +411,7 @@ class RunStateStore:
             )
             connection.execute("COMMIT")
             event_detail = {
+                "task_id": task_id,
                 "from": source.value,
                 "to": execution_state.value,
                 "actor": expected_actor,

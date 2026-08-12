@@ -34,9 +34,14 @@ class DashboardTests(unittest.TestCase):
                 self.assertIn("function dagNode(t)", html)
                 self.assertIn("aria-pressed", html)
                 self.assertIn("activeStates", html)
+                self.assertIn("Owner:", html)
+                self.assertIn("Next:", html)
                 with urlopen(server.url + "api/status", timeout=2) as response:
                     status = json.load(response)
                 self.assertEqual(status["ready_frontier"], ["TASK-0100"])
+                ready_task = next(task for task in status["tasks"] if task["id"] == "TASK-0100")
+                self.assertIsNone(ready_task["current_actor"])
+                self.assertIn("evidence_counters", ready_task)
                 logs = state.path.parent / "logs"
                 logs.mkdir(parents=True, exist_ok=True)
                 (logs / "TASK-0100-builder-1.log").write_text("builder log", encoding="utf-8")
@@ -105,6 +110,9 @@ class DashboardTests(unittest.TestCase):
                 with urlopen(server.url + "api/status", timeout=2) as response:
                     status = json.load(response)
                 self.assertEqual(status["ready_frontier"], ["TASK-0101"])
+                active = next(task for task in status["tasks"] if task["id"] == "TASK-0100")
+                self.assertEqual(active["current_actor"], "BUILDER")
+                self.assertIn("BuilderResultManifest/v1", active["next_transition_condition"])
             finally:
                 server.shutdown()
                 thread.join(timeout=2)

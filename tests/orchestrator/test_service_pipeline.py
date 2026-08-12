@@ -635,6 +635,27 @@ class PipelineTests(unittest.TestCase):
                 if event["kind"] == "STAGE_OUTPUT_VALIDATED"
             ]
             self.assertIn("repair_builder", validated)
+            self.assertEqual(agents.reviewer_calls, 1)
+
+    def test_verification_retry_exhaustion_blocks_without_review_or_integration(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            agents = FakeAgentRunner()
+            integration = FakeIntegrationManager()
+            orch = TaskOrchestrator(
+                root, state, agents, FakeVerificationRunner([False, False]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=integration,
+                config=OrchestratorConfig(max_builders=1, max_fix_attempts=1, poll_seconds=0.01),
+            )
+            orch.run()
+            self.assertEqual(state.task_run("TASK-0100").execution_state, TaskExecutionState.BLOCKED)
+            self.assertEqual(agents.builder_calls, 2)
+            self.assertEqual(agents.reviewer_calls, 0)
+            self.assertNotIn("merge", integration.calls)
+            self.assertNotIn("push", integration.calls)
 
     def test_malformed_production_stage_output_fails_closed_before_verification(self):
         with tempfile.TemporaryDirectory() as td:

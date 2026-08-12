@@ -17,6 +17,7 @@ from .models import TaskExecutionState
 from .scheduler import Scheduler
 from .service import TaskOrchestrator
 from .state import RunStateStore
+from .observability import evidence_counters, workflow_status
 
 
 class _QuietThreadingHTTPServer(ThreadingHTTPServer):
@@ -128,8 +129,8 @@ class DashboardReadModel:
             )
         return sorted(values, key=lambda item: float(item["modified_at_epoch"]), reverse=True)
 
-    @staticmethod
-    def _summary(task, run) -> dict[str, object]:
+    def _summary(self, task, run) -> dict[str, object]:
+        owner, next_condition = workflow_status(run.execution_state if run else None)
         return {
             "id": task.id,
             "title": task.title,
@@ -155,6 +156,9 @@ class DashboardReadModel:
             "contract_version": run.contract_version if run else None,
             "input_artifact_id": run.input_artifact_id if run else None,
             "output_artifact_id": run.output_artifact_id if run else None,
+            "current_actor": owner,
+            "next_transition_condition": next_condition,
+            "evidence_counters": evidence_counters(self.root, task.catalog, task.id),
         }
 
 

@@ -361,3 +361,30 @@ Finalization is a serialized `CompletionTransaction/v1`. Canonical lifecycle wri
 filesystem-transactional, validated for spec/path/status/index consistency, then committed and
 verified before a non-force push. Any unpushed failure restores trusted `origin/main`; recovery
 accepts only a valid completed snapshot or resumes from a valid open snapshot.
+
+## 16. Operator workflow/status contract
+
+The dashboard read model exposes the persisted state without collapsing build, verification,
+review, repair, integration, or finalization. Each non-terminal state has one current owner and
+one measurable exit condition:
+
+| State | Current owner | Next measurable transition condition |
+|---|---|---|
+| `QUEUED` | Orchestrator | Dispatch a valid planning or Builder input |
+| `PLANNING` | Backlog Planner | Produce a valid planning result |
+| `INITIAL_BUILD` | Builder | Produce a valid `BuilderResultManifest/v1` |
+| `PRE_REVIEW_VERIFICATION` | Verification Runner | Pass every required verification command |
+| `FIRST_REVIEW` | Reviewer | Produce `ReviewLedger/v1` with no open blocking finding |
+| `REPAIR_REQUIRED` | Orchestrator | Persist a finding-scoped `RepairPacket/v1` |
+| `REPAIR_BUILD` | Repair Builder | Address every packet finding within its path allow-list |
+| `REPAIR_VERIFICATION` | Verification Runner | Pass every required repair verification command |
+| `RE_REVIEW` | Reviewer | Resolve prior findings with a PASS ledger |
+| `MERGE_QUEUED` | Orchestrator | Acquire the serialized latest-main merge lane |
+| `INTEGRATING` | Orchestrator | Merge cleanly and pass post-integration verification |
+| `FINALIZING` | Orchestrator | Validate canonical completion and final verification before push |
+
+Status output also reports AC satisfaction, changed-file coverage, required test totals, and open
+finding counts by owner from persisted contract artifacts. Missing artifacts are reported as
+`MISSING`; malformed artifacts are reported as `INVALID`, never inferred as successful. Every
+accepted `TASK_STATE` transition and every `TRANSITION_REJECTED` event records task ID, from/to
+state, actor, contract version, and input/output artifact IDs.

@@ -151,8 +151,50 @@ class StageContractTests(unittest.TestCase):
             self.assertEqual(run.output_artifact_id, "TASK-0100:builder-output:1")
             event = next(event for event in state.recent_events(10) if event["kind"] == "TASK_STATE")
             detail = json.loads(event["detail"])
+            self.assertEqual(detail["task_id"], "TASK-0100")
+            self.assertIn("input_artifact_id", detail)
+            self.assertIn("output_artifact_id", detail)
+            detail = json.loads(event["detail"])
             self.assertEqual(detail["actor"], "BUILDER")
             self.assertEqual(detail["contract_version"], CONTRACT_VERSION)
+
+    def test_each_accepted_or_rejected_transition_emits_one_complete_audit_event(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = RunStateStore(Path(td) / "state.db")
+            state.clear_stop_and_run()
+            state.claim_task("TASK-0100")
+            before = state.recent_events(100)
+            state.update_task(
+                "TASK-0100", TaskExecutionState.INITIAL_BUILD, actor="BUILDER",
+                input_artifact_id="input-1", output_artifact_id="output-1",
+            )
+            accepted = [
+                event for event in state.recent_events(100)
+                if event["kind"] == "TASK_STATE" and event not in before
+            ]
+            self.assertEqual(len(accepted), 1)
+            accepted_detail = json.loads(accepted[0]["detail"])
+            self.assertEqual(
+                set(("task_id", "from", "to", "actor", "contract_version", "input_artifact_id", "output_artifact_id"))
+                - set(accepted_detail),
+                set(),
+            )
+            with self.assertRaises(InvalidTransitionError):
+                state.update_task(
+                    "TASK-0100", TaskExecutionState.PRE_REVIEW_VERIFICATION,
+                    actor="BUILDER",
+                )
+            rejected = [
+                event for event in state.recent_events(100)
+                if event["kind"] == "TRANSITION_REJECTED"
+            ]
+            self.assertEqual(len(rejected), 1)
+            rejected_detail = json.loads(rejected[0]["detail"])
+            for field in (
+                "task_id", "from", "to", "actor", "contract_version",
+                "input_artifact_id", "output_artifact_id",
+            ):
+                self.assertIn(field, rejected_detail)
 
     def test_workflow_and_role_docs_reference_the_executable_contract(self):
         root = Path(__file__).resolve().parents[2]
