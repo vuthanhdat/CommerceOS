@@ -16,9 +16,9 @@ The infrastructure invariant under ADR-012 is:
 
 ## 2. Model policy
 
-CommerceOS preserves a **Terra-first implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors should start with the Terra Builder profile defined by the repository unless the task's accepted planning artifacts explicitly require stronger reasoning.
+CommerceOS preserves a **Terra-first implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors should start with the `gpt-5.6-terra` Builder profile defined by the repository unless the task's accepted planning artifacts explicitly require stronger reasoning.
 
-Planning roles use the stronger Sol reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use Terra. Interactive Codex/TUI model settings do not override the repository role policy used by the Task Orchestrator.
+Planning roles use the `gpt-5.6-sol` reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use `gpt-5.6-terra`. Interactive Codex/TUI model settings do not override the repository role policy used by the Task Orchestrator.
 
 Escalate based on reasoning difficulty/risk, not task size alone. Architecture, security/tenant isolation, accounting, payment ambiguity/idempotency, concurrency, and difficult distributed-system design belong in planning artifacts before Builder execution rather than being silently delegated to a stronger coding model.
 

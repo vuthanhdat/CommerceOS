@@ -241,6 +241,8 @@ def check_development_strategy(errors: list[str]) -> None:
 
     coding_policy_paths = (
         ROOT / "AGENTS.md",
+        ROOT / "docs/agents/domain-architect.md",
+        ROOT / "docs/agents/technical-architect.md",
         ROOT / "docs/agents/backlog-planner.md",
         ROOT / "docs/agents/builder.md",
         ROOT / "docs/agents/reviewer.md",
@@ -263,13 +265,23 @@ def check_development_strategy(errors: list[str]) -> None:
 
     required_profile_bindings = {
         ROOT / "AGENTS.md": ("gpt-5.6-sol", "gpt-5.6-terra"),
+        ROOT / "docs/agents/domain-architect.md": ("gpt-5.6-sol",),
+        ROOT / "docs/agents/technical-architect.md": ("gpt-5.6-sol",),
+        ROOT / "docs/agents/backlog-planner.md": ("gpt-5.6-sol",),
         ROOT / "docs/agents/builder.md": ("gpt-5.6-terra",),
         ROOT / "docs/agents/reviewer.md": ("gpt-5.6-terra",),
         ROOT / "docs/agents/verification.md": ("gpt-5.6-terra",),
+        ROOT / "docs/development/14-codex-multi-agent-and-worktrees.md": (
+            "gpt-5.6-sol", "gpt-5.6-terra",
+        ),
+        ROOT / "docs/development/16-task-orchestrator.md": (
+            "gpt-5.6-sol", "gpt-5.6-terra",
+        ),
         ROOT / "tools/commerceos_orchestrator/agents.py": (
             'codexexecutionprofile("gpt-5.6-sol")',
             'codexexecutionprofile("gpt-5.6-terra")',
         ),
+        ROOT / "tools/orchestrator.py": ("gpt-5.6-sol", "gpt-5.6-terra"),
     }
     for policy_path, bindings in required_profile_bindings.items():
         if not policy_path.is_file():

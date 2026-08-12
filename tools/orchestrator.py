@@ -79,7 +79,7 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
         root,
         state,
         # Autonomous implementation/review/conflict execution is pinned by CodexRunner
-        # to Terra / medium / Standard. Interactive Codex TUI settings are not inherited.
+        # to gpt-5.6-terra / medium / Standard. Interactive settings are not inherited.
         CodexRunner(root, logs_root, cloud_authorized=args.allow_cloud),
         verification,
         config=OrchestratorConfig(
@@ -93,7 +93,7 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
         root,
         state,
         # Planning roles are a separate execution boundary pinned to
-        # Sol / medium / Standard and never receive cloud authorization.
+        # gpt-5.6-sol / medium / Standard and never receive cloud authorization.
         CodexPlanningAgentRunner(root, logs_root),
         verification,
         catalog=args.catalog,
