@@ -237,9 +237,40 @@ def inspect_localstack(config: LocalStackConfig) -> int:
     if not localstack_ready(config):
         print("LocalStack is not ready", file=sys.stderr)
         return 1
-    request = Request(f"{config.endpoint}/_localstack/health")
-    with urlopen(request, timeout=5) as response:
-        print(response.read().decode("utf-8"))
+
+    aws = shutil.which("aws.exe" if os.name == "nt" else "aws")
+    if aws is None:
+        print("AWS CLI is required for FoundationStack inspection.", file=sys.stderr)
+        return 1
+
+    environment = lifecycle_environment(config)
+    stack = f"{config.resource_prefix}-foundation"
+    common = ["--endpoint-url", config.endpoint, "--region", "us-east-1", "--output", "json"]
+    inspections = {
+        "health": ["curl", f"{config.endpoint}/_localstack/health"],
+        "stack": [aws, "cloudformation", "describe-stacks", "--stack-name", stack, *common],
+        "resources": [aws, "cloudformation", "describe-stack-resources", "--stack-name", stack, *common],
+        "log_groups": [aws, "logs", "describe-log-groups", "--log-group-name-prefix", f"/{config.resource_prefix}/", *common],
+    }
+    results: dict[str, object] = {}
+    for name, command in inspections.items():
+        if command[0] == "curl":
+            request = Request(command[1])
+            with urlopen(request, timeout=5) as response:
+                results[name] = json.loads(response.read().decode("utf-8"))
+            continue
+        result = subprocess.run(command, check=False, capture_output=True, text=True, env=environment)
+        if result.returncode != 0:
+            print(f"FoundationStack inspection failed for {name}.", file=sys.stderr)
+            if result.stderr:
+                print(result.stderr.strip(), file=sys.stderr)
+            return result.returncode or 1
+        try:
+            results[name] = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            print(f"Invalid {name} inspection response: {error}", file=sys.stderr)
+            return 1
+    print(json.dumps(results))
     return 0
 
 
@@ -270,7 +301,7 @@ def smoke_localstack(config: LocalStackConfig) -> int:
     except (KeyError, IndexError, json.JSONDecodeError) as error:
         print(f"Invalid CloudFormation smoke response: {error}", file=sys.stderr)
         return 1
-    if status != "CREATE_COMPLETE":
+    if status not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
         print(f"FoundationStack is not healthy: {status}", file=sys.stderr)
         return 1
 

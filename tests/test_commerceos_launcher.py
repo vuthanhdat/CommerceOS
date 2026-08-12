@@ -94,6 +94,33 @@ class CommerceOsLauncherTests(unittest.TestCase):
         self.assertEqual("cloudformation", run.call_args_list[0].args[0][1])
         self.assertEqual("logs", run.call_args_list[1].args[0][1])
 
+    @patch("tools.commerceos.shutil.which", return_value="aws")
+    @patch("tools.commerceos.subprocess.run")
+    def test_inspect_collects_health_stack_resources_and_logs(self, run, _which):
+        from tools.commerceos import inspect_localstack
+
+        run.side_effect = [
+            Namespace(returncode=0, stdout='{"Stacks": [{"StackStatus": "CREATE_COMPLETE", "Tags": [{"Key": "Project", "Value": "CommerceOS"}]}]}', stderr=""),
+            Namespace(returncode=0, stdout='{"StackResources": [{"ResourceType": "AWS::Logs::LogGroup"}]}', stderr=""),
+            Namespace(returncode=0, stdout='{"logGroups": [{"logGroupName": "/commerceos-localstack-test-0094/foundation"}]}', stderr=""),
+        ]
+        health = patch("tools.commerceos.urlopen")
+        response = health.start()
+        response.return_value.__enter__.return_value.read.return_value = b'{"services": {"cloudformation": "available"}}'
+        response.return_value.__enter__.return_value.status = 200
+        try:
+            with patch("builtins.print") as output:
+                result = inspect_localstack(LocalStackConfig(94))
+        finally:
+            health.stop()
+
+        self.assertEqual(0, result)
+        self.assertEqual(3, run.call_count)
+        payload = json.loads(output.call_args.args[0])
+        self.assertIn("health", payload)
+        self.assertIn("resources", payload)
+        self.assertIn("log_groups", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

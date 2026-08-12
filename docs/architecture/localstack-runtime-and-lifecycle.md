@@ -194,7 +194,9 @@ python tools/commerceos.py destroy --instance 0001
 ```
 
 `lifecycle` performs start, readiness, CDK synth, CDK bootstrap, CDK deploy, and
-health smoke verification. `reset` removes the exact task-owned container and
+health smoke verification. `inspect` emits the LocalStack health response plus
+the FoundationStack description (including tags), stack resources, and
+task-prefixed log groups. `reset` removes the exact task-owned container and
 starts a clean instance. `destroy` removes that container without touching any
 other task instance. The default image assumption is the pinned
 `localstack/localstack:4.8.1` community-era image; override it with
