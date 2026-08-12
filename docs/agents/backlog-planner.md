@@ -10,7 +10,7 @@ Maintain the task graph and convert candidate Outline/Refined tasks into impleme
 
 - `AGENTS.md`
 - planning maturity rules
-- roadmap and `tasks/BACKLOG.md`
+- roadmap, `tasks/README.md`, and the selected catalog's `BACKLOG.md`
 - canonical Backlog V2 metadata
 - relevant domain/architecture documents and ADRs
 - existing task files

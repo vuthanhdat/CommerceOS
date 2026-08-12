@@ -33,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CommerceOS local Task Orchestrator V1")
     parser.add_argument("--repo", type=Path, default=ROOT, help="CommerceOS repository root")
     parser.add_argument("--state", type=Path, help="SQLite run-state path")
+    parser.add_argument(
+        "--catalog",
+        choices=("commerceos", "orchestrator"),
+        default="commerceos",
+        help="isolated task catalog to operate (default: commerceos)",
+    )
     parser.add_argument("--max-builders", type=int, default=2)
     parser.add_argument("--max-fix-attempts", type=int, default=2)
     parser.add_argument(
@@ -62,7 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateStore]:
     root = args.repo.resolve()
-    state_path = (args.state or root / ".commerceos/orchestrator/state.db").resolve()
+    state_path = (
+        args.state or root / ".commerceos" / "orchestrator" / args.catalog / "state.db"
+    ).resolve()
     logs_root = state_path.parent / "logs"
     state = RunStateStore(state_path)
     verification = VerificationRunner(logs_root)
@@ -79,6 +87,7 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
             max_fix_attempts=args.max_fix_attempts,
             allow_cloud=args.allow_cloud,
         ),
+        catalog=args.catalog,
     )
     planning = PlanningCoordinator(
         root,
@@ -87,6 +96,7 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
         # Sol / medium / Standard and never receive cloud authorization.
         CodexPlanningAgentRunner(root, logs_root),
         verification,
+        catalog=args.catalog,
     )
     return PlanningAwareTaskOrchestrator(implementation, planning), state
 
@@ -96,7 +106,7 @@ def print_json(value: object) -> None:
 
 
 def cleanup(orchestrator, state: RunStateStore) -> int:
-    snapshot = BacklogReader(orchestrator.root).load()
+    snapshot = BacklogReader(orchestrator.root, orchestrator.catalog).load()
     cleaned: list[str] = []
     warnings: list[str] = []
     for run in state.task_runs():
@@ -126,7 +136,7 @@ def main() -> int:
     orchestrator, state = build_orchestrator(args)
     try:
         if args.command == "status":
-            print_json(DashboardReadModel(orchestrator.root, state).status())
+            print_json(DashboardReadModel(orchestrator.root, state, args.catalog).status())
             return 0
         if args.command == "validate":
             snapshot = orchestrator.validate()
@@ -170,6 +180,7 @@ def main() -> int:
                 host=args.host,
                 port=args.port,
                 runtime=runtime,
+                catalog=args.catalog,
             )
             print(f"CommerceOS Orchestrator dashboard: {server.url}")
             try:

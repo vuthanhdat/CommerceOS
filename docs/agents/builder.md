@@ -35,9 +35,9 @@ Implement one Ready task completely inside its assigned branch/worktree without 
 - bypass tenant/security/reliability/cost guardrails;
 - modify unrelated code because it appears improvable;
 - review/approve its own work as the independent Reviewer.
-- move, copy, rename, or delete the task specification between `tasks/backlog/`, `tasks/active/`,
-  and `tasks/completed/`;
-- edit `tasks/BACKLOG.md`, `tasks/BACKLOG.v2.yaml`, or a `tasks/backlog-v2/` shard to change
+- move, copy, rename, or delete the task specification between a catalog's `backlog/`, `active/`,
+  and `completed/` directories;
+- edit a catalog `BACKLOG.md`, `tasks/BACKLOG.v2.yaml`, or a catalog `backlog-v2/` shard to change
   lifecycle state, completed roots, task path, or ready frontier;
 - add a `## Completion summary` to claim lifecycle completion, mark a task `Completed`, or set
   `Execution permission: NO`. Only the Orchestrator performs these operations after independent

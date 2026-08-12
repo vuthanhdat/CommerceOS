@@ -30,12 +30,13 @@ class _QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 class DashboardReadModel:
-    def __init__(self, root: Path, state_store: RunStateStore):
+    def __init__(self, root: Path, state_store: RunStateStore, catalog: str = "commerceos"):
         self.root = root.resolve()
         self.state = state_store
+        self.catalog = catalog
 
     def status(self) -> dict[str, object]:
-        snapshot = BacklogReader(self.root).load()
+        snapshot = BacklogReader(self.root, self.catalog).load()
         runs = {run.task_id: run for run in self.state.task_runs()}
         tasks: list[dict[str, object]] = []
         lanes: dict[str, int] = {}
@@ -56,6 +57,7 @@ class DashboardReadModel:
         ready = Scheduler(self.state).plan(snapshot).dispatchable
         total = len(snapshot.tasks)
         return {
+            "catalog": self.catalog,
             "orchestrator_state": self.state.control_state().value,
             "progress": {
                 "completed": completed,
@@ -75,7 +77,7 @@ class DashboardReadModel:
         }
 
     def task_detail(self, task_id: str) -> dict[str, object] | None:
-        snapshot = BacklogReader(self.root).load()
+        snapshot = BacklogReader(self.root, self.catalog).load()
         task = snapshot.tasks.get(task_id)
         if not task:
             return None
@@ -116,6 +118,7 @@ class DashboardReadModel:
             "id": task.id,
             "title": task.title,
             "domain": task.domain,
+            "catalog": task.catalog,
             "maturity": task.maturity,
             "lifecycle_state": task.lifecycle_state,
             "execution_state": run.execution_state.value if run else None,
@@ -173,12 +176,13 @@ class LocalDashboardServer:
         host: str = "127.0.0.1",
         port: int = 8765,
         runtime: RuntimeController | None = None,
+        catalog: str = "commerceos",
     ):
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise ValueError("V1 dashboard must bind to a local loopback interface")
         self.root = root.resolve()
         self.state = state_store
-        self.read_model = DashboardReadModel(self.root, self.state)
+        self.read_model = DashboardReadModel(self.root, self.state, catalog)
         self.live_feed = LiveAgentFeed(self.state.path.parent / "logs")
         self.runtime = runtime
         self.httpd = _QuietThreadingHTTPServer((host, port), self._handler())

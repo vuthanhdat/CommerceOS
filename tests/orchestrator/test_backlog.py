@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from helpers import row, write_backlog
-from commerceos_orchestrator.backlog import BacklogReader, BacklogValidationError
+from commerceos_orchestrator.backlog import BacklogReader, BacklogValidationError, BacklogWriter
 from commerceos_orchestrator.yaml_subset import parse_document, parse_inline_sequence
 
 
@@ -20,6 +20,63 @@ class YamlSubsetTests(unittest.TestCase):
 
 
 class BacklogReaderTests(unittest.TestCase):
+    def test_named_catalogs_are_strictly_filtered(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(
+                root,
+                [row("TASK-0100"), row("TASK-0101")],
+                ready=["TASK-0100", "TASK-0101"],
+            )
+            legacy = root / "tasks/backlog-v2/00.yaml"
+            lines = legacy.read_text(encoding="utf-8").splitlines()
+            tool_dir = root / "tasks/orchestrator/backlog-v2"
+            tool_dir.mkdir(parents=True)
+            tool_spec_dir = root / "tasks/orchestrator/backlog"
+            tool_spec_dir.mkdir(parents=True)
+            tool_spec = tool_spec_dir / "TASK-0101-spec.md"
+            (root / "tasks/backlog/TASK-0101-spec.md").rename(tool_spec)
+            tool_row = lines.pop().replace(
+                "tasks/backlog/TASK-0101-spec.md",
+                "tasks/orchestrator/backlog/TASK-0101-spec.md",
+            )
+            legacy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            (tool_dir / "00.yaml").write_text("tasks:\n" + tool_row + "\n", encoding="utf-8")
+            master = root / "tasks/BACKLOG.v2.yaml"
+            master.write_text(
+                master.read_text(encoding="utf-8").replace(
+                    "  - tasks/backlog-v2/00.yaml",
+                    "  - tasks/backlog-v2/00.yaml\n  - tasks/orchestrator/backlog-v2/00.yaml",
+                ),
+                encoding="utf-8",
+            )
+
+            commerceos = BacklogReader(root, "commerceos").load()
+            orchestrator = BacklogReader(root, "orchestrator").load()
+
+            self.assertEqual(set(commerceos.tasks), {"TASK-0100"})
+            self.assertEqual(set(orchestrator.tasks), {"TASK-0101"})
+
+            destination = BacklogWriter(root).finalize_task(
+                orchestrator, orchestrator.tasks["TASK-0101"], "catalog completion"
+            )
+
+            self.assertEqual(
+                destination,
+                "tasks/orchestrator/completed/TASK-0101-spec.md",
+            )
+            self.assertTrue((root / destination).is_file())
+            self.assertFalse((root / "tasks/orchestrator/backlog/TASK-0101-spec.md").exists())
+            self.assertEqual(
+                [task.id for task in BacklogReader.ready_frontier(BacklogReader(root).load(), set())],
+                ["TASK-0100"],
+            )
+
+    def test_unknown_catalog_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaisesRegex(BacklogValidationError, "unsupported task catalog"):
+                BacklogReader(Path(td), "mixed")
+
     def test_valid_frontier_and_completed_dependency(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

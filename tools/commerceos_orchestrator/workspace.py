@@ -116,12 +116,30 @@ class GitWorkspaceManager:
             task.spec_path,
             task.shard_path,
             "tasks/BACKLOG.v2.yaml",
-            "tasks/BACKLOG.md",
+            f"tasks/{task.catalog}/BACKLOG.md",
         ]
-        lifecycle_paths = [path for path in lifecycle_paths if path]
-        self._run(["restore", "--source=HEAD", "--", *lifecycle_paths], cwd=directory)
+        lifecycle_paths = [
+            path
+            for path in lifecycle_paths
+            if path
+            and self._run(
+                ["ls-files", "--error-unmatch", "--", path],
+                cwd=directory,
+                check=False,
+            ).returncode
+            == 0
+        ]
+        if lifecycle_paths:
+            self._run(["restore", "--source=HEAD", "--", *lifecycle_paths], cwd=directory)
 
-        completed_relative = f"tasks/completed/{Path(task.spec_path).name}"
+        spec_parts = Path(task.spec_path).parts
+        if len(spec_parts) >= 3 and spec_parts[0] == "tasks" and spec_parts[1] in {
+            "commerceos",
+            "orchestrator",
+        }:
+            completed_relative = f"tasks/{spec_parts[1]}/completed/{Path(task.spec_path).name}"
+        else:
+            completed_relative = f"tasks/completed/{Path(task.spec_path).name}"
         completed_path = (directory / completed_relative).resolve()
         try:
             completed_path.relative_to(directory)

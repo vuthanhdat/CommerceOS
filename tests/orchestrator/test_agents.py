@@ -56,6 +56,7 @@ class CodexPromptBoundaryTests(unittest.TestCase):
             self._task(), review_context=".commerceos/orchestrator/review-context/TASK-0100.txt", final_review=True
         )
         self.assertIn("Definition of Done is the review authority", prompt)
+        self.assertIn("OUT OF REVIEW SCOPE", prompt)
         self.assertIn("17-review-scope-and-finding-ownership.md", prompt)
         self.assertIn("missing `Status: Completed`", prompt)
         self.assertIn("stable IDs", prompt)
@@ -64,11 +65,26 @@ class CodexPromptBoundaryTests(unittest.TestCase):
         self.assertIn("Unrelated observations must be FOLLOW_UP", prompt)
         self.assertIn("FINDING F-001 STATUS", prompt)
 
+    def test_reviewer_bookkeeping_only_failure_is_normalized(self):
+        output = (
+            "MEDIUM — Required completion evidence is missing. The task remains under "
+            "tasks/backlog/ with Status: Backlog and no tasks/completed artifact. "
+            "REVIEW_RESULT: FIX_REQUIRED"
+        )
+        self.assertTrue(CodexRunner._only_reports_orchestrator_bookkeeping(output))
+
+    def test_reviewer_real_open_finding_is_not_normalized(self):
+        output = (
+            "FINDING F-001 STATUS: OPEN OWNER: BUILDER ROUTE: BUILDER_FIX "
+            "TITLE: broken behavior\nREVIEW_RESULT: FIX_REQUIRED"
+        )
+        self.assertFalse(CodexRunner._only_reports_orchestrator_bookkeeping(output))
+
     def test_builder_prompt_keeps_lifecycle_bookkeeping_with_orchestrator(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             prompt = CodexRunner(root, root / "logs")._builder_prompt(self._task(), None)
-        self.assertIn("Do not move the task specification into `tasks/completed/`", prompt)
+        self.assertIn("Do not move the task specification into `tasks/commerceos/completed/`", prompt)
         self.assertIn("Task completion bookkeeping is owned by the", prompt)
 
     def test_role_profiles_are_pinned_to_human_approved_models(self):

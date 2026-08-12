@@ -62,5 +62,5 @@ Allowed owners are `BUILDER`, `DOMAIN_ARCHITECT`, `TECHNICAL_ARCHITECT`, `BACKLO
 `ORCHESTRATOR_ACTION_REQUIRED`, and `HUMAN_REQUIRED`.
 
 `FOLLOW_UP` findings are non-blocking and must not enter a repair loop. Completion bookkeeping
-(`tasks/completed/`, canonical lifecycle indexes, and the completion summary written after
+(the selected catalog's `completed/` directory, canonical lifecycle indexes, and the completion summary written after
 integration) is Orchestrator-owned and is never a Builder finding.

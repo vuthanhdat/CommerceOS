@@ -55,7 +55,7 @@ Replaced `tasks/BACKLOG.md` with the V2 planning index and first-frontier explan
 
 ### Clean-room coverage audit
 
-Created `tasks/planning/TASK-0089-coverage-matrix.md`.
+Created `tasks/orchestrator/planning/TASK-0089-coverage-matrix.md` (moved with the tooling catalog).
 
 Key corrections relative to V1 include:
 
@@ -69,7 +69,7 @@ Key corrections relative to V1 include:
 
 ### Legacy V1 audit
 
-Created `tasks/planning/TASK-0089-legacy-v1-to-v2-mapping.md` and classified **83/83** V1 tasks:
+Created `tasks/orchestrator/planning/TASK-0089-legacy-v1-to-v2-mapping.md` and classified **83/83** V1 tasks:
 
 - SALVAGEABLE: 54
 - PARTIAL: 7
@@ -85,7 +85,7 @@ Per the human instruction for this execution, original `TASK-0004` through `TASK
 
 ### Phase 0 skeleton reconciliation
 
-Created `tasks/planning/TASK-0089-skeleton-reconciliation.md`.
+Created `tasks/orchestrator/planning/TASK-0089-skeleton-reconciliation.md`.
 
 The skeleton is broadly compatible with the approved modular-serverless-monolith target, but one current executable conflict was found:
 

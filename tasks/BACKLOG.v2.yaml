@@ -1,5 +1,7 @@
 schema_version: 1
 authority: tasks/BACKLOG.v2.yaml
+catalog_model: physically_separated_shared_registry
+default_catalog: commerceos
 generated_by: TASK-0089
 generated_on: 2026-08-10
 reconciled_on: 2026-08-11
@@ -61,6 +63,10 @@ execution_metadata:
     lifecycle_state: Active
     exclusive_resources: [repository-task-state, orchestrator-ui, codex-runner]
     merge_policy: verified_serial_main
+  TASK-0168:
+    lifecycle_state: Active
+    exclusive_resources: [repository-task-state, canonical-backlog, orchestrator-runtime]
+    merge_policy: verified_serial_main
 
 lifecycle_semantics:
   Backlog: canonical task exists but is not claimed by a Builder
@@ -91,20 +97,21 @@ integration_policy:
   completed_only_after_verified_result_on_main: true
 
 completed_roots:
-  - [TASK-0003, tasks/completed/TASK-0003-codebase-skeleton.md]
-  - [TASK-0087, tasks/completed/TASK-0087-domain-baseline-reconciliation.md]
-  - [TASK-0088, tasks/completed/TASK-0088-technical-architecture-baseline-reconciliation.md]
-  - [TASK-0089, tasks/completed/TASK-0089-backlog-readiness-and-skeleton-reconciliation.md]
-  - [TASK-0091, tasks/completed/TASK-0091-subscription-billing-domain-baseline-extension.md]
-  - [TASK-0092, tasks/completed/TASK-0092-subscription-billing-technical-architecture-reconciliation.md]
-  - [TASK-0093, tasks/completed/TASK-0093-architecture-test-contract-remediation.md]
+  - [TASK-0003, tasks/commerceos/completed/TASK-0003-codebase-skeleton.md]
+  - [TASK-0087, tasks/commerceos/completed/TASK-0087-domain-baseline-reconciliation.md]
+  - [TASK-0088, tasks/commerceos/completed/TASK-0088-technical-architecture-baseline-reconciliation.md]
+  - [TASK-0089, tasks/orchestrator/completed/TASK-0089-backlog-readiness-and-skeleton-reconciliation.md]
+  - [TASK-0091, tasks/commerceos/completed/TASK-0091-subscription-billing-domain-baseline-extension.md]
+  - [TASK-0092, tasks/commerceos/completed/TASK-0092-subscription-billing-technical-architecture-reconciliation.md]
+  - [TASK-0093, tasks/orchestrator/completed/TASK-0093-architecture-test-contract-remediation.md]
 
 task_shards:
-  - tasks/backlog-v2/00-foundation-tenancy.yaml
-  - tasks/backlog-v2/01-catalog-ingestion.yaml
-  - tasks/backlog-v2/02-storefront-commerce.yaml
-  - tasks/backlog-v2/03-procurement-subscription-accounting.yaml
-  - tasks/backlog-v2/04-hardening-future.yaml
+  - tasks/commerceos/backlog-v2/00-foundation-tenancy.yaml
+  - tasks/commerceos/backlog-v2/01-catalog-ingestion.yaml
+  - tasks/commerceos/backlog-v2/02-storefront-commerce.yaml
+  - tasks/commerceos/backlog-v2/03-procurement-subscription-accounting.yaml
+  - tasks/commerceos/backlog-v2/04-hardening-future.yaml
+  - tasks/orchestrator/backlog-v2/00-harness.yaml
 
 ready_frontier:
   - TASK-0094

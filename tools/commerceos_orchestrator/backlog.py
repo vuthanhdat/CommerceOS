@@ -32,9 +32,29 @@ def _repo_path(root: Path, raw: str, *, label: str, roots: tuple[str, ...]) -> P
 
 class BacklogReader:
     MASTER_PATH = Path("tasks/BACKLOG.v2.yaml")
+    CATALOGS = {"commerceos", "orchestrator"}
+    SHARD_ROOTS = (
+        "tasks/commerceos/backlog-v2",
+        "tasks/orchestrator/backlog-v2",
+        "tasks/backlog-v2",  # legacy test fixtures
+    )
+    SPEC_ROOTS = (
+        "tasks/commerceos/backlog",
+        "tasks/commerceos/active",
+        "tasks/commerceos/completed",
+        "tasks/orchestrator/backlog",
+        "tasks/orchestrator/active",
+        "tasks/orchestrator/completed",
+        "tasks/backlog",  # legacy test fixtures
+        "tasks/active",
+        "tasks/completed",
+    )
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, catalog: str | None = None):
         self.root = root.resolve()
+        if catalog is not None and catalog not in self.CATALOGS:
+            raise BacklogValidationError(f"unsupported task catalog: {catalog}")
+        self.catalog = catalog
 
     def load(self) -> BacklogSnapshot:
         master_path = self.root / self.MASTER_PATH
@@ -54,7 +74,7 @@ class BacklogReader:
                 self.root,
                 shard_name,
                 label="backlog shard",
-                roots=("tasks/backlog-v2",),
+                roots=self.SHARD_ROOTS,
             )
             if not shard_path.is_file():
                 raise BacklogValidationError(f"missing backlog shard: {shard_name}")
@@ -91,6 +111,7 @@ class BacklogReader:
                     exclusive_resources=tuple(str(x) for x in resources),
                     merge_policy=str(meta.get("merge_policy", defaults.get("merge_policy", "verified_serial_main"))),
                     shard_path=shard_name,
+                    catalog=self._catalog_for_path(shard_name),
                 )
 
         completed = set()
@@ -111,10 +132,31 @@ class BacklogReader:
             cloud_requires_explicit_gate=bool(policy.get("cloud_requires_explicit_gate", True)),
             ready_frontier_declared=tuple(str(x) for x in (master.get("ready_frontier") or [])),
             shard_paths=tuple(shards),
+            catalog=None,
             raw_master=master,
         )
         self.validate(snapshot)
+        if self.catalog is not None:
+            selected = {
+                task_id: task
+                for task_id, task in snapshot.tasks.items()
+                if task.catalog == self.catalog
+            }
+            snapshot = replace(
+                snapshot,
+                tasks=selected,
+                ready_frontier_declared=tuple(
+                    task_id
+                    for task_id in snapshot.ready_frontier_declared
+                    if task_id in selected
+                ),
+                catalog=self.catalog,
+            )
         return snapshot
+
+    @staticmethod
+    def _catalog_for_path(path: str) -> str:
+        return "orchestrator" if path.startswith("tasks/orchestrator/") else "commerceos"
 
     @staticmethod
     def _string_list(value, label: str, *, required: bool = False) -> list[str]:
@@ -137,7 +179,7 @@ class BacklogReader:
                     snapshot.root,
                     task.spec_path,
                     label=f"{task.id} spec_path",
-                    roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+                    roots=self.SPEC_ROOTS,
                 )
             if task.maturity == "Ready":
                 if spec is None or not spec.is_file():
@@ -220,11 +262,18 @@ class BacklogWriter:
             self.root,
             task.spec_path,
             label=f"{task.id} spec_path",
-            roots=("tasks/backlog", "tasks/active", "tasks/completed"),
+            roots=BacklogReader.SPEC_ROOTS,
         )
         if not source.is_file():
             raise BacklogValidationError(f"{task.id}: task spec missing at {task.spec_path}")
-        completed_relative = str(PurePosixPath("tasks/completed") / source.name)
+        source_posix = PurePosixPath(task.spec_path)
+        if len(source_posix.parts) >= 3 and source_posix.parts[:2] == ("tasks", "orchestrator"):
+            completed_root = PurePosixPath("tasks/orchestrator/completed")
+        elif len(source_posix.parts) >= 3 and source_posix.parts[:2] == ("tasks", "commerceos"):
+            completed_root = PurePosixPath("tasks/commerceos/completed")
+        else:
+            completed_root = PurePosixPath("tasks/completed")
+        completed_relative = str(completed_root / source.name)
         destination = self.root / completed_relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         text = source.read_text(encoding="utf-8")
@@ -260,7 +309,7 @@ class BacklogWriter:
             self.root,
             task.shard_path,
             label=f"{task.id} shard_path",
-            roots=("tasks/backlog-v2",),
+            roots=BacklogReader.SHARD_ROOTS,
         )
         lines = path.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):
@@ -293,9 +342,13 @@ class BacklogWriter:
             raise BacklogValidationError(f"{completed_task_id}: lifecycle_state not found")
         lines[lifecycle] = "    lifecycle_state: Completed"
 
-        tasks = dict(snapshot.tasks)
+        # Completion may be running against one filtered catalog, but the shared registry's
+        # Ready frontier covers every catalog. Recompute from the full canonical snapshot so
+        # finalizing a CommerceOS task cannot erase an Orchestrator-ready task (or vice versa).
+        full_snapshot = BacklogReader(self.root).load()
+        tasks = dict(full_snapshot.tasks)
         tasks[completed_task_id] = replace(tasks[completed_task_id], lifecycle_state="Completed")
-        updated = replace(snapshot, tasks=tasks)
+        updated = replace(full_snapshot, tasks=tasks)
         ready = [task.id for task in BacklogReader.ready_frontier(updated, set())]
         start = next((i for i, line in enumerate(lines) if line == "ready_frontier:"), None)
         if start is None:

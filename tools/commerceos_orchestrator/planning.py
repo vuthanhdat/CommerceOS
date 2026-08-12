@@ -63,7 +63,7 @@ Read, in repository order:
 - AGENTS.md
 - docs/development/15-planning-factory-and-task-maturity.md
 - docs/agents/backlog-planner.md
-- tasks/BACKLOG.md
+- tasks/{task.catalog}/BACKLOG.md
 - tasks/BACKLOG.v2.yaml and the canonical shard containing {task.id}
 - the current task spec at {spec} when it exists
 - relevant current domain/architecture/ADR artifacts required to judge the Ready gate
@@ -242,6 +242,7 @@ class PlanningCoordinator:
         workspace_manager: GitWorkspaceManager | None = None,
         integration_manager: GitIntegrationManager | None = None,
         max_rounds: int = 4,
+        catalog: str = "commerceos",
     ):
         self.root = root.resolve()
         self.state = state
@@ -250,6 +251,7 @@ class PlanningCoordinator:
         self.workspace = workspace_manager or GitWorkspaceManager(self.root)
         self.integration = integration_manager or GitIntegrationManager(self.root)
         self.max_rounds = max_rounds
+        self.catalog = catalog
 
     def next_candidate(self, snapshot: BacklogSnapshot) -> CanonicalTask | None:
         locally_blocked = {run.task_id for run in self.state.blocked_task_runs()}
@@ -326,7 +328,7 @@ class PlanningCoordinator:
             )
             if marker == "READY":
                 try:
-                    planned_snapshot = BacklogReader(workspace.path).load()
+                    planned_snapshot = BacklogReader(workspace.path, self.catalog).load()
                     planned = planned_snapshot.tasks.get(task.id)
                     if planned is None or not BacklogReader.is_dispatchable(
                         planned_snapshot, planned, active_resources=set()

@@ -46,6 +46,7 @@ class TaskOrchestrator:
         workspace_manager: GitWorkspaceManager | None = None,
         integration_manager: GitIntegrationManager | None = None,
         config: OrchestratorConfig | None = None,
+        catalog: str = "commerceos",
     ):
         self.root = root.resolve()
         self.state = state_store
@@ -54,12 +55,14 @@ class TaskOrchestrator:
         self.workspace = workspace_manager or GitWorkspaceManager(self.root)
         self.integration = integration_manager or GitIntegrationManager(self.root)
         self.config = config or OrchestratorConfig()
+        self.catalog = catalog
+        self.backlog = BacklogReader(self.root, catalog)
         self.scheduler = Scheduler(self.state, max_builders=self.config.max_builders)
         self._merge_lock = threading.Lock()
         self._futures: dict[str, Future[None]] = {}
 
     def validate(self):
-        return BacklogReader(self.root).load()
+        return self.backlog.load()
 
     def plan(self) -> list[CanonicalTask]:
         snapshot = self.validate()
@@ -69,6 +72,7 @@ class TaskOrchestrator:
         snapshot = self.validate()
         decision = self.scheduler.plan(snapshot)
         return {
+            "catalog": self.catalog,
             "control_state": self.state.control_state().value,
             "dispatchable": [task.id for task in decision.dispatchable],
             "active_resources": sorted(decision.active_resources),
@@ -360,7 +364,9 @@ class TaskOrchestrator:
         The file is intentionally passed as untrusted evidence. It gives the next Reviewer
         continuity without interpolating arbitrary review output into the controlling prompt.
         """
-        relative = Path(".commerceos/orchestrator/review-context") / f"{task.id}.txt"
+        relative = (
+            Path(".commerceos/orchestrator") / task.catalog / "review-context" / f"{task.id}.txt"
+        )
         path = worktree / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(findings[-50000:], encoding="utf-8")
@@ -372,7 +378,13 @@ class TaskOrchestrator:
 
     def _builder_left_task_open(self, task: CanonicalTask, worktree: Path) -> bool:
         """Reject premature task finalization before verification/review can proceed."""
-        completed_spec = worktree / "tasks" / "completed" / Path(task.spec_path).name
+        spec_parts = Path(task.spec_path).parts
+        completed_root = (
+            worktree / "tasks" / task.catalog / "completed"
+            if len(spec_parts) >= 3 and spec_parts[1] in BacklogReader.CATALOGS
+            else worktree / "tasks" / "completed"
+        )
+        completed_spec = completed_root / Path(task.spec_path).name
         if completed_spec.is_file():
             try:
                 self.workspace.restore_task_lifecycle(task, worktree)
@@ -386,7 +398,7 @@ class TaskOrchestrator:
             )
             return True
         try:
-            snapshot = BacklogReader(worktree).load()
+            snapshot = BacklogReader(worktree, self.catalog).load()
         except Exception as exc:
             self._block(
                 task,
@@ -398,7 +410,7 @@ class TaskOrchestrator:
         if current is None:
             self._block(task, "BUILDER_REMOVED_TASK", "task disappeared from the Builder worktree")
             return False
-        if current.lifecycle_state == "Completed" or current.spec_path.startswith("tasks/completed/"):
+        if current.lifecycle_state == "Completed" or "/completed/" in current.spec_path:
             try:
                 self.workspace.restore_task_lifecycle(task, worktree)
             except (AttributeError, WorkspaceError) as exc:
@@ -506,7 +518,7 @@ class TaskOrchestrator:
                         self._block(task, "POST_INTEGRATION_VERIFICATION_FAILED", f"log={post_merge.log_path}")
                         return
 
-                    snapshot = BacklogReader(self.root).load()
+                    snapshot = BacklogReader(self.root, self.catalog).load()
                     merged_task = snapshot.tasks.get(task.id)
                     if not merged_task:
                         self.integration.rollback_unpushed_main()
@@ -525,7 +537,7 @@ class TaskOrchestrator:
                         return
                     self.integration.push_main()
                 else:
-                    snapshot = BacklogReader(self.root).load()
+                    snapshot = BacklogReader(self.root, self.catalog).load()
                     current_task = snapshot.tasks.get(task.id)
                     if current_task and current_task.lifecycle_state != "Completed":
                         summary = self._completion_summary(task)
@@ -544,7 +556,7 @@ class TaskOrchestrator:
 
                 self.state.update_task(task.id, TaskExecutionState.COMPLETED)
                 try:
-                    refreshed = BacklogReader(self.root).load()
+                    refreshed = BacklogReader(self.root, self.catalog).load()
                     completed_task = refreshed.tasks.get(task.id, task)
                     self.workspace.cleanup(completed_task)
                 except Exception as cleanup_error:
