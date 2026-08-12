@@ -18,7 +18,7 @@ public sealed class FoundationStackTests
             "AWS::Logs::LogGroup",
             new Dictionary<string, object>
             {
-                ["LogGroupName"] = "/commerceos/dev/foundation",
+                ["LogGroupName"] = "/commerceos-dev-0000/foundation",
                 ["RetentionInDays"] = 7,
                 ["Tags"] = Match.ArrayWith(
                 [
@@ -48,5 +48,16 @@ public sealed class FoundationStackTests
     public void UnknownEnvironmentIsRejected()
     {
         Assert.Throws<ArgumentException>(() => EnvironmentProfile.Create("personal"));
+    }
+
+    [Fact]
+    public void LocalStackProfilesDeriveStableTaskIsolation()
+    {
+        var profile = EnvironmentProfile.Create("localstack-test", "0042");
+
+        Assert.Equal("test", profile.Name);
+        Assert.Equal("commerceos-test-0042", profile.ResourcePrefix);
+        Assert.Equal("000000000000", profile.AccountId);
+        Assert.Equal("us-east-1", profile.Region);
     }
 }
