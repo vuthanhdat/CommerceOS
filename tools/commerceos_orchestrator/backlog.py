@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import threading
 import time
 from datetime import date
 from dataclasses import replace
@@ -14,6 +15,16 @@ from .yaml_subset import parse_document, parse_inline_sequence, render_inline_se
 
 class BacklogValidationError(ValueError):
     pass
+
+
+_BACKLOG_IO_LOCK = threading.RLock()
+
+
+def _synchronized(method):
+    def locked(*args, **kwargs):
+        with _BACKLOG_IO_LOCK:
+            return method(*args, **kwargs)
+    return locked
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -101,6 +112,7 @@ class BacklogReader:
             raise BacklogValidationError(f"unsupported task catalog: {catalog}")
         self.catalog = catalog
 
+    @_synchronized
     def load(self) -> BacklogSnapshot:
         master_path = self.root / self.MASTER_PATH
         if not master_path.is_file():
@@ -214,7 +226,7 @@ class BacklogReader:
         for task in snapshot.tasks.values():
             if not re.fullmatch(r"TASK-\d{4,}", task.id):
                 raise BacklogValidationError(f"invalid task id: {task.id}")
-            if task.maturity not in {"Outline", "Refined", "Ready"}:
+            if task.maturity not in {"Outline", "Refined", "Ready", "Completed"}:
                 raise BacklogValidationError(f"{task.id}: unsupported maturity {task.maturity}")
             if task.lifecycle_state not in {"Backlog", "Active", "Completed", "Blocked"}:
                 raise BacklogValidationError(f"{task.id}: unsupported lifecycle {task.lifecycle_state}")
@@ -300,6 +312,7 @@ class BacklogWriter:
     def __init__(self, root: Path):
         self.root = root.resolve()
 
+    @_synchronized
     def finalize_task(
         self, snapshot: BacklogSnapshot, task: CanonicalTask, completion_summary: str
     ) -> str:
@@ -325,6 +338,7 @@ class BacklogWriter:
         before = {
             path: path.read_bytes() if path.is_file() else None for path in guarded_paths
         }
+        full_snapshot_before = BacklogReader(self.root).load()
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
             text = _read_text(source)
@@ -353,7 +367,7 @@ class BacklogWriter:
                 text = text.rstrip() + "\n\n## Completion summary\n\n" + completion_summary.strip() + "\n"
             _atomic_write_text(destination, text)
             self._update_shard(task, completed_relative)
-            self._update_master(snapshot, task.id)
+            self._update_master(full_snapshot_before, task.id)
             self._update_catalog_index(task)
             if destination != source:
                 source.unlink()
@@ -373,8 +387,10 @@ class BacklogWriter:
             return
         text = _read_text(path)
         completed_line = f"- `{task.id}` — {task.title} (`Completed`)."
-        if completed_line in text:
-            return
+        text = "\n".join(
+            line for line in text.splitlines()
+            if not (line.lstrip().startswith("-") and f"`{task.id}`" in line)
+        ) + "\n"
         marker = "Recently completed:\n"
         if marker not in text:
             raise BacklogValidationError(f"{task.catalog}: Recently completed index not found")
@@ -399,8 +415,15 @@ class BacklogWriter:
         if not completed or completed.lifecycle_state != "Completed" or completed.spec_path != completed_relative:
             raise BacklogValidationError(f"{task.id}: canonical lifecycle/path is inconsistent")
         index = self.root / "tasks" / task.catalog / "BACKLOG.md"
-        if index.is_file() and f"`{task.id}`" not in _read_text(index):
-            raise BacklogValidationError(f"{task.id}: catalog completion index is missing")
+        if completed.maturity != "Completed":
+            raise BacklogValidationError(f"{task.id}: canonical maturity is inconsistent")
+        if index.is_file():
+            entries = [
+                line for line in _read_text(index).splitlines()
+                if line.lstrip().startswith("-") and f"`{task.id}`" in line
+            ]
+            if len(entries) != 1 or "(`Completed`)" not in entries[0]:
+                raise BacklogValidationError(f"{task.id}: catalog completion index is inconsistent")
 
     def _update_shard(self, task: CanonicalTask, completed_relative: str) -> None:
         path = _repo_path(
@@ -414,6 +437,7 @@ class BacklogWriter:
             if line.lstrip().startswith("- [") and task.id in line:
                 prefix = line[: len(line) - len(line.lstrip())]
                 row = parse_inline_sequence(line.strip()[2:].strip())
+                row[1] = "Completed"
                 row[-1] = completed_relative
                 lines[index] = f"{prefix}- {render_inline_sequence(row)}"
                 _atomic_write_text(path, "\n".join(lines) + "\n")
@@ -443,8 +467,8 @@ class BacklogWriter:
         # Completion may be running against one filtered catalog, but the shared registry's
         # Ready frontier covers every catalog. Recompute from the full canonical snapshot so
         # finalizing a CommerceOS task cannot erase an Orchestrator-ready task (or vice versa).
-        full_snapshot = BacklogReader(self.root).load()
-        tasks = dict(full_snapshot.tasks)
+        full_snapshot = snapshot
+        tasks = dict(snapshot.tasks)
         tasks[completed_task_id] = replace(tasks[completed_task_id], lifecycle_state="Completed")
         updated = replace(full_snapshot, tasks=tasks)
         ready = [task.id for task in BacklogReader.ready_frontier(updated, set())]

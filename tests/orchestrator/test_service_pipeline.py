@@ -113,6 +113,47 @@ def reviewer_environment_failure() -> ReviewResult:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_already_remote_partial_completion_fails_closed_without_push(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            task = BacklogReader(root).load().tasks["TASK-0100"]
+            master = root / "tasks/BACKLOG.v2.yaml"
+            master.write_text(
+                master.read_text(encoding="utf-8").replace(
+                    "  TASK-0100:\n    lifecycle_state: Backlog",
+                    "  TASK-0100:\n    lifecycle_state: Completed",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            state = RunStateStore(root / "state.db")
+            self.assertTrue(state.claim_task(task.id))
+            connection = sqlite3.connect(root / "state.db")
+            try:
+                connection.execute(
+                    "UPDATE task_runs SET execution_state = ? WHERE task_id = ?",
+                    (TaskExecutionState.FINALIZING.value, task.id),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            integration = FakeIntegrationManager()
+            integration.remote = True
+            orch = TaskOrchestrator(
+                root, state, FakeAgentRunner(), FakeVerificationRunner([True]),
+                workspace_manager=FakeWorkspaceManager(root),
+                integration_manager=integration,
+                config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
+            )
+            orch._integrate(task, "agent/TASK-0100", root)
+            self.assertNotIn("push", integration.calls)
+            self.assertIn("rollback", integration.calls)
+            self.assertEqual(
+                state.task_run(task.id).execution_state,
+                TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED,
+            )
+
     def test_missing_configured_repair_manifest_blocks_before_second_verification(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

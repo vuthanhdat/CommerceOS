@@ -27,6 +27,44 @@ class YamlSubsetTests(unittest.TestCase):
 
 
 class BacklogReaderTests(unittest.TestCase):
+    def test_every_completion_write_failure_restores_all_canonical_files(self):
+        methods = ("_update_shard", "_update_master", "_update_catalog_index", "validate_completed")
+        for method_name in methods:
+            with self.subTest(method=method_name), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"])
+                index = root / "tasks/commerceos/BACKLOG.md"
+                index.parent.mkdir(parents=True)
+                index.write_text(
+                    "Ready:\n\n- `TASK-0100` — TASK-0100 (`Ready`).\n\nRecently completed:\n",
+                    encoding="utf-8",
+                )
+                watched = (
+                    root / "tasks/BACKLOG.v2.yaml",
+                    root / "tasks/backlog-v2/00.yaml",
+                    root / "tasks/backlog/TASK-0100-spec.md",
+                    index,
+                )
+                before = {path: path.read_bytes() for path in watched}
+
+                class FailingWriter(BacklogWriter):
+                    pass
+
+                original = getattr(BacklogWriter, method_name)
+
+                def fail_after(self, *args, **kwargs):
+                    original(self, *args, **kwargs)
+                    raise RuntimeError(f"injected after {method_name}")
+
+                setattr(FailingWriter, method_name, fail_after)
+                snapshot = BacklogReader(root).load()
+                with self.assertRaisesRegex(RuntimeError, "injected"):
+                    FailingWriter(root).finalize_task(
+                        snapshot, snapshot.tasks["TASK-0100"], "done"
+                    )
+                self.assertEqual({path: path.read_bytes() for path in watched}, before)
+                self.assertFalse((root / "tasks/completed/TASK-0100-spec.md").exists())
+
     def test_completion_failure_restores_the_full_canonical_snapshot(self):
         class FailingWriter(BacklogWriter):
             def _update_master(self, snapshot, completed_task_id):
@@ -61,6 +99,33 @@ class BacklogReaderTests(unittest.TestCase):
             writer.validate_completed(completed.tasks["TASK-0100"], destination)
             self.assertFalse((root / "tasks/backlog/TASK-0100-spec.md").exists())
             self.assertTrue((root / destination).is_file())
+            self.assertEqual(completed.tasks["TASK-0100"].maturity, "Completed")
+
+    def test_canonical_reader_never_observes_a_partial_completion_transaction(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"])
+            snapshot = BacklogReader(root).load()
+            errors: list[Exception] = []
+            finished = threading.Event()
+
+            def read_while_finalizing() -> None:
+                while not finished.is_set():
+                    try:
+                        BacklogReader(root).load()
+                    except Exception as exc:  # recorded and asserted below
+                        errors.append(exc)
+
+            reader = threading.Thread(target=read_while_finalizing)
+            reader.start()
+            try:
+                BacklogWriter(root).finalize_task(
+                    snapshot, snapshot.tasks["TASK-0100"], "done"
+                )
+            finally:
+                finished.set()
+                reader.join()
+            self.assertEqual(errors, [])
 
     def test_atomic_canonical_write_never_exposes_partial_document(self):
         with tempfile.TemporaryDirectory() as td:
@@ -136,6 +201,8 @@ class BacklogReaderTests(unittest.TestCase):
             )
             self.assertTrue((root / destination).is_file())
             self.assertFalse((root / "tasks/orchestrator/backlog/TASK-0101-spec.md").exists())
+            completed_task = BacklogReader(root, "orchestrator").load().tasks["TASK-0101"]
+            self.assertEqual(completed_task.maturity, "Completed")
             self.assertEqual(
                 [task.id for task in BacklogReader.ready_frontier(BacklogReader(root).load(), set())],
                 ["TASK-0100"],

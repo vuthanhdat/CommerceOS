@@ -42,6 +42,7 @@ from .review_contract import (
     next_hop,
 )
 from .repair_contract import RepairContractError, RepairManifest, RepairPacket
+from .completion_contract import CompletionTransaction
 
 
 @dataclass(frozen=True)
@@ -260,6 +261,14 @@ class TaskOrchestrator:
             TaskExecutionState.INTEGRATING,
             TaskExecutionState.FINALIZING,
         }:
+            if resume:
+                self._block(
+                    task,
+                    "FINALIZATION_ENTRY_GATE_RESTORE_REQUIRED",
+                    "Persisted VerificationReport/ReviewLedger artifact chain must be rehydrated "
+                    "before resuming merge or finalization.",
+                )
+                return
             self._integrate(task, workspace.branch, workspace.path)
             return
 
@@ -930,13 +939,6 @@ class TaskOrchestrator:
                         phase="post-bookkeeping",
                         commit_sha=final_commit,
                     )
-                    completion_transaction_path = self._completion_transaction_artifact(
-                        task,
-                        integrated_sha=post_merge_commit,
-                        bookkeeping_sha=final_commit,
-                        completed_path=merged_task.spec_path.replace("/backlog/", "/completed/"),
-                        push_eligible=final_verification.success,
-                    )
                     try:
                         self._authoritative_verification_report(
                             task,
@@ -947,22 +949,6 @@ class TaskOrchestrator:
                         self.integration.rollback_unpushed_main()
                         self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
                         return
-                    finalization_output_id = self._validated_stage_output(
-                        task,
-                        "finalization",
-                        success=final_verification.success,
-                        evidence_artifact_ids=(
-                            final_verification.log_path or f"{task.id}:post-bookkeeping:audit",
-                            completion_transaction_path,
-                        ),
-                        failure_route=(
-                            None
-                            if final_verification.success
-                            else TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
-                        ),
-                    )
-                    if finalization_output_id is None:
-                        return
                     if not final_verification.success:
                         self.integration.rollback_unpushed_main()
                         self._block(
@@ -970,6 +956,25 @@ class TaskOrchestrator:
                             "COMPLETION_BOOKKEEPING_VERIFICATION_FAILED",
                             f"log={final_verification.log_path}",
                         )
+                        return
+                    completion_transaction_path = self._completion_transaction_artifact(
+                        task,
+                        integrated_sha=post_merge_commit,
+                        bookkeeping_sha=final_commit,
+                        completed_path=merged_task.spec_path.replace("/backlog/", "/completed/"),
+                        evidence_artifact_ids=(integration_output_id, final_verification.log_path),
+                    )
+                    finalization_output_id = self._validated_stage_output(
+                        task,
+                        "finalization",
+                        success=True,
+                        evidence_artifact_ids=(
+                            final_verification.log_path or f"{task.id}:post-bookkeeping:audit",
+                            completion_transaction_path,
+                        ),
+                        failure_route=None,
+                    )
+                    if finalization_output_id is None:
                         return
                     self.integration.push_main()
                 else:
@@ -988,8 +993,11 @@ class TaskOrchestrator:
                     )
                     snapshot = BacklogReader(self.root, self.catalog).load()
                     current_task = snapshot.tasks.get(task.id)
+                    if current_task is None:
+                        raise IntegrationError(f"task missing from canonical recovery snapshot: {task.id}")
                     finalization_output_id: str | None = None
-                    if current_task and current_task.lifecycle_state != "Completed":
+                    if current_task.lifecycle_state != "Completed":
+                        recovery_integrated_commit = self.integration.current_commit()
                         summary = self._completion_summary(task)
                         BacklogWriter(self.root).finalize_task(snapshot, current_task, summary)
                         self.integration.commit_bookkeeping(task)
@@ -999,13 +1007,6 @@ class TaskOrchestrator:
                             self.root,
                             phase="recovery-bookkeeping",
                             commit_sha=recovery_commit,
-                        )
-                        completion_transaction_path = self._completion_transaction_artifact(
-                            task,
-                            integrated_sha=recovery_commit,
-                            bookkeeping_sha=recovery_commit,
-                            completed_path=current_task.spec_path.replace("/backlog/", "/completed/"),
-                            push_eligible=final_verification.success,
                         )
                         try:
                             self._authoritative_verification_report(
@@ -1017,23 +1018,6 @@ class TaskOrchestrator:
                             self.integration.rollback_unpushed_main()
                             self._block(task, "INVALID_VERIFICATION_REPORT", str(exc))
                             return
-                        finalization_output_id = self._validated_stage_output(
-                            task,
-                            "finalization",
-                            success=final_verification.success,
-                            evidence_artifact_ids=(
-                                final_verification.log_path
-                                or f"{task.id}:recovery-bookkeeping:audit",
-                                completion_transaction_path,
-                            ),
-                            failure_route=(
-                                None
-                                if final_verification.success
-                                else TaskExecutionState.ORCHESTRATOR_ACTION_REQUIRED
-                            ),
-                        )
-                        if finalization_output_id is None:
-                            return
                         if not final_verification.success:
                             self.integration.rollback_unpushed_main()
                             self._block(
@@ -1042,9 +1026,30 @@ class TaskOrchestrator:
                                 f"log={final_verification.log_path}",
                             )
                             return
+                        completion_transaction_path = self._completion_transaction_artifact(
+                            task,
+                            integrated_sha=recovery_integrated_commit,
+                            bookkeeping_sha=recovery_commit,
+                            completed_path=current_task.spec_path.replace("/backlog/", "/completed/"),
+                            evidence_artifact_ids=(integration_output_id, final_verification.log_path),
+                        )
+                        finalization_output_id = self._validated_stage_output(
+                            task,
+                            "finalization",
+                            success=True,
+                            evidence_artifact_ids=(
+                                final_verification.log_path
+                                or f"{task.id}:recovery-bookkeeping:audit",
+                                completion_transaction_path,
+                            ),
+                            failure_route=None,
+                        )
+                        if finalization_output_id is None:
+                            return
                         self.integration.push_main()
 
                     if finalization_output_id is None:
+                        BacklogWriter(self.root).validate_completed(task, current_task.spec_path)
                         finalization_output_id = self._validated_stage_output(
                             task,
                             "finalization",
@@ -1082,23 +1087,23 @@ class TaskOrchestrator:
         integrated_sha: str,
         bookkeeping_sha: str,
         completed_path: str,
-        push_eligible: bool,
+        evidence_artifact_ids: tuple[str, ...],
     ) -> str:
+        transaction = CompletionTransaction.create(
+            task_id=task.id,
+            catalog=task.catalog,
+            integrated_sha=integrated_sha,
+            bookkeeping_sha=bookkeeping_sha,
+            completed_path=completed_path,
+            original_task_path=task.spec_path,
+            evidence_artifact_ids=evidence_artifact_ids,
+        )
         return write_evidence_artifact(
             self.root,
             task.catalog,
             task.id,
             "completion-transaction.json",
-            {
-                "contractVersion": "CompletionTransaction/v1",
-                "taskId": task.id,
-                "catalog": task.catalog,
-                "integratedSha": integrated_sha,
-                "bookkeepingSha": bookkeeping_sha,
-                "completedPath": completed_path,
-                "canonicalValidation": "PASS" if push_eligible else "BLOCKED",
-                "pushEligible": push_eligible,
-            },
+            transaction.to_dict(),
         )
 
     def _block(self, task: CanonicalTask, code: str, detail: str) -> None:
