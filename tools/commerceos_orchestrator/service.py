@@ -91,6 +91,10 @@ class TaskOrchestrator:
     def dry_run(self) -> dict[str, object]:
         snapshot = self.validate()
         decision = self.scheduler.plan(snapshot)
+        builder_runner = getattr(self.agent_runner, "builder", self.agent_runner)
+        reviewer_runner = getattr(self.agent_runner, "reviewer", self.agent_runner)
+        builder_profile = getattr(builder_runner, "profile", None)
+        reviewer_profile = getattr(reviewer_runner, "profile", None)
         return {
             "catalog": self.catalog,
             "control_state": self.state.control_state().value,
@@ -102,6 +106,10 @@ class TaskOrchestrator:
                     "task": task.id,
                     "role": task.owner_role,
                     "model_class": task.model_class,
+                    "builder_provider": getattr(builder_runner, "PROVIDER", None),
+                    "builder_model": getattr(builder_profile, "model", None),
+                    "reviewer_provider": getattr(reviewer_runner, "PROVIDER", None),
+                    "reviewer_model": getattr(reviewer_profile, "model", None),
                     "branch": f"agent/{task.id}-{task.slug}",
                     "cloud_verification": task.cloud_verification,
                     "would_create_worktree": True,

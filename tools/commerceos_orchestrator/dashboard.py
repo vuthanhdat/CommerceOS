@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import webbrowser
+from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +17,7 @@ from .live_feed import LiveAgentFeed
 from .models import TaskExecutionState
 from .scheduler import Scheduler
 from .service import TaskOrchestrator
+from .settings import SettingsStore, SettingsValidationError
 from .state import RunStateStore
 from .observability import evidence_counters, workflow_status
 
@@ -189,6 +191,60 @@ class RuntimeController:
     def resume(self) -> bool:
         return self.start(resume=True)
 
+    def is_busy(self) -> bool:
+        with self._lock:
+            return bool(self._thread and self._thread.is_alive())
+
+    def execute(self, action: str) -> tuple[dict[str, object], HTTPStatus]:
+        if action == "validate":
+            snapshot = self.orchestrator.validate()
+            ready = BacklogReader.ready_frontier(snapshot, active_resources=set())
+            return {"action": action, "valid": True, "tasks": len(snapshot.tasks),
+                    "ready_frontier": [task.id for task in ready]}, HTTPStatus.OK
+        if action == "plan":
+            return {"action": action,
+                    "dispatchable": [task.id for task in self.orchestrator.plan()]}, HTTPStatus.OK
+        if action == "dry-run":
+            return {"action": action, "result": self.orchestrator.dry_run()}, HTTPStatus.OK
+        if action in {"run", "start"}:
+            started = self.start()
+            return {"action": action, "accepted": started,
+                    "scheduler_started": started}, (
+                        HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT
+                    )
+        if action == "resume":
+            started = self.resume()
+            return {"action": action, "accepted": True,
+                    "scheduler_started": started}, HTTPStatus.ACCEPTED
+        if action == "stop":
+            return {"action": action, "accepted": True,
+                    "draining": self.stop()}, HTTPStatus.ACCEPTED
+        if action == "cleanup":
+            if self.is_busy():
+                return {"action": action, "error": "scheduler is busy"}, HTTPStatus.CONFLICT
+            snapshot = BacklogReader(self.orchestrator.root, self.orchestrator.catalog).load()
+            cleaned: list[str] = []
+            warnings: list[str] = []
+            for run in self.orchestrator.state.task_runs():
+                if run.execution_state not in {
+                    TaskExecutionState.COMPLETED,
+                    TaskExecutionState.BLOCKED,
+                    TaskExecutionState.HUMAN_REQUIRED,
+                }:
+                    continue
+                task = snapshot.tasks.get(run.task_id)
+                if task is None:
+                    continue
+                try:
+                    self.orchestrator.workspace.cleanup(task)
+                    cleaned.append(task.id)
+                except Exception as exc:
+                    warnings.append(f"{task.id}: {exc}")
+            return {"action": action, "cleaned": cleaned, "warnings": warnings}, (
+                HTTPStatus.OK if not warnings else HTTPStatus.CONFLICT
+            )
+        return {"error": "unsupported action", "action": action}, HTTPStatus.NOT_FOUND
+
 
 class LocalDashboardServer:
     def __init__(
@@ -208,6 +264,8 @@ class LocalDashboardServer:
         self.read_model = DashboardReadModel(self.root, self.state, catalog)
         self.live_feed = LiveAgentFeed(self.state.path.parent / "logs")
         self.runtime = runtime
+        self.settings_store = SettingsStore(self.root)
+        self.started_settings = self.settings_store.load()
         self.httpd = _QuietThreadingHTTPServer((host, port), self._handler())
         self.host = host
         self.port = int(self.httpd.server_address[1])
@@ -247,6 +305,13 @@ class LocalDashboardServer:
                     if parsed.path == "/api/status":
                         self._json(server.read_model.status())
                         return
+                    if parsed.path == "/api/settings":
+                        view = server.settings_store.public_view()
+                        view["restart_required"] = (
+                            asdict(server.settings_store.load()) != asdict(server.started_settings)
+                        )
+                        self._json(view)
+                        return
                     prefix = "/api/tasks/"
                     if parsed.path.startswith(prefix) and parsed.path.endswith("/stream"):
                         task_id = unquote(parsed.path[len(prefix) : -len("/stream")].rstrip("/"))
@@ -278,6 +343,26 @@ class LocalDashboardServer:
             def do_POST(self) -> None:  # noqa: N802
                 try:
                     path = urlparse(self.path).path
+                    self._require_control_request()
+                    if path.startswith("/api/actions/"):
+                        action = unquote(path.removeprefix("/api/actions/"))
+                        if server.runtime is None:
+                            self._json(
+                                {"error": "runtime control unavailable", "action": action},
+                                HTTPStatus.CONFLICT,
+                            )
+                            return
+                        value, status = server.runtime.execute(action)
+                        self._json(value, status)
+                        return
+                    if path == "/api/settings/reset":
+                        value = server.settings_store.reset()
+                        self._json(
+                            {"accepted": True, "settings": asdict(value),
+                             "restart_required": asdict(value) != asdict(server.started_settings)},
+                            HTTPStatus.ACCEPTED,
+                        )
+                        return
                     if path == "/api/stop":
                         ids = server.runtime.stop() if server.runtime else server.state.request_stop()
                         self._json({"accepted": True, "draining": ids}, HTTPStatus.ACCEPTED)
@@ -291,8 +376,56 @@ class LocalDashboardServer:
                         self._json({"accepted": True, "scheduler_started": started}, HTTPStatus.ACCEPTED)
                         return
                     self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+                except PermissionError as exc:
+                    self._json({"error": "FORBIDDEN", "detail": str(exc)}, HTTPStatus.FORBIDDEN)
                 except Exception as exc:
                     self._json({"error": "CONTROL_FAILED", "detail": repr(exc)}, HTTPStatus.CONFLICT)
+
+            def do_PUT(self) -> None:  # noqa: N802
+                try:
+                    if urlparse(self.path).path != "/api/settings":
+                        self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+                        return
+                    self._require_control_request()
+                    value = server.settings_store.save(self._read_json())
+                    self._json(
+                        {"accepted": True, "settings": asdict(value),
+                         "restart_required": asdict(value) != asdict(server.started_settings)},
+                        HTTPStatus.ACCEPTED,
+                    )
+                except PermissionError as exc:
+                    self._json({"error": "FORBIDDEN", "detail": str(exc)}, HTTPStatus.FORBIDDEN)
+                except SettingsValidationError as exc:
+                    self._json(
+                        {"error": "SETTINGS_INVALID", "detail": str(exc)},
+                        HTTPStatus.BAD_REQUEST,
+                    )
+                except Exception as exc:
+                    self._json(
+                        {"error": "SETTINGS_FAILED", "detail": repr(exc)},
+                        HTTPStatus.CONFLICT,
+                    )
+
+            def _require_control_request(self) -> None:
+                if self.headers.get("X-CommerceOS-Dashboard") != "1":
+                    raise PermissionError("missing dashboard request header")
+                origin = self.headers.get("Origin")
+                host = self.headers.get("Host")
+                if origin and urlparse(origin).netloc != host:
+                    raise PermissionError("cross-origin control request rejected")
+
+            def _read_json(self) -> object:
+                raw_length = self.headers.get("Content-Length", "0")
+                try:
+                    length = int(raw_length)
+                except ValueError as exc:
+                    raise SettingsValidationError("invalid content length") from exc
+                if length < 1 or length > 16384:
+                    raise SettingsValidationError("settings body must be between 1 and 16384 bytes")
+                try:
+                    return json.loads(self.rfile.read(length).decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise SettingsValidationError("settings body must be valid UTF-8 JSON") from exc
 
             def _stream(self, task_id: str) -> None:
                 path = server.live_feed.path_for(task_id)

@@ -121,7 +121,15 @@ Execution roles
       → gpt-5.6-terra / medium / Standard
 ```
 
-The Orchestrator never enables Fast/priority service implicitly. Planning agents receive no real-cloud authorization. Tests use fake agent/planning runners and consume no Codex quota.
+The Orchestrator never enables Fast/priority service implicitly. Planning agents receive no real-cloud authorization. Tests use fake agent/planning runners and consume no provider quota.
+
+ADR-013 adds explicit local operator overrides. The ignored
+`.commerceos/orchestrator/settings.json` file selects provider/model by logical role while the
+profiles above remain the defaults. Codex and Antigravity commands are constructed by typed
+adapters with fixed argv; arbitrary executables and argument templates are not accepted. Missing
+providers and unsupported role combinations fail closed without fallback. Antigravity may be
+used for planning, Builder, Conflict Resolver, and Reviewer work when the installed CLI supports
+`stream-json` tool evidence. Older text-only versions remain ineligible for strict Reviewer work.
 
 ## 6. Live Codex observability
 
@@ -329,9 +337,15 @@ The dashboard is a thin read/control client over Orchestrator Core. It shows:
 - DAG/progress summary;
 - recent state/planning events;
 - live Codex activity and retained log metadata;
-- graceful Stop and explicit Resume controls.
+- typed controls for refresh/status, validate, plan, dry-run, run/start, graceful Stop, explicit
+  Resume, and terminal-task cleanup;
+- a Settings page for catalog/runtime defaults and per-role provider/model profiles, including
+  local Antigravity capability detection and restart-required feedback.
 
-The browser UI does not calculate readiness, mutate canonical YAML, decide planning/architect routing, resolve dependencies, choose retries, or perform Git integration directly.
+The browser UI does not calculate readiness, construct shell commands, mutate canonical YAML,
+decide planning/architect routing, resolve dependencies, choose retries, or perform Git
+integration directly. Mutating requests use a dashboard-only request header and reject a
+cross-origin `Origin` value.
 
 ## 15. Verification
 

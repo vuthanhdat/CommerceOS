@@ -43,14 +43,11 @@ class PlanningAgentRunner(Protocol):
 
 
 class CodexPlanningAgentRunner:
-    """Planning-role adapter pinned to Sol / medium / Standard."""
+    """Planning-role prompt adapter over a configured local agent runner."""
 
-    def __init__(self, root: Path, logs_root: Path):
-        self.runner = CodexRunner(
-            root,
-            logs_root,
-            profile=PLANNING_CODEX_PROFILE,
-            cloud_authorized=False,
+    def __init__(self, root: Path, logs_root: Path, runner: CodexRunner | None = None):
+        self.runner = runner or CodexRunner(
+            root, logs_root, profile=PLANNING_CODEX_PROFILE, cloud_authorized=False
         )
 
     def run_backlog_planner(
@@ -632,18 +629,21 @@ class PlanningAwareTaskOrchestrator:
         value = dict(self.delegate.dry_run())
         if not value.get("dispatchable"):
             decision = self.planning.preview(self.delegate.validate())
+            agent_runner = getattr(self.planning.runner, "runner", None)
+            profile = getattr(agent_runner, "profile", PLANNING_CODEX_PROFILE)
             value["planning_candidate"] = {
                 "task": decision.task_id,
                 "maturity": decision.maturity,
                 "gates": list(decision.gates),
-                "model": PLANNING_CODEX_PROFILE.model if decision.task_id else None,
+                "provider": getattr(agent_runner, "PROVIDER", "codex") if decision.task_id else None,
+                "model": profile.model if decision.task_id else None,
                 "reasoning_effort": (
-                    PLANNING_CODEX_PROFILE.reasoning_effort
+                    profile.reasoning_effort
                     if decision.task_id
                     else None
                 ),
                 "service_tier": (
-                    PLANNING_CODEX_PROFILE.service_tier
+                    profile.service_tier
                     if decision.task_id
                     else None
                 ),

@@ -107,9 +107,10 @@ Agents communicate through repository artifacts, tasks, ADRs/contracts, review f
 
 CommerceOS uses role-based Codex profiles so planning quality and routine execution cost/throughput are predictable.
 
-- Planning roles — Domain Architect, Technical Architect, Backlog Planner — use `gpt-5.6-sol`, reasoning `medium`, Standard service tier.
-- Builder and routine Reviewer/Verification/Conflict Resolver work use `gpt-5.6-terra`, reasoning `medium`, Standard service tier.
-- Do not enable Fast/priority or different models unless the human explicitly changes the assignment or repository policy.
+- Planning roles - Domain Architect, Technical Architect, Backlog Planner - default to `gpt-5.6-sol`, reasoning `medium`, Standard service tier.
+- Builder and routine Reviewer/Verification/Conflict Resolver work default to `gpt-5.6-terra`, reasoning `medium`, Standard service tier.
+- ADR-013 permits explicit local operator overrides through the Orchestrator Settings page. Overrides are typed per role/provider, stored only in ignored local settings, and never silently fall back. Unsupported provider/role combinations fail closed.
+- Do not enable Fast/priority or different models unless the human explicitly changes the assignment, local Orchestrator settings, or repository policy.
 
 Parallel writable work follows:
 

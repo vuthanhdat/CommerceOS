@@ -16,9 +16,9 @@ The infrastructure invariant under ADR-012 is:
 
 ## 2. Model policy
 
-CommerceOS preserves a **Terra-first implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors should start with the `gpt-5.6-terra` Builder profile defined by the repository unless the task's accepted planning artifacts explicitly require stronger reasoning.
+CommerceOS preserves a **Terra-first default implementation policy** for Builder-style coding work. Routine implementation, fixes, test updates, and bounded refactors start with the `gpt-5.6-terra` Builder profile unless the operator selects another supported provider/model under ADR-013 or accepted planning artifacts explicitly require stronger reasoning.
 
-Planning roles use the `gpt-5.6-sol` reasoning profile defined by `AGENTS.md`; Builder/routine implementation roles use `gpt-5.6-terra`. Interactive Codex/TUI model settings do not override the repository role policy used by the Task Orchestrator.
+Planning roles default to `gpt-5.6-sol`; Builder/routine implementation roles default to `gpt-5.6-terra`. Interactive provider TUI settings are not inherited. The local dashboard may persist an explicit typed provider/model override per logical role in ignored Orchestrator settings. Unsupported combinations and unavailable executables fail closed without automatic fallback.
 
 Escalate based on reasoning difficulty/risk, not task size alone. Architecture, security/tenant isolation, accounting, payment ambiguity/idempotency, concurrency, and difficult distributed-system design belong in planning artifacts before Builder execution rather than being silently delegated to a stronger coding model.
 
@@ -34,7 +34,7 @@ Escalate based on reasoning difficulty/risk, not task size alone. Architecture, 
 
 ### Builder
 
-- use the Terra-first implementation profile unless repository policy explicitly escalates it;
+- use the Terra-first default implementation profile unless repository policy or explicit local operator settings select another supported profile;
 - work from one Ready task;
 - modify only its task worktree;
 - add/update tests/docs;

@@ -10,7 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(ROOT / "tools"))
 
-from commerceos_orchestrator.agents import CodexRunner  # noqa: E402
+from commerceos_orchestrator.agents import (  # noqa: E402
+    AntigravityRunner,
+    CodexRunner,
+    RoleRoutedAgentRunner,
+)
 from commerceos_orchestrator.backlog import BacklogReader, BacklogValidationError  # noqa: E402
 from commerceos_orchestrator.dashboard import (  # noqa: E402
     DashboardReadModel,
@@ -24,6 +28,12 @@ from commerceos_orchestrator.planning import (  # noqa: E402
     PlanningCoordinator,
 )
 from commerceos_orchestrator.service import OrchestratorConfig, TaskOrchestrator  # noqa: E402
+from commerceos_orchestrator.settings import (  # noqa: E402
+    AgentProfileSettings,
+    LocalOrchestratorSettings,
+    SettingsStore,
+    SettingsValidationError,
+)
 from commerceos_orchestrator.state import RunStateStore  # noqa: E402
 from commerceos_orchestrator.verification import VerificationRunner  # noqa: E402
 from commerceos_orchestrator.workspace import GitWorkspaceManager, WorkspaceError  # noqa: E402
@@ -36,14 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--catalog",
         choices=("commerceos", "orchestrator"),
-        default="commerceos",
-        help="isolated task catalog to operate (default: commerceos)",
+        default=None,
+        help="isolated task catalog (default: saved setting or commerceos)",
     )
-    parser.add_argument("--max-builders", type=int, default=2)
-    parser.add_argument("--max-fix-attempts", type=int, default=2)
+    parser.add_argument("--max-builders", type=int, default=None)
+    parser.add_argument("--max-fix-attempts", type=int, default=None)
     parser.add_argument(
         "--allow-cloud",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="operator consent for canonical cloud-eligible implementation tasks",
     )
     parser.add_argument("--host", default="127.0.0.1")
@@ -66,8 +77,40 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _provider_runner(
+    root: Path,
+    logs_root: Path,
+    profile: AgentProfileSettings,
+    *,
+    cloud_authorized: bool,
+):
+    runner_type = AntigravityRunner if profile.provider == "antigravity" else CodexRunner
+    return runner_type(
+        root,
+        logs_root,
+        profile=profile.codex_profile(),
+        cloud_authorized=cloud_authorized,
+    )
+
+
 def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateStore]:
     root = args.repo.resolve()
+    saved = SettingsStore(root).load()
+    effective = LocalOrchestratorSettings(
+        catalog=args.catalog or saved.catalog,
+        max_builders=args.max_builders if args.max_builders is not None else saved.max_builders,
+        max_fix_attempts=(
+            args.max_fix_attempts
+            if args.max_fix_attempts is not None
+            else saved.max_fix_attempts
+        ),
+        allow_cloud=args.allow_cloud if args.allow_cloud is not None else saved.allow_cloud,
+        profiles=saved.profiles,
+    )
+    args.catalog = effective.catalog
+    args.max_builders = effective.max_builders
+    args.max_fix_attempts = effective.max_fix_attempts
+    args.allow_cloud = effective.allow_cloud
     state_path = (
         args.state or root / ".commerceos" / "orchestrator" / args.catalog / "state.db"
     ).resolve()
@@ -78,9 +121,26 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
     implementation = TaskOrchestrator(
         root,
         state,
-        # Autonomous implementation/review/conflict execution is pinned by CodexRunner
-        # to gpt-5.6-terra / medium / Standard. Interactive settings are not inherited.
-        CodexRunner(root, logs_root, cloud_authorized=args.allow_cloud),
+        RoleRoutedAgentRunner(
+            _provider_runner(
+                root,
+                logs_root,
+                effective.profiles["builder"],
+                cloud_authorized=effective.allow_cloud,
+            ),
+            _provider_runner(
+                root,
+                logs_root,
+                effective.profiles["reviewer"],
+                cloud_authorized=False,
+            ),
+            _provider_runner(
+                root,
+                logs_root,
+                effective.profiles["conflict_resolver"],
+                cloud_authorized=effective.allow_cloud,
+            ),
+        ),
         verification,
         config=OrchestratorConfig(
             max_builders=args.max_builders,
@@ -92,9 +152,16 @@ def build_orchestrator(args) -> tuple[PlanningAwareTaskOrchestrator, RunStateSto
     planning = PlanningCoordinator(
         root,
         state,
-        # Planning roles are a separate execution boundary pinned to
-        # gpt-5.6-sol / medium / Standard and never receive cloud authorization.
-        CodexPlanningAgentRunner(root, logs_root),
+        CodexPlanningAgentRunner(
+            root,
+            logs_root,
+            runner=_provider_runner(
+                root,
+                logs_root,
+                effective.profiles["planning"],
+                cloud_authorized=False,
+            ),
+        ),
         verification,
         catalog=args.catalog,
     )
@@ -130,11 +197,14 @@ def cleanup(orchestrator, state: RunStateStore) -> int:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.max_builders < 1 or args.max_builders > 2:
-        print("--max-builders must be between 1 and 2 for V1", file=sys.stderr)
-        return 2
-    orchestrator, state = build_orchestrator(args)
     try:
+        orchestrator, state = build_orchestrator(args)
+        if args.max_builders < 1 or args.max_builders > 2:
+            print("--max-builders must be between 1 and 2", file=sys.stderr)
+            return 2
+        if args.max_fix_attempts < 0 or args.max_fix_attempts > 10:
+            print("--max-fix-attempts must be between 0 and 10", file=sys.stderr)
+            return 2
         if args.command == "status":
             print_json(DashboardReadModel(orchestrator.root, state, args.catalog).status())
             return 0
@@ -191,8 +261,8 @@ def main() -> int:
                 server.shutdown()
             return 0
         raise AssertionError(args.command)
-    except BacklogValidationError as exc:
-        print(f"BACKLOG INVALID: {exc}", file=sys.stderr)
+    except (BacklogValidationError, SettingsValidationError) as exc:
+        print(f"CONFIGURATION INVALID: {exc}", file=sys.stderr)
         return 2
 
 

@@ -123,6 +123,13 @@ states, contain no unsafe dynamic HTML insertion, and pass automated API/UI test
 - Small ignored JSON settings file under `.commerceos/orchestrator/<catalog>/`.
 - Optional local `agy` process uses the operator's existing Antigravity installation/account.
 
+## Cost impact
+
+- Repository defaults preserve the existing Sol/Terra usage profile.
+- Provider/model overrides use the operator's existing local account and plan; the UI displays the
+  selected provider/model but does not estimate, purchase, or authorize quota.
+- Capability discovery uses zero-token CLI metadata commands. Browser QA does not start agents.
+
 ## Test plan
 
 - Unit: settings schema/defaults/validation/persistence, provider discovery and command building.
@@ -139,9 +146,10 @@ states, contain no unsafe dynamic HTML insertion, and pass automated API/UI test
 - The design is a targeted evolution of the current developer dashboard. Use one existing accent,
   consistent radii, explicit button/input states, and restrained feedback motion.
 - Settings apply to newly constructed runners. Show a restart-required message after save/reset.
-- Installed baseline observed during planning: Antigravity CLI `agy.exe` v1.0.10 at the documented
-  Windows path, with `--print`, `--model`, and `--sandbox`; no machine-readable stream option in
-  that installed version.
+- Installed baseline observed during implementation: Antigravity CLI `agy.exe` v1.1.12 at the
+  documented Windows path, with `--print`, `--model`, `--effort`, `--sandbox`, and machine-readable
+  `stream-json` output. Capability probing still supports older text-only installations with
+  Reviewer disabled.
 
 ## Completion summary
 

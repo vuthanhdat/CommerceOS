@@ -73,10 +73,28 @@ PLANNING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-sol")
 CODING_CODEX_PROFILE = CodexExecutionProfile("gpt-5.6-terra")
 
 
+def antigravity_supports_stream_json(executable: str | None) -> bool:
+    if not executable:
+        return False
+    try:
+        result = subprocess.run(
+            [executable, "--help"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    help_text = f"{result.stdout}\n{result.stderr}"
+    return result.returncode == 0 and "--output-format" in help_text and "stream-json" in help_text
+
+
 class CodexRunner:
     """Non-interactive Codex CLI adapter with fixed role/model/sandbox boundaries."""
 
     EXECUTABLE = "codex"
+    PROVIDER = "codex"
 
     def __init__(
         self,
@@ -254,6 +272,13 @@ CONFLICT_RESULT: RESOLVED
             prompt,
         ]
 
+    def _resolve_executable(self) -> str | None:
+        return shutil.which(self.EXECUTABLE)
+
+    def _process_cwd(self, worktree: Path, *, writable: bool) -> Path | None:
+        del worktree, writable
+        return None
+
     def _run(
         self,
         task: CanonicalTask,
@@ -264,13 +289,13 @@ CONFLICT_RESULT: RESOLVED
         writable: bool,
         attempt: int,
     ) -> AgentResult:
-        executable = shutil.which(self.EXECUTABLE)
+        executable = self._resolve_executable()
         if executable is None:
             return AgentResult(
                 success=False,
                 exit_code=127,
                 stdout="",
-                stderr=f"Codex executable not found: {self.EXECUTABLE}",
+                stderr=f"{self.PROVIDER} executable not found: {self.EXECUTABLE}",
                 log_path="",
                 marker="ENVIRONMENT_UNAVAILABLE",
             )
@@ -291,6 +316,7 @@ CONFLICT_RESULT: RESOLVED
             role=role,
             attempt=attempt,
             model=self.profile.model,
+            provider=self.PROVIDER,
             reasoning_effort=self.profile.reasoning_effort,
             service_tier=self.profile.service_tier,
             sandbox="workspace-write" if writable else "read-only",
@@ -306,6 +332,7 @@ CONFLICT_RESULT: RESOLVED
                 stderr=subprocess.PIPE,
                 bufsize=1,
                 errors="replace",
+                cwd=self._process_cwd(worktree, writable=writable),
             )
         except OSError as exc:
             detail = repr(exc)
@@ -317,6 +344,7 @@ CONFLICT_RESULT: RESOLVED
                 task.id,
                 "codex_finished",
                 role=role,
+                provider=self.PROVIDER,
                 attempt=attempt,
                 exit_code=127,
                 success=False,
@@ -336,6 +364,7 @@ CONFLICT_RESULT: RESOLVED
                         task.id,
                         "codex_stderr",
                         role=role,
+                        provider=self.PROVIDER,
                         attempt=attempt,
                         text=text,
                     )
@@ -365,6 +394,7 @@ CONFLICT_RESULT: RESOLVED
                     task.id,
                     "codex_event",
                     role=role,
+                    provider=self.PROVIDER,
                     attempt=attempt,
                     event=event,
                 )
@@ -387,6 +417,7 @@ CONFLICT_RESULT: RESOLVED
             task.id,
             "codex_finished",
             role=role,
+            provider=self.PROVIDER,
             attempt=attempt,
             exit_code=exit_code,
             success=success,
@@ -505,7 +536,14 @@ one or more packet finding IDs.
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(event, dict) or event.get("type") != "item.completed":
+            if not isinstance(event, dict):
+                continue
+            if event.get("event") == "result":
+                response = event.get("result")
+                if isinstance(response, dict) and isinstance(response.get("response"), str):
+                    messages.append(response["response"])
+                continue
+            if event.get("type") != "item.completed":
                 continue
             item = event.get("item")
             if not isinstance(item, dict) or item.get("type") != "agent_message":
@@ -524,6 +562,13 @@ one or more packet finding IDs.
             except json.JSONDecodeError:
                 return None
             return value if isinstance(value, dict) else None
+        marker = "BUILDER_RESULT_JSON:"
+        if marker in stdout:
+            try:
+                value, _ = json.JSONDecoder().raw_decode(stdout.rsplit(marker, 1)[1].lstrip())
+            except json.JSONDecodeError:
+                return None
+            return value if isinstance(value, dict) else None
         return None
 
     @staticmethod
@@ -534,16 +579,29 @@ one or more packet finding IDs.
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            item = event.get("item") if isinstance(event, dict) else None
+            if not isinstance(event, dict):
+                continue
+            item = event.get("item")
             if event.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message":
                 if isinstance(item.get("text"), str):
                     messages.append(item["text"])
+            if event.get("event") == "result":
+                response = event.get("result")
+                if isinstance(response, dict) and isinstance(response.get("response"), str):
+                    messages.append(response["response"])
         for message in reversed(messages):
             marker = "REVIEW_LEDGER_JSON:"
             if marker not in message:
                 continue
             try:
                 value, _ = json.JSONDecoder().raw_decode(message.split(marker, 1)[1].lstrip())
+            except json.JSONDecodeError:
+                return None
+            return value if isinstance(value, dict) else None
+        marker = "REVIEW_LEDGER_JSON:"
+        if marker in stdout:
+            try:
+                value, _ = json.JSONDecoder().raw_decode(stdout.rsplit(marker, 1)[1].lstrip())
             except json.JSONDecodeError:
                 return None
             return value if isinstance(value, dict) else None
@@ -557,16 +615,41 @@ one or more packet finding IDs.
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            item = event.get("item") if isinstance(event, dict) else None
-            if not isinstance(item, dict) or item.get("type") != "command_execution":
+            if not isinstance(event, dict):
                 continue
-            command = item.get("command")
-            rendered = " ".join(command) if isinstance(command, list) and all(
-                isinstance(value, str) for value in command
-            ) else command
-            if isinstance(rendered, str) and CodexRunner._is_full_suite_command(rendered):
-                forbidden.append(rendered)
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "command_execution":
+                command = item.get("command")
+                rendered = " ".join(command) if isinstance(command, list) and all(
+                    isinstance(value, str) for value in command
+                ) else command
+                if isinstance(rendered, str) and CodexRunner._is_full_suite_command(rendered):
+                    forbidden.append(rendered)
+            if event.get("event") == "step_update":
+                serialized = event.get("step") or event.get("data") or event
+                for command_text in CodexRunner._antigravity_command_values(serialized):
+                    if CodexRunner._is_full_suite_command(command_text):
+                        forbidden.append(command_text)
         return tuple(forbidden)
+
+    @staticmethod
+    def _antigravity_command_values(value: object) -> tuple[str, ...]:
+        commands: list[str] = []
+        if isinstance(value, dict):
+            tool = value.get("tool_info")
+            if isinstance(tool, dict):
+                parameters = tool.get("parameters")
+                if isinstance(parameters, dict):
+                    for key in ("CommandLine", "command", "cmd"):
+                        candidate = parameters.get(key)
+                        if isinstance(candidate, str):
+                            commands.append(candidate)
+            for nested in value.values():
+                commands.extend(CodexRunner._antigravity_command_values(nested))
+        elif isinstance(value, list):
+            for nested in value:
+                commands.extend(CodexRunner._antigravity_command_values(nested))
+        return tuple(commands)
 
     @staticmethod
     def _is_full_suite_command(command: str) -> bool:
@@ -681,6 +764,73 @@ Your final agent message must contain exactly one compact JSON object prefixed b
 Git-changed file exactly once. The Orchestrator derives and validates those inventories, commit,
 evidence references, owner/route pairs, finding continuity, and PASS rule.
 """
+
+
+class AntigravityRunner(CodexRunner):
+    """Headless Google Antigravity adapter for roles supported by local CLI capabilities."""
+
+    EXECUTABLE = "agy"
+    PROVIDER = "antigravity"
+
+    def _resolve_executable(self) -> str | None:
+        found = shutil.which(self.EXECUTABLE)
+        if found:
+            return found
+        if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+            candidate = Path(os.environ["LOCALAPPDATA"]) / "agy" / "bin" / "agy.exe"
+            if candidate.is_file():
+                return str(candidate)
+        return None
+
+    def _build_command(
+        self,
+        executable: str,
+        *,
+        worktree: Path,
+        writable: bool,
+        prompt: str,
+    ) -> list[str]:
+        del worktree
+        command = [executable, "--sandbox"]
+        if writable:
+            command.append("--dangerously-skip-permissions")
+            command.extend(("--mode", "accept-edits"))
+        else:
+            command.extend(("--mode", "plan"))
+        if self.profile.model:
+            command.extend(("--model", self.profile.model))
+        if antigravity_supports_stream_json(executable):
+            command.extend(("--output-format", "stream-json"))
+        command.extend(("--effort", self.profile.reasoning_effort if self.profile.reasoning_effort != "xhigh" else "high"))
+        command.extend(("--print", prompt))
+        return command
+
+    def _process_cwd(self, worktree: Path, *, writable: bool) -> Path | None:
+        del writable
+        return worktree
+
+
+class RoleRoutedAgentRunner:
+    """Delegate each implementation role to its independently configured provider runner."""
+
+    def __init__(
+        self,
+        builder: AgentRunner,
+        reviewer: AgentRunner,
+        conflict_resolver: AgentRunner,
+    ):
+        self.builder = builder
+        self.reviewer = reviewer
+        self.conflict_resolver = conflict_resolver
+
+    def run_builder(self, *args, **kwargs) -> AgentResult:
+        return self.builder.run_builder(*args, **kwargs)
+
+    def run_reviewer(self, *args, **kwargs) -> ReviewResult:
+        return self.reviewer.run_reviewer(*args, **kwargs)
+
+    def run_conflict_resolver(self, *args, **kwargs) -> AgentResult:
+        return self.conflict_resolver.run_conflict_resolver(*args, **kwargs)
 
 
 class FakeAgentRunner:

@@ -250,6 +250,7 @@ def check_development_strategy(errors: list[str]) -> None:
         ROOT / "docs/development/14-codex-multi-agent-and-worktrees.md",
         ROOT / "docs/development/16-task-orchestrator.md",
         ROOT / "tools/commerceos_orchestrator/agents.py",
+        ROOT / "tools/commerceos_orchestrator/settings.py",
         ROOT / "tools/orchestrator.py",
     )
     for policy_path in coding_policy_paths:
@@ -281,7 +282,9 @@ def check_development_strategy(errors: list[str]) -> None:
             'codexexecutionprofile("gpt-5.6-sol")',
             'codexexecutionprofile("gpt-5.6-terra")',
         ),
-        ROOT / "tools/orchestrator.py": ("gpt-5.6-sol", "gpt-5.6-terra"),
+        ROOT / "tools/commerceos_orchestrator/settings.py": (
+            "planning_codex_profile", "coding_codex_profile",
+        ),
     }
     for policy_path, bindings in required_profile_bindings.items():
         if not policy_path.is_file():
@@ -293,6 +296,43 @@ def check_development_strategy(errors: list[str]) -> None:
                     f"Codex model-policy binding is missing from {policy_path.relative_to(ROOT)}: {binding}",
                     errors,
                 )
+
+    dashboard_contracts = {
+        ROOT / "tools/commerceos_orchestrator/dashboard.py": (
+            '"/api/settings"',
+            '"/api/actions/"',
+            '"X-CommerceOS-Dashboard"',
+        ),
+        ROOT / "tools/commerceos_orchestrator/dashboard_ui.py": (
+            'data-action="validate"',
+            'data-action="plan"',
+            'data-action="dry-run"',
+            'data-action="run"',
+            'data-action="start"',
+            'data-action="resume"',
+            'data-action="stop"',
+            'data-action="cleanup"',
+            'id="settings-page"',
+        ),
+        ROOT / "tools/commerceos_orchestrator/settings.py": (
+            "class SettingsStore",
+            "def provider_capabilities",
+            "antigravity",
+        ),
+    }
+    for contract_path, snippets in dashboard_contracts.items():
+        if not contract_path.is_file():
+            fail(f"Orchestrator dashboard contract file is missing: {contract_path.relative_to(ROOT)}", errors)
+            continue
+        contract_text = contract_path.read_text(encoding="utf-8")
+        for snippet in snippets:
+            if snippet not in contract_text:
+                fail(
+                    f"Orchestrator dashboard contract is missing {snippet!r} in {contract_path.relative_to(ROOT)}",
+                    errors,
+                )
+        if contract_path.name == "dashboard_ui.py" and "innerHTML" in contract_text:
+            fail("Orchestrator dashboard must render untrusted values without innerHTML", errors)
 
 
 def check_planning_factory(errors: list[str]) -> None:

@@ -20,7 +20,7 @@ orchestration authority.
 - Add a repository-owned agent-provider abstraction with explicit `codex` and `antigravity`
   adapters. Provider, model, reasoning effort, and service tier are typed settings, never raw
   command fragments.
-- Store operator overrides in the selected catalog's ignored local Orchestrator state directory.
+- Store operator overrides in ignored `.commerceos/orchestrator/settings.json` local state.
   Do not commit settings, credentials, account identifiers, or authentication material.
 - Configure logical role profiles independently for planning, Builder, Reviewer, and Conflict
   Resolver. The planning profile applies to Backlog Planner, Domain Architect, and Technical

@@ -6,13 +6,16 @@ import tempfile
 import subprocess
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from helpers import TOOLS
 from commerceos_orchestrator.agents import (
+    AntigravityRunner,
     CODING_CODEX_PROFILE,
     PLANNING_CODEX_PROFILE,
     CodexRunner,
+    antigravity_supports_stream_json,
 )
 from commerceos_orchestrator.models import CanonicalTask
 from commerceos_orchestrator.models import AgentResult
@@ -297,6 +300,62 @@ class CodexPromptBoundaryTests(unittest.TestCase):
                 '{"type":"error","message":"CreateProcessAsUserW failed: 5"}',
                 "",
             )
+        )
+
+    def test_antigravity_command_uses_fixed_headless_argv_and_never_a_shell(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runner = AntigravityRunner(root, root / "logs")
+            command = runner._build_command(
+                "C:/Users/Dat/AppData/Local/agy/bin/agy.exe",
+                worktree=root,
+                writable=True,
+                prompt="builder prompt",
+            )
+            self.assertEqual(command[0], "C:/Users/Dat/AppData/Local/agy/bin/agy.exe")
+            self.assertIn("--print", command)
+            self.assertIn("--sandbox", command)
+            self.assertIn("--dangerously-skip-permissions", command)
+            self.assertEqual(command[-1], "builder prompt")
+            self.assertNotIn("cmd", command)
+            self.assertNotIn("powershell", command)
+
+    def test_antigravity_stream_capability_reads_help_from_stderr(self):
+        result = SimpleNamespace(
+            returncode=0,
+            stdout="",
+            stderr="--output-format Output format (text, json, stream-json)",
+        )
+        with patch("commerceos_orchestrator.agents.subprocess.run", return_value=result):
+            self.assertTrue(antigravity_supports_stream_json("agy"))
+
+    def test_plain_text_provider_output_can_carry_builder_manifest(self):
+        payload = {"contractVersion": "BuilderResultManifest/v1", "taskId": "TASK-0100"}
+        output = "done\nBUILDER_RESULT_JSON:" + json.dumps(payload)
+        self.assertEqual(CodexRunner._builder_evidence(output), payload)
+
+    def test_antigravity_stream_result_can_carry_reviewer_ledger(self):
+        payload = {"contractVersion": "ReviewLedger/v1", "verdict": "PASS"}
+        response = "REVIEW_LEDGER_JSON:" + json.dumps(payload)
+        output = json.dumps({"event": "result", "result": {"response": response}})
+        self.assertEqual(CodexRunner._reviewer_evidence(output), payload)
+
+    def test_antigravity_tool_event_preserves_reviewer_command_guard(self):
+        output = json.dumps(
+            {
+                "event": "step_update",
+                "step": {
+                    "step_type": "tool",
+                    "tool_info": {
+                        "name": "run_command",
+                        "parameters": {"CommandLine": "python scripts/harness_check.py"},
+                    },
+                },
+            }
+        )
+        self.assertEqual(
+            CodexRunner._reviewer_forbidden_commands(output),
+            ("python scripts/harness_check.py",),
         )
 
     def test_nested_test_output_does_not_look_like_windows_sandbox_failure(self):
