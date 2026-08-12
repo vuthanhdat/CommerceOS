@@ -239,6 +239,49 @@ def check_development_strategy(errors: list[str]) -> None:
         if "maximum **2 active builder-style coding tasks in parallel**" not in lower:
             fail("Codex operating model must preserve the default two-Builder concurrency limit", errors)
 
+    coding_policy_paths = (
+        ROOT / "AGENTS.md",
+        ROOT / "docs/agents/backlog-planner.md",
+        ROOT / "docs/agents/builder.md",
+        ROOT / "docs/agents/reviewer.md",
+        ROOT / "docs/agents/verification.md",
+        ROOT / "docs/development/14-codex-multi-agent-and-worktrees.md",
+        ROOT / "docs/development/16-task-orchestrator.md",
+        ROOT / "tools/commerceos_orchestrator/agents.py",
+        ROOT / "tools/orchestrator.py",
+    )
+    for policy_path in coding_policy_paths:
+        if not policy_path.is_file():
+            fail(f"Codex model-policy file is missing: {policy_path.relative_to(ROOT)}", errors)
+            continue
+        policy_text = policy_path.read_text(encoding="utf-8").lower()
+        if "gpt-5.6-luna" in policy_text or "luna-first" in policy_text:
+            fail(
+                f"Active Codex policy must not select Luna: {policy_path.relative_to(ROOT)}",
+                errors,
+            )
+
+    required_profile_bindings = {
+        ROOT / "AGENTS.md": ("gpt-5.6-sol", "gpt-5.6-terra"),
+        ROOT / "docs/agents/builder.md": ("gpt-5.6-terra",),
+        ROOT / "docs/agents/reviewer.md": ("gpt-5.6-terra",),
+        ROOT / "docs/agents/verification.md": ("gpt-5.6-terra",),
+        ROOT / "tools/commerceos_orchestrator/agents.py": (
+            'codexexecutionprofile("gpt-5.6-sol")',
+            'codexexecutionprofile("gpt-5.6-terra")',
+        ),
+    }
+    for policy_path, bindings in required_profile_bindings.items():
+        if not policy_path.is_file():
+            continue
+        normalized = policy_path.read_text(encoding="utf-8").lower().replace(" ", "")
+        for binding in bindings:
+            if binding.replace(" ", "") not in normalized:
+                fail(
+                    f"Codex model-policy binding is missing from {policy_path.relative_to(ROOT)}: {binding}",
+                    errors,
+                )
+
 
 def check_planning_factory(errors: list[str]) -> None:
     planning_path = ROOT / "docs" / "development" / "15-planning-factory-and-task-maturity.md"
