@@ -125,6 +125,9 @@ class GitWorkspaceManager:
                 )
             return Workspace(branch=branch, path=directory, created=False)
 
+        if directory.exists():
+            self._remove_unregistered_worktree_residue(directory)
+
         self._refresh_origin_main_for_worktree()
         branch_exists = self._run(["show-ref", "--verify", f"refs/heads/{branch}"], check=False).returncode == 0
         if branch_exists:
@@ -132,6 +135,19 @@ class GitWorkspaceManager:
         else:
             self._run(["worktree", "add", str(directory), "-b", branch, "origin/main"])
         return Workspace(branch=branch, path=directory, created=True)
+
+    def _remove_unregistered_worktree_residue(self, directory: Path) -> None:
+        expected = self._task_directory_from_id(directory.name)
+        if directory.resolve() != expected or (directory / ".git").exists():
+            raise WorkspaceError(
+                f"refusing to remove unexpected unregistered worktree directory: {directory}"
+            )
+        try:
+            shutil.rmtree(directory)
+        except OSError as exc:
+            raise WorkspaceError(
+                f"could not remove unregistered worktree residue {directory}: {exc}"
+            ) from exc
 
     def current_branch(self, directory: Path) -> str:
         return self._run(["branch", "--show-current"], cwd=directory).stdout.strip()
@@ -283,10 +299,13 @@ class GitWorkspaceManager:
         # Worktree filesystem paths intentionally use only the canonical numeric task id,
         # never the task title/slug. Validate again at the filesystem trust boundary and
         # require the resolved path to be one direct child of the fixed sibling root.
-        if not re.fullmatch(r"TASK-\d{4,}", task.id):
-            raise WorkspaceError(f"invalid canonical task id for Git worktree path: {task.id}")
+        return self._task_directory_from_id(task.id)
+
+    def _task_directory_from_id(self, task_id: str) -> Path:
+        if not re.fullmatch(r"TASK-\d{4,}", task_id):
+            raise WorkspaceError(f"invalid canonical task id for Git worktree path: {task_id}")
         root = self.worktrees_root.resolve()
-        directory = (root / task.id).resolve()
+        directory = (root / task_id).resolve()
         if directory.parent != root:
             raise WorkspaceError(f"unsafe task worktree path: {directory}")
         return directory

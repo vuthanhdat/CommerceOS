@@ -100,10 +100,12 @@ cloud-service cost changes.
 - A warning records the exact cached commit used.
 - A successful Planner run with a missing text marker may infer `READY` only when the runtime reader
   independently proves the task's canonical artifacts are dispatchable.
+- Worktree creation removes only canonical, unregistered residue without Git metadata, allowing a
+  Planner-to-Builder handoff after Windows leaves ignored build dependencies behind.
 
 ### Verification
 
-- Orchestrator suite: PASS (145 tests).
+- Orchestrator suite: PASS (147 tests).
 - `py -3 scripts/harness_check.py`: PASS.
 
 ### Acceptance criteria status

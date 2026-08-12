@@ -62,6 +62,33 @@ class GitWorkspaceTests(unittest.TestCase):
 
         self.assertEqual(run.call_count, 1)
 
+    def test_unregistered_worktree_residue_is_removed_only_without_git_metadata(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "CommerceOS"
+            repo.mkdir()
+            manager = GitWorkspaceManager(repo)
+            residue = manager.worktrees_root / "TASK-0100"
+            residue.mkdir(parents=True)
+            (residue / "node_modules").mkdir()
+
+            manager._remove_unregistered_worktree_residue(residue)
+
+            self.assertFalse(residue.exists())
+
+    def test_unregistered_directory_with_git_metadata_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "CommerceOS"
+            repo.mkdir()
+            manager = GitWorkspaceManager(repo)
+            residue = manager.worktrees_root / "TASK-0100"
+            residue.mkdir(parents=True)
+            (residue / ".git").write_text("gitdir: unknown", encoding="utf-8")
+
+            with self.assertRaisesRegex(WorkspaceError, "refusing to remove"):
+                manager._remove_unregistered_worktree_residue(residue)
+
+            self.assertTrue(residue.exists())
+
     def test_restore_task_lifecycle_preserves_implementation_changes(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
