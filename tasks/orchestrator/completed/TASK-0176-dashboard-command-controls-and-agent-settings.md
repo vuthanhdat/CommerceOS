@@ -1,11 +1,12 @@
 # TASK-0176 - Add dashboard command controls and agent settings
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder - Engineering / Harness
 Recommended implementation model: gpt-5.6-terra, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: TASK-0175, ADR-013
 Cloud verification: No
 

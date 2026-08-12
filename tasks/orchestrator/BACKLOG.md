@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0176` — Add dashboard command controls and agent settings (`Completed`).
+
 - `TASK-0175` — Switch the coding execution profile from Luna to Terra (`Completed`).
 
 - `TASK-0174` — Expose and verify the strict Orchestrator workflow end to end (`Completed`).
@@ -29,7 +31,6 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0176` - Add dashboard command controls and agent settings (`Ready`).
 
 
 ## Strict workflow boundary program
