@@ -88,7 +88,7 @@ execution_metadata:
     exclusive_resources: [repository-task-state, canonical-backlog, main-merge-lane]
     merge_policy: verified_serial_main
   TASK-0174:
-    lifecycle_state: Backlog
+    lifecycle_state: Completed
     exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime]
     merge_policy: verified_serial_main
 
@@ -139,4 +139,3 @@ task_shards:
 
 ready_frontier:
   - TASK-0094
-  - TASK-0174

@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0174` — Expose and verify the strict Orchestrator workflow end to end (`Completed`).
+
 - `TASK-0173` — Make completion an Orchestrator-owned verified transaction (`Completed`).
 
 - `TASK-0172` — Restrict Builder rework to accepted Reviewer findings (`Completed`).
@@ -25,7 +27,6 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0174` — Expose and verify the strict Orchestrator workflow end to end (`Ready`).
 
 ## Strict workflow boundary program
 

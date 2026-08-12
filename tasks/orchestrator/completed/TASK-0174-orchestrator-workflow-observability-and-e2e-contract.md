@@ -1,11 +1,12 @@
 # TASK-0174 — Expose and verify the strict Orchestrator workflow end to end
 
-Status: Backlog
-Specification maturity: Ready
-Execution permission: YES
+Status: Completed
+Specification maturity: Completed
+Execution permission: NO — completed
 Owner: Builder — Engineering / Harness
 Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
+Completed: 2026-08-12
 Depends on: TASK-0172, TASK-0173
 Cloud verification: No
 
@@ -125,3 +126,14 @@ Existing loopback dashboard, SQLite state, and repository-local evidence only. L
 - Full fake-agent pipeline matrix, including stop/restart and recovery.
 - DOM safety regression checks.
 - LocalStack verification: N/A.
+
+## Completion summary
+
+### Orchestrator evidence
+
+- Dashboard exposes distinct workflow state, current owner, next measurable condition, and evidence-derived counters.
+- Accepted/rejected transitions use complete versioned audit payloads; the deterministic E2E matrix covers all named scenarios.
+- Independent Reviewer result: PASS; all findings resolved.
+- 119 Orchestrator tests passed after integration.
+- Full repository harness passed before integration; post-bookkeeping harness follows.
+- Architecture/security: loopback harness only, DOM-safe output, no tenant, cloud, or LocalStack impact.
