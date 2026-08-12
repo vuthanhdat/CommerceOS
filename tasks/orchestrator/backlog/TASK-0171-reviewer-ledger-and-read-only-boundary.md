@@ -1,12 +1,46 @@
 # TASK-0171 — Enforce a bounded read-only Reviewer contract
 
 Status: Backlog
-Specification maturity: Refined
-Execution permission: NO — waits for TASK-0170
+Specification maturity: Ready
+Execution permission: YES
 Owner: Builder — Engineering / Harness
+Recommended implementation model: gpt-5.6-luna, medium reasoning, standard service tier
 Created: 2026-08-12
-Depends on: TASK-0170
+Depends on: completed TASK-0170
 Cloud verification: No
+
+## Planning readiness
+
+- Owning domain: Engineering / Harness; no CommerceOS product domain is touched.
+- Contract ownership: `tools/commerceos_orchestrator/review_contract.py` owns
+  `ReviewLedger/v1`; the Orchestrator validates it before accepting a verdict.
+- Execution boundary: non-Windows uses Codex `read-only` in the task worktree. Windows uses
+  Codex `read-only` from the primary repository root and an absolute sibling-worktree target,
+  avoiding the documented restricted-runner spawn failure without granting write permission.
+- Command boundary: Codex JSONL command records are inspected and reviews that launch the
+  repository harness or full test suites are rejected. Read-only inspection remains allowed.
+- Persistence: ledger JSON is repository-local evidence; SQLite stores references and stage
+  state only. Business, tenant, infrastructure, LocalStack, and ADR decisions are N/A.
+- Remaining planning blockers: None.
+
+## Review ledger contract
+
+`ReviewLedger/v1` contains `contractVersion`, `taskId`, `reviewedCommitSha`, `reviewRound`
+(`INITIAL` or `REPAIR`), exactly one verdict per task AC, exactly one scope classification per
+Git-derived changed file, findings, and final `verdict` (`PASS` or `FIX_REQUIRED`). AC verdicts
+are `PASS` or `FAIL`; file classifications are `IN_SCOPE`, `OUT_OF_SCOPE`, `GENERATED`, or
+`EVIDENCE`.
+
+Each finding contains a stable `findingId`, `status` (`OPEN`, `RESOLVED`, or `FOLLOW_UP`),
+`severity` (`HIGH`, `MEDIUM`, or `LOW`), exactly one owner and owner-consistent route, one or more
+validated evidence references, one or more worktree-contained affected paths, and a measurable
+acceptance condition. Owner/route pairs follow
+`docs/development/17-review-scope-and-finding-ownership.md`.
+
+On re-review every previous finding ID appears exactly once. Existing blocking findings may stay
+`OPEN` or become `RESOLVED`. A new blocking finding is valid only when all affected paths belong
+to the Git-derived repair delta; other new observations are `FOLLOW_UP`. `PASS` requires all ACs
+to pass, no `OUT_OF_SCOPE` file, no open blocking finding, and a valid ledger.
 
 ## Goal
 
@@ -30,6 +64,8 @@ verification and independent review.
 - Prevent Reviewer from running harness/full test suites; test execution belongs to the
   Verification Runner.
 - Define first-review and bounded re-review rules.
+- Persist the validated ledger as the sole review decision artifact and route from it instead of
+  regex-parsed free text.
 
 ## Out of scope
 
@@ -69,10 +105,36 @@ and measurable acceptance condition. Malformed or owner/route-inconsistent findi
 Re-review may change tracked finding status and report regressions introduced by the repair. New
 unrelated observations are `FOLLOW_UP`; they cannot reopen implementation scope.
 
-## Architecture/security/runtime impact
+## Architecture impact
 
-Harness-only. Read-only execution reduces accidental mutation risk. No product/tenant/LocalStack
-impact.
+Harness-only internal versioned evidence contract. No product module, persistence technology,
+cross-domain contract, infrastructure capability, or ADR change.
+
+## Security and tenant impact
+
+Reviewer receives untrusted evidence under a process-level read-only sandbox. Ledger paths and
+evidence references must remain worktree-contained and match Orchestrator inventories.
+Authentication, authorization, tenant scoping, secrets, and customer data are N/A.
+
+## Reliability and idempotency impact
+
+Validation for a task/commit is deterministic and side-effect free. Missing, duplicate, stale,
+malformed, forbidden-command, or incomplete output fails closed before merge, lifecycle mutation,
+or Builder repair dispatch.
+
+## Observability impact
+
+Timeline records validated ledger artifact ID, review round, verdict, finding counts, and explicit
+protocol or command-policy failure reason.
+
+## Local runtime/resource impact
+
+No LocalStack or external cloud use. Reviewer remains Luna-medium-standard. Evidence is bounded
+repository-local disk state; no persistent service or port is introduced.
+
+## Cost impact
+
+No external service or cloud cost. Reviewer remains on the repository-approved coding profile.
 
 ## Quantified Definition of Done
 
@@ -89,5 +151,7 @@ impact.
 - Reviewer command-policy fixtures.
 - Ledger parser/owner-route/coverage tests.
 - First-review versus re-review finding-set tests.
+- Windows launch test proving primary-root execution with `read-only` and sibling-worktree target.
+- Stale commit, traversal, unknown evidence, incomplete coverage, owner/route mismatch, and
+  forbidden command fixtures.
 - LocalStack verification: N/A.
-

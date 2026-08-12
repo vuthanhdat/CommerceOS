@@ -21,7 +21,7 @@ Recently completed:
 
 ## Ready frontier
 
-No Orchestrator task is Ready until TASK-0171 completes its planning gate.
+- `TASK-0171` — Enforce a bounded read-only Reviewer contract (`Ready`).
 
 ## Strict workflow boundary program
 
@@ -40,5 +40,5 @@ Builder repair         owned by Orchestrator
 TASK-0174 status observability + end-to-end contract
 ```
 
-TASK-0170 is completed; TASK-0171 is the next planning candidate and each later task follows its
+TASK-0170 is completed and TASK-0171 passed its planning gate; each later task follows its
 declared dependency gate.
