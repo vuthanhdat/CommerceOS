@@ -218,9 +218,9 @@ class RunStateStore:
                 connection.execute("ROLLBACK")
                 return False
             existing = connection.execute(
-                "SELECT execution_state FROM task_runs WHERE task_id = ?", (task_id,)
+                "SELECT execution_state, output_artifact_id FROM task_runs WHERE task_id = ?", (task_id,)
             ).fetchone()
-            if existing and TaskExecutionState(existing[0]) not in TERMINAL_TASK_STATES:
+            if existing and TaskExecutionState(existing["execution_state"]) not in TERMINAL_TASK_STATES:
                 connection.execute("ROLLBACK")
                 return False
             if existing:
@@ -264,7 +264,22 @@ class RunStateStore:
                     ),
                 )
             connection.execute("COMMIT")
-        self.add_event(task_id, "CLAIMED", "task claimed")
+        self.add_event(
+            task_id,
+            "CLAIMED",
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "from": existing["execution_state"] if existing else "ABSENT",
+                    "to": TaskExecutionState.QUEUED.value,
+                    "actor": "ORCHESTRATOR",
+                    "contract_version": CONTRACT_VERSION,
+                    "input_artifact_id": existing["output_artifact_id"] if existing else None,
+                    "output_artifact_id": f"{task_id}:queued:0",
+                },
+                sort_keys=True,
+            ),
+        )
         return True
 
     def update_task(

@@ -40,28 +40,45 @@ class WorkflowObservabilityTests(unittest.TestCase):
             evidence.mkdir(parents=True)
             artifacts = {
                 "builder-manifest-0.json": {
+                    "contractVersion": "BuilderResultManifest/v1", "taskId": "TASK-0100",
+                    "taskCommitSha": "abc",
                     "acceptanceCriteria": [
-                        {"acId": "AC01", "verdict": "SATISFIED"},
-                        {"acId": "AC02", "verdict": "BLOCKED"},
+                        {"acId": "AC01", "verdict": "SATISFIED", "evidenceIds": ["one"]},
+                        {"acId": "AC02", "verdict": "BLOCKED", "evidenceIds": ["two"]},
                     ],
                     "changedFiles": ["a.py", "b.py"],
+                    "requiredCommandIds": ["task-verification"],
+                    "additionalCommands": [], "limitations": [], "followUps": [],
                 },
                 "verification-report-0.json": {
+                    "contractVersion": "VerificationReport/v1", "taskId": "TASK-0100",
+                    "taskCommitSha": "abc",
+                    "commandResults": [{
+                        "commandId": "task-verification", "argv": ["verify"],
+                        "exitCode": 0, "logArtifact": "verify.log",
+                    }],
                     "testTotals": {
-                        "discovered": 7, "passed": 6, "failed": 1,
+                        "discovered": 7, "passed": 7, "failed": 0,
                         "skipped_required": 0,
-                    }
+                    },
+                    "success": True,
                 },
                 "review-ledger-0.json": {
+                    "contractVersion": "ReviewLedger/v1", "taskId": "TASK-0100",
+                    "reviewedCommitSha": "abc", "reviewRound": "INITIAL",
+                    "acceptanceCriteria": [
+                        {"acId": "AC01", "verdict": "PASS"},
+                        {"acId": "AC02", "verdict": "FAIL"},
+                    ],
                     "changedFiles": [
                         {"path": "a.py", "classification": "IN_SCOPE"},
                         {"path": "b.py", "classification": "IN_SCOPE"},
                     ],
                     "findings": [
-                        {"status": "OPEN", "owner": "BUILDER"},
-                        {"status": "OPEN", "owner": "TECHNICAL_ARCHITECT"},
-                        {"status": "RESOLVED", "owner": "BUILDER"},
+                        {"findingId": "F-001", "status": "OPEN", "severity": "HIGH", "owner": "BUILDER", "route": "BUILDER_FIX", "title": "one", "evidenceRefs": ["one"], "affectedPaths": ["a.py"], "acceptanceCondition": "fix one"},
+                        {"findingId": "F-002", "status": "OPEN", "severity": "HIGH", "owner": "TECHNICAL_ARCHITECT", "route": "PLANNING_REQUIRED", "title": "two", "evidenceRefs": ["two"], "affectedPaths": ["b.py"], "acceptanceCondition": "fix two"},
                     ],
+                    "verdict": "FIX_REQUIRED",
                 },
             }
             for name, payload in artifacts.items():
@@ -70,7 +87,7 @@ class WorkflowObservabilityTests(unittest.TestCase):
             self.assertEqual(counters["status"], "VALID")
             self.assertEqual(counters["acceptance_criteria"], {"satisfied": 1, "total": 2})
             self.assertEqual(counters["changed_files"], {"covered": 2, "total": 2})
-            self.assertEqual(counters["test_totals"]["passed"], 6)
+            self.assertEqual(counters["test_totals"]["passed"], 7)
             self.assertEqual(
                 counters["open_findings_by_owner"],
                 {"BUILDER": 1, "TECHNICAL_ARCHITECT": 1},
@@ -85,6 +102,17 @@ class WorkflowObservabilityTests(unittest.TestCase):
             self.assertEqual(
                 evidence_counters(root, "commerceos", "TASK-0100")["status"],
                 "INVALID",
+            )
+
+    def test_incomplete_evidence_is_not_reported_valid(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            evidence = root / ".commerceos/orchestrator/commerceos/evidence/TASK-0100"
+            evidence.mkdir(parents=True)
+            (evidence / "builder-manifest-0.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                evidence_counters(root, "commerceos", "TASK-0100")["status"],
+                "INCOMPLETE",
             )
 
 

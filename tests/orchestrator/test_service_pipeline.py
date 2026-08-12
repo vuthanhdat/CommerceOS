@@ -353,8 +353,9 @@ class PipelineTests(unittest.TestCase):
                 connection.close()
             integration = FakeIntegrationManager()
             integration.remote = True
+            agents = FakeAgentRunner()
             orch = TaskOrchestrator(
-                root, state, FakeAgentRunner(), FakeVerificationRunner([True]),
+                root, state, agents, FakeVerificationRunner([True]),
                 workspace_manager=FakeWorkspaceManager(root),
                 integration_manager=integration,
                 config=OrchestratorConfig(max_builders=1, poll_seconds=0.01),
@@ -363,6 +364,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(state.task_run(task.id).execution_state, TaskExecutionState.COMPLETED)
             self.assertIn("push", integration.calls)
             self.assertTrue((root / "tasks/completed/TASK-0100-spec.md").is_file())
+            self.assertEqual(agents.builder_calls, 0)
+            self.assertEqual(agents.reviewer_calls, 0)
 
     def test_missing_configured_repair_manifest_blocks_before_second_verification(self):
         with tempfile.TemporaryDirectory() as td:
@@ -707,13 +710,15 @@ class PipelineTests(unittest.TestCase):
                     )
                 ]
             )
+            integration = FakeIntegrationManager()
+            verification = FakeVerificationRunner([True])
             orch = TaskOrchestrator(
                 root,
                 state,
                 agents,
-                FakeVerificationRunner([True]),
+                verification,
                 workspace_manager=FakeWorkspaceManager(root),
-                integration_manager=FakeIntegrationManager(),
+                integration_manager=integration,
                 config=OrchestratorConfig(max_builders=1, max_fix_attempts=2, poll_seconds=0.01),
             )
             orch.run()
@@ -721,6 +726,11 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(run.blocker_code, "PLANNING_REQUIRED")
             self.assertIn("Backlog Planner", run.blocker_detail)
             self.assertEqual(agents.builder_calls, 1)
+            self.assertEqual(agents.reviewer_calls, 1)
+            self.assertEqual(len(verification.calls), 1)
+            self.assertNotIn("prepare", integration.calls)
+            self.assertNotIn("merge", integration.calls)
+            self.assertNotIn("push", integration.calls)
             events = state.recent_events(limit=10)
             self.assertTrue(any(event["kind"] == "REVIEW_ROUTED" for event in events))
 

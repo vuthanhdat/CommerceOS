@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from .models import TaskExecutionState
+from .evidence import BuilderResultManifest, EvidenceValidationError, VerificationReport
+from .review_contract import ReviewLedger, ReviewLedgerError
 
 
 WORKFLOW_STATUS: dict[TaskExecutionState, tuple[str, str]] = {
@@ -39,54 +42,89 @@ def evidence_counters(root: Path, catalog: str, task_id: str) -> dict[str, Any]:
     if not evidence_root.is_dir():
         return counters
     try:
-        manifest = _latest_json(evidence_root, "builder-manifest-*.json")
-        report = _latest_json(evidence_root, "verification-report-*.json")
-        ledger = _latest_json(evidence_root, "review-ledger-*.json")
-        seen = False
-        if manifest is not None:
-            seen = True
-            criteria = _list(manifest, "acceptanceCriteria")
-            changed = _list(manifest, "changedFiles")
-            counters["acceptance_criteria"] = {
-                "satisfied": sum(row.get("verdict") == "SATISFIED" for row in criteria if isinstance(row, dict)),
-                "total": len(criteria),
-            }
-            counters["changed_files"]["total"] = len(changed)
-        if report is not None:
-            seen = True
-            totals = _dict(report, "testTotals")
-            required = {"discovered", "passed", "failed", "skipped_required"}
-            if set(totals) != required or not all(isinstance(totals[key], int) for key in required):
-                raise ValueError("invalid verification testTotals")
-            counters["test_totals"] = {key: totals[key] for key in required}
-        if ledger is not None:
-            seen = True
-            files = _list(ledger, "changedFiles")
-            counters["changed_files"]["covered"] = len(files)
-            owners: dict[str, int] = {}
-            for finding in _list(ledger, "findings"):
-                if not isinstance(finding, dict):
-                    raise ValueError("invalid review finding")
-                if finding.get("status") == "OPEN":
-                    owner = finding.get("owner")
-                    if not isinstance(owner, str) or not owner:
-                        raise ValueError("invalid review finding owner")
-                    owners[owner] = owners.get(owner, 0) + 1
-            counters["open_findings_by_owner"] = owners
-        counters["status"] = "VALID" if seen else "MISSING"
-    except (OSError, ValueError, json.JSONDecodeError, TypeError):
+        artifacts = (
+            _latest_json(evidence_root, "builder-manifest-*.json"),
+            _latest_json(evidence_root, "verification-report-*.json"),
+            _latest_json(evidence_root, "review-ledger-*.json"),
+        )
+        if all(item is None for item in artifacts):
+            return counters
+        if any(item is None for item in artifacts):
+            counters["status"] = "INCOMPLETE"
+            return counters
+        (manifest_path, manifest_payload), (report_path, report_payload), (ledger_path, ledger_payload) = artifacts  # type: ignore[misc]
+        rounds = {_round(path) for path in (manifest_path, report_path, ledger_path)}
+        if len(rounds) != 1:
+            raise ValueError("evidence artifacts are from different rounds")
+        criteria_rows = _list(manifest_payload, "acceptanceCriteria")
+        changed_rows = _list(manifest_payload, "changedFiles")
+        required_ids = _list(manifest_payload, "requiredCommandIds")
+        manifest = BuilderResultManifest.from_dict(
+            manifest_payload,
+            expected_task_id=task_id,
+            expected_commit_sha=_string(manifest_payload, "taskCommitSha"),
+            expected_ac_ids=tuple(_string(row, "acId") for row in criteria_rows),
+            expected_changed_files=tuple(_string_value(item, "changedFiles") for item in changed_rows),
+            expected_required_command_ids=tuple(_string_value(item, "requiredCommandIds") for item in required_ids),
+        )
+        report = VerificationReport.from_dict(report_payload)
+        if report.task_id != task_id or report.task_commit_sha != manifest.task_commit_sha:
+            raise ValueError("verification task/commit binding mismatch")
+        expected_commands = {result.command_id: result.argv for result in report.command_results}
+        report.validate(expected_commands=expected_commands, expected_commit_sha=manifest.task_commit_sha)
+        ledger_ac = tuple(_string(row, "acId") for row in _list(ledger_payload, "acceptanceCriteria"))
+        ledger_files = tuple(_string(row, "path") for row in _list(ledger_payload, "changedFiles"))
+        evidence_refs = tuple(dict.fromkeys(
+            reference
+            for finding in _list(ledger_payload, "findings")
+            for reference in _list(finding, "evidenceRefs")
+            if isinstance(reference, str)
+        ))
+        ledger = ReviewLedger.from_dict(
+            ledger_payload,
+            expected_task_id=task_id,
+            expected_commit_sha=manifest.task_commit_sha,
+            expected_ac_ids=tuple(item.ac_id for item in manifest.acceptance_criteria),
+            expected_changed_files=manifest.changed_files,
+            allowed_evidence_refs=evidence_refs,
+            expected_review_round=_string(ledger_payload, "reviewRound"),
+        )
+        if ledger_ac != tuple(item.ac_id for item in manifest.acceptance_criteria) or ledger_files != manifest.changed_files:
+            raise ValueError("evidence coverage mismatch")
+        counters["acceptance_criteria"] = {
+            "satisfied": sum(item.verdict == "SATISFIED" for item in manifest.acceptance_criteria),
+            "total": len(manifest.acceptance_criteria),
+        }
+        counters["changed_files"] = {
+            "covered": len(ledger.changed_files), "total": len(manifest.changed_files)
+        }
+        counters["test_totals"] = {
+            "discovered": report.test_totals.discovered, "passed": report.test_totals.passed,
+            "failed": report.test_totals.failed,
+            "skipped_required": report.test_totals.skipped_required,
+        }
+        owners: dict[str, int] = {}
+        for finding in ledger.findings:
+            if finding.status == "OPEN":
+                owners[finding.owner.value] = owners.get(finding.owner.value, 0) + 1
+        counters["open_findings_by_owner"] = owners
+        counters["status"] = "VALID"
+    except (
+        OSError, ValueError, json.JSONDecodeError, TypeError, EvidenceValidationError,
+        ReviewLedgerError,
+    ):
         counters["status"] = "INVALID"
     return counters
 
 
-def _latest_json(root: Path, pattern: str) -> dict[str, Any] | None:
+def _latest_json(root: Path, pattern: str) -> tuple[Path, dict[str, Any]] | None:
     paths = sorted(root.glob(pattern), key=lambda path: (path.stat().st_mtime_ns, path.name))
     if not paths:
         return None
     value = json.loads(paths[-1].read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("evidence artifact must be an object")
-    return value
+    return paths[-1], value
 
 
 def _list(value: dict[str, Any], key: str) -> list[Any]:
@@ -96,8 +134,21 @@ def _list(value: dict[str, Any], key: str) -> list[Any]:
     return result
 
 
-def _dict(value: dict[str, Any], key: str) -> dict[str, Any]:
+def _string(value: dict[str, Any], key: str) -> str:
     result = value.get(key)
-    if not isinstance(result, dict):
-        raise ValueError(f"{key} must be an object")
+    if not isinstance(result, str) or not result:
+        raise ValueError(f"{key} must be a non-empty string")
     return result
+
+
+def _string_value(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must contain non-empty strings")
+    return value
+
+
+def _round(path: Path) -> int:
+    match = re.search(r"-(\d+)\.json$", path.name)
+    if not match:
+        raise ValueError("evidence artifact has no round")
+    return int(match.group(1))

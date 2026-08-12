@@ -50,10 +50,11 @@ class GracefulStopServiceTests(unittest.TestCase):
             state = RunStateStore(root / "state.db")
             release = threading.Event()
             started = threading.Event()
+            agents = FakeAgentRunner()
             orchestrator = DrainingOrchestrator(
                 root,
                 state,
-                FakeAgentRunner(),
+                agents,
                 FakeVerificationRunner(),
                 config=OrchestratorConfig(max_builders=2, poll_seconds=0.02),
                 release=release,
@@ -70,6 +71,8 @@ class GracefulStopServiceTests(unittest.TestCase):
             self.assertCountEqual(orchestrator.started_ids, ["TASK-0100", "TASK-0101"])
             self.assertIsNone(state.task_run("TASK-0102"))
             self.assertEqual(state.control_state(), OrchestratorState.STOPPED)
+            self.assertEqual(agents.builder_calls, 0)
+            self.assertEqual(agents.reviewer_calls, 0)
 
     def test_persisted_stop_survives_restart_without_fresh_dispatch(self):
         with tempfile.TemporaryDirectory() as td:
@@ -82,11 +85,14 @@ class GracefulStopServiceTests(unittest.TestCase):
             state.request_stop()
             release = threading.Event(); release.set()
             started = threading.Event()
-            orchestrator = DrainingOrchestrator(root, state, FakeAgentRunner(), FakeVerificationRunner(), config=OrchestratorConfig(max_builders=2,poll_seconds=0.02), release=release, started=started)
+            agents = FakeAgentRunner()
+            orchestrator = DrainingOrchestrator(root, state, agents, FakeVerificationRunner(), config=OrchestratorConfig(max_builders=2,poll_seconds=0.02), release=release, started=started)
             orchestrator.run()
             self.assertEqual(orchestrator.started_ids, ["TASK-0100"])
             self.assertIsNone(state.task_run("TASK-0101"))
             self.assertEqual(state.control_state(), OrchestratorState.STOPPED)
+            self.assertEqual(agents.builder_calls, 0)
+            self.assertEqual(agents.reviewer_calls, 0)
 
 
 if __name__ == "__main__":

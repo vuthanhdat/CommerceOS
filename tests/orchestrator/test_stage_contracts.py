@@ -196,6 +196,71 @@ class StageContractTests(unittest.TestCase):
             ):
                 self.assertIn(field, rejected_detail)
 
+    def test_claim_and_every_declared_transition_have_complete_single_audits(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.db"
+            state = RunStateStore(path)
+            state.clear_stop_and_run()
+            self.assertTrue(state.claim_task("TASK-0100"))
+            claims = [event for event in state.recent_events(20) if event["kind"] == "CLAIMED"]
+            self.assertEqual(len(claims), 1)
+            self.assertEqual(json.loads(claims[0]["detail"])["from"], "ABSENT")
+            required = {
+                "task_id", "from", "to", "actor", "contract_version",
+                "input_artifact_id", "output_artifact_id",
+            }
+            self.assertTrue(required.issubset(json.loads(claims[0]["detail"])))
+
+            for index, rule in enumerate(TRANSITION_TABLE):
+                with self.subTest(edge=f"{rule.from_state}->{rule.to_state}"):
+                    connection = sqlite3.connect(path)
+                    connection.execute(
+                        "UPDATE task_runs SET execution_state = ?, output_artifact_id = ? WHERE task_id = ?",
+                        (rule.from_state.value, f"source-{index}", "TASK-0100"),
+                    )
+                    connection.commit()
+                    connection.close()
+                    before = len([
+                        event for event in state.recent_events(1000) if event["kind"] == "TASK_STATE"
+                    ])
+                    state.update_task(
+                        "TASK-0100", rule.to_state, actor=rule.actor,
+                        input_artifact_id=f"input-{index}", output_artifact_id=f"output-{index}",
+                    )
+                    accepted = [
+                        event for event in state.recent_events(1000) if event["kind"] == "TASK_STATE"
+                    ]
+                    self.assertEqual(len(accepted), before + 1)
+                    self.assertTrue(required.issubset(json.loads(accepted[0]["detail"])))
+
+    def test_every_declared_edge_rejects_the_wrong_actor_once(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.db"
+            state = RunStateStore(path)
+            state.clear_stop_and_run()
+            state.claim_task("TASK-0100")
+            for rule in TRANSITION_TABLE:
+                with self.subTest(edge=f"{rule.from_state}->{rule.to_state}"):
+                    connection = sqlite3.connect(path)
+                    connection.execute(
+                        "UPDATE task_runs SET execution_state = ? WHERE task_id = ?",
+                        (rule.from_state.value, "TASK-0100"),
+                    )
+                    connection.commit()
+                    connection.close()
+                    before = len([
+                        event for event in state.recent_events(1000)
+                        if event["kind"] == "TRANSITION_REJECTED"
+                    ])
+                    with self.assertRaises(InvalidTransitionError):
+                        state.update_task("TASK-0100", rule.to_state, actor="WRONG_ACTOR")
+                    rejected = [
+                        event for event in state.recent_events(1000)
+                        if event["kind"] == "TRANSITION_REJECTED"
+                    ]
+                    self.assertEqual(len(rejected), before + 1)
+                    self.assertEqual(json.loads(rejected[0]["detail"])["actor"], "WRONG_ACTOR")
+
     def test_workflow_and_role_docs_reference_the_executable_contract(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / "docs/development/16-task-orchestrator.md").read_text(encoding="utf-8")
