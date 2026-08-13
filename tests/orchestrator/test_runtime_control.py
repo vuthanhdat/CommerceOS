@@ -75,6 +75,10 @@ class RuntimeControlTests(unittest.TestCase):
 
             terminate.assert_not_called()
             self.assertEqual(state.control_state(), OrchestratorState.RUNNING)
+            rejection = next(
+                item for item in state.recent_events(10) if item["kind"] == "FORCE_STOP_REJECTED"
+            )
+            self.assertEqual(json.loads(rejection["detail"])["code"], "IDENTITY_MISMATCH")
 
     def test_force_stop_fence_rejects_late_stage_transition(self):
         with tempfile.TemporaryDirectory() as td:
@@ -180,9 +184,17 @@ class RuntimeControlTests(unittest.TestCase):
             registry = WorkerRuntimeRegistry(root, state.path, "commerceos")
             with self.assertRaisesRegex(RuntimeControlError, "no registered"):
                 registry.force_stop(state)
+            missing = next(
+                item for item in state.recent_events(10) if item["kind"] == "FORCE_STOP_REJECTED"
+            )
+            self.assertEqual(json.loads(missing["detail"])["code"], "REGISTRATION_MISSING")
             registry.path.write_text("not-json", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeControlError, "malformed"):
                 registry.force_stop(state)
+            malformed = next(
+                item for item in state.recent_events(10) if item["kind"] == "FORCE_STOP_REJECTED"
+            )
+            self.assertEqual(json.loads(malformed["detail"])["code"], "REGISTRATION_INVALID")
 
     def test_windows_termination_targets_registered_pid_tree(self):
         completed = subprocess.CompletedProcess([], 0, "SUCCESS", "")

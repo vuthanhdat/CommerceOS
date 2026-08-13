@@ -90,13 +90,27 @@ class WorkerRuntimeRegistry:
         return registration
 
     def force_stop(self, state: RunStateStore) -> dict[str, object]:
-        registration = self.load()
+        try:
+            registration = self.load()
+        except RuntimeControlError as exc:
+            code = "REGISTRATION_MISSING" if not self.path.is_file() else "REGISTRATION_INVALID"
+            self._record_force_stop_rejection(state, code, str(exc))
+            raise
         assert registration is not None
         if registration.pid == os.getpid():
+            self._record_force_stop_rejection(
+                state, "SELF_TARGET_REJECTED", "registered PID is the control process"
+            )
             raise RuntimeControlError("refusing to terminate the dashboard/control process")
         if not self._pid_alive(registration.pid):
+            self._record_force_stop_rejection(
+                state, "WORKER_NOT_RUNNING", "registered worker process is not running"
+            )
             raise RuntimeControlError("registered Orchestrator worker is no longer running")
         if not self._identity_matches(registration):
+            self._record_force_stop_rejection(
+                state, "IDENTITY_MISMATCH", "registered PID failed worker identity validation"
+            )
             raise RuntimeControlError("registered PID no longer identifies the expected Orchestrator worker")
 
         fence = state.begin_force_stop(registration.pid)
@@ -119,6 +133,14 @@ class WorkerRuntimeRegistry:
             "control_state": "STOPPED",
             "worktrees_removed": False,
         }
+
+    @staticmethod
+    def _record_force_stop_rejection(state: RunStateStore, code: str, detail: str) -> None:
+        state.add_event(
+            None,
+            "FORCE_STOP_REJECTED",
+            json.dumps({"code": code, "detail": detail[:300]}, sort_keys=True),
+        )
 
     def status(self) -> dict[str, object]:
         try:
