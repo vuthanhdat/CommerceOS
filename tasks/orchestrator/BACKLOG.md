@@ -14,6 +14,8 @@ product/runtime work.
 
 Recently completed:
 
+- `TASK-0180` — Add immediate Force Stop with resumable runtime recovery (`Completed`).
+
 - `TASK-0179` — Make worktree creation resilient to transient origin fetch failures (`Completed`).
 
 - `TASK-0178` — Expose planning candidates and contain the dashboard DAG (`Completed`).
@@ -37,9 +39,7 @@ Recently completed:
 
 ## Ready frontier
 
-- `TASK-0180` — Add immediate Force Stop with resumable runtime recovery (`Ready`).
-
-
+No Orchestrator task is currently Ready.
 
 ## Strict workflow boundary program
 

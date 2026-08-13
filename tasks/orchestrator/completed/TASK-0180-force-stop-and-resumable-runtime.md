@@ -1,7 +1,7 @@
 # TASK-0180 - Add immediate Force Stop with resumable runtime recovery
 
-Status: Backlog
-Specification maturity: Ready
+Status: Completed
+Specification maturity: Completed
 Owner: Builder - Engineering / Harness
 Recommended implementation model: gpt-5.6-terra, medium reasoning, standard service tier
 Created: 2026-08-13
@@ -110,3 +110,39 @@ never place prompts, secrets, or full command lines in the event detail.
 - Dashboard/CLI contract tests for Force Stop and Resume.
 - Existing Orchestrator suite and full repository harness.
 - LocalStack/infrastructure verification: No; local process-control harness only.
+
+## Completion summary
+
+### What changed
+
+- Added repository/catalog-scoped worker registration and exact process identity validation.
+- Added immediate process-tree termination through CLI and dashboard controls while preserving task
+  checkpoints and worktrees for Resume.
+- Added a force-stop transition fence, rollback on termination failure, and bounded accepted/rejected
+  runtime events.
+- Kept graceful Stop, Force Stop, Cleanup, and Resume as separate operator actions.
+
+### Verification
+
+- Runtime-control tests: PASS (9 tests).
+- Orchestrator suite: PASS (158 tests).
+- Full repository harness: PASS after the implementation changes.
+
+### Acceptance criteria status
+
+- AC01-AC05: satisfied.
+
+### Architecture/security/runtime notes
+
+- No product, tenant, LocalStack, or cloud boundary changed.
+- Process termination fails closed unless the registered PID exactly matches this repository,
+  catalog, state file, command, and unpredictable worker token.
+
+### Follow-up tasks
+
+- None identified.
+
+### Harness improvement
+
+- Regression tests now cover identity mismatch, transition races, termination rollback, checkpoint
+  preservation, and auditable fail-closed rejections.
