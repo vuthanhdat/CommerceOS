@@ -109,6 +109,21 @@ Evolve toward workflows such as:
 
 Do not create ceremonial deployment workflows for AWS preview/dev/staging/prod because those environments are not current targets.
 
+### Current foundation workflows
+
+- `ci.yml` runs the full repository harness on pull requests and `main` pushes.
+- `harness.yml` provides the same full harness gate for the protected `main`
+  branch after installing the required .NET, Node.js, and Python toolchains.
+- `localstack-integration.yml` runs only for foundation launcher, CDK, and
+  workflow changes (or manually). It pulls the pinned `localstack:4.8.1` image,
+  uses task instance `0077`, executes the repository-owned lifecycle and
+  inspection commands, collects container diagnostics on failure, and always
+  removes the task-owned container.
+
+All three use synthetic credentials only. The LocalStack job verifies the
+current CloudFormation/CDK and CloudWatch Logs foundation against LocalStack
+Community; it does not claim real-AWS equivalence.
+
 ## 7. Verification after infrastructure deployment
 
 A successful LocalStack deploy is insufficient by itself. Verify affected capabilities, for example:

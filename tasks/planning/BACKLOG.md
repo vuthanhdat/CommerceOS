@@ -6,16 +6,16 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 
 | Task | Feature | Priority | Requirement IDs | Depends on | Readiness |
 |---|---|---|---|---|---|
-| TASK-0100 Verify current LocalStack foundation baseline | F01 | P0 | REQ-FND-001..004 | N/A | **Ready** |
-| TASK-0101 Close deterministic lifecycle/bootstrap/reset gaps | F01 | P0 | REQ-FND-001..003 | TASK-0100 | Blocked |
-| TASK-0102 Add selected LocalStack CI/infrastructure verification | F01 | P0 | REQ-FND-004, REQ-HARD-003 | TASK-0100 | Blocked |
-| TASK-0103 Expand architecture/configuration guardrails | F01 | P0 | REQ-HARD-002, REQ-FND-003 | TASK-0100 | Blocked |
-| TASK-0110 Establish Tenancy module and owned persistence | F02 | P0 | REQ-SEC-001, REQ-TEN-001..005 | TASK-0101, TASK-0103 | Blocked |
+| TASK-0100 Verify current LocalStack foundation baseline (Done) | F01 | P0 | REQ-FND-001..004 | N/A | Completed 2026-08-13 |
+| TASK-0101 Close deterministic lifecycle/bootstrap/reset gaps (Done) | F01 | P0 | REQ-FND-001..003 | TASK-0100 | Completed 2026-08-13 |
+| TASK-0102 Add selected LocalStack CI/infrastructure verification (Done) | F01 | P0 | REQ-FND-004, REQ-HARD-003 | TASK-0100 | Completed 2026-08-13 |
+| TASK-0103 Expand architecture/configuration guardrails (Done) | F01 | P0 | REQ-HARD-002, REQ-FND-003 | TASK-0100 | Completed 2026-08-13 |
+| TASK-0110 Establish Tenancy module and owned persistence | F02 | P0 | REQ-SEC-001, REQ-TEN-001..005 | TASK-0101, TASK-0103 | **Ready** |
 | TASK-0111 Implement trusted Tenant discovery/read/mutation authority | F02 | P0 | REQ-SEC-001..002, REQ-TEN-002 | TASK-0110 | Blocked |
 | TASK-0112 Implement Membership, roles, limits and Invitation lifecycle | F02 | P0 | REQ-TEN-003..004, REQ-SUB-003 | TASK-0110, TASK-0121 | Blocked |
 | TASK-0113 Implement merchant onboarding and Trial bootstrap recovery | F02 | P0 | REQ-TEN-001, REQ-SUB-001 | TASK-0110, TASK-0120 | Blocked |
 | TASK-0114 Implement platform Tenant suspend/reactivate/support path | F02 | P1 | REQ-SEC-003, REQ-TEN-005, REQ-AUD-001 | TASK-0111 | Blocked |
-| TASK-0120 Bootstrap immutable Trial and paid PlanVersion catalog | F03 | P0 | REQ-SUB-001..002 | TASK-0101 | Blocked |
+| TASK-0120 Bootstrap immutable Trial and paid PlanVersion catalog | F03 | P0 | REQ-SUB-001..002 | TASK-0101 | **Ready** |
 | TASK-0121 Implement current EntitlementSet evaluation authority | F03 | P0 | REQ-SUB-002..004 | TASK-0120 | Blocked |
 | TASK-0122 Enforce Membership/Warehouse hard limits at owner boundaries | F03 | P0 | REQ-SUB-003 | TASK-0121, TASK-0110, TASK-0161 | Blocked |
 | TASK-0123 Build SaaS billing provider seam and PlatformCharge evidence | F03 | P1 | REQ-SUB-008 | TASK-0120 | Blocked |
@@ -77,6 +77,6 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 
 ## Ready frontier
 
-- `TASK-0100` is the only current implementation/verification task marked Ready.
+- F01 is complete. `TASK-0110` (Tenancy) and `TASK-0120` (Subscription catalog) are the current safe implementation frontier.
 - `TASK-0150`, `TASK-0190`, and `TASK-0210` are explicit decision/refinement tasks and are not implementation-ready.
 - All other tasks are blocked by concrete dependencies, not by arbitrary phase gating.

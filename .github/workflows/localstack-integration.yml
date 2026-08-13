@@ -1,0 +1,85 @@
+name: Foundation LocalStack Integration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/localstack-integration.yml'
+      - 'tools/commerceos.py'
+      - 'infra/**'
+      - 'tests/test_commerceos_launcher.py'
+      - 'tests/CommerceOS.Cdk.Tests/**'
+      - 'cdk.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Directory.Packages.props'
+      - 'global.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/localstack-integration.yml'
+      - 'tools/commerceos.py'
+      - 'infra/**'
+      - 'tests/test_commerceos_launcher.py'
+      - 'tests/CommerceOS.Cdk.Tests/**'
+      - 'cdk.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Directory.Packages.props'
+      - 'global.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation-localstack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMMERCEOS_INSTANCE: '0077'
+      COMMERCEOS_PROFILE: localstack-test
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install LocalStack-aware CDK tooling
+        run: npm install --global aws-cdk@2.1135.1 aws-cdk-local@3.0.4
+
+      - name: Verify LocalStack prerequisites
+        run: |
+          docker version
+          aws --version
+          docker pull localstack/localstack:4.8.1
+          python3 tools/commerceos.py config --instance "$COMMERCEOS_INSTANCE"
+
+      - name: Bootstrap, deploy, and smoke the isolated foundation
+        run: python3 tools/commerceos.py lifecycle --instance "$COMMERCEOS_INSTANCE" --timeout 90
+
+      - name: Inspect LocalStack evidence
+        run: python3 tools/commerceos.py inspect --instance "$COMMERCEOS_INSTANCE"
+
+      - name: Collect LocalStack diagnostics on failure
+        if: failure()
+        run: |
+          docker logs "commerceos-localstack-test-${COMMERCEOS_INSTANCE}-localstack" || true
+          docker ps -a || true
+
+      - name: Remove the isolated LocalStack container
+        if: always()
+        run: python3 tools/commerceos.py destroy --instance "$COMMERCEOS_INSTANCE"

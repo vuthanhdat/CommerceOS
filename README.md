@@ -205,8 +205,8 @@ reset/stop/remove state as required
 - [Product-data ingestion & crawling](docs/05-product-data-ingestion.md)
 - [Mock payment provider](docs/06-mock-payment-provider.md)
 - [Delivery roadmap](docs/07-delivery-roadmap.md)
-- [Task catalog guide](tasks/README.md)
-- [CommerceOS implementation backlog](tasks/commerceos/BACKLOG.md)
+- [Task catalog guide](tasks/planning/README.md)
+- [CommerceOS implementation backlog](tasks/planning/BACKLOG.md)
 
 ## Important scope boundaries
 

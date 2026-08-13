@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using CommerceOS.Platform.Application.Readiness;
 using CommerceOS.Platform.Domain;
 using NetArchTest.Rules;
 
@@ -12,6 +13,18 @@ public sealed class DependencyRulesTests
         "Microsoft.AspNetCore",
         "Microsoft.Extensions",
         "System.Net.Http"
+    ];
+
+    private static readonly string[] ForbiddenApplicationDependencies =
+    [
+        "Amazon",
+        "LocalStack",
+        "Microsoft.AspNetCore",
+        "Microsoft.Extensions.Configuration",
+        "Microsoft.Extensions.Options",
+        "DynamoDB",
+        "EntityFramework",
+        "Dapper"
     ];
 
     [Fact]
@@ -49,6 +62,18 @@ public sealed class DependencyRulesTests
 
             Assert.True(references.Length == 0, $"Domain project {project} has forbidden references: {string.Join(", ", references)}");
         }
+    }
+
+    [Fact]
+    public void ApplicationTypesDoNotDependOnInfrastructureOrEndpointConfigurationNamespaces()
+    {
+        var result = Types
+            .InAssembly(typeof(IPlatformReadiness).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ForbiddenApplicationDependencies)
+            .GetResult();
+
+        Assert.True(result.IsSuccessful, FormatFailures(result));
     }
 
     [Fact]
@@ -112,6 +137,29 @@ public sealed class DependencyRulesTests
 
         Assert.Equal(3, violations.Count);
         Assert.All(violations, violation => Assert.Contains("may reference only its own Domain or an approved producer-owned Contracts project", violation));
+    }
+
+    [Fact]
+    public void ApplicationReferencePolicyRejectsInfrastructureAndEndpointConfigurationPackages()
+    {
+        var root = FindRepositoryRoot();
+        var project = Path.Combine(root, "src", "Modules", "Consumer", "CommerceOS.Consumer.Application.csproj");
+        var document = XDocument.Parse(
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <ProjectReference Include="../CommerceOS.Consumer.Domain/CommerceOS.Consumer.Domain.csproj" />
+                <PackageReference Include="AWSSDK.DynamoDBv2" />
+                <PackageReference Include="LocalStack.Client" />
+                <PackageReference Include="Microsoft.Extensions.Configuration" />
+              </ItemGroup>
+            </Project>
+            """);
+
+        var violations = ValidateApplicationProject(root, project, document);
+
+        Assert.Equal(3, violations.Count);
+        Assert.All(violations, violation => Assert.Contains("must not reference infrastructure or endpoint configuration package", violation));
     }
 
     [Fact]
@@ -227,6 +275,15 @@ public sealed class DependencyRulesTests
             }
         }
 
+        foreach (var package in PackageReferences(document))
+        {
+            if (IsForbiddenApplicationPackage(package))
+            {
+                violations.Add(
+                    $"Application project {project} must not reference infrastructure or endpoint configuration package {package}.");
+            }
+        }
+
         return violations;
     }
 
@@ -262,6 +319,13 @@ public sealed class DependencyRulesTests
         .Where(value => !string.IsNullOrWhiteSpace(value))
         .ToArray();
 
+    private static string[] PackageReferences(XDocument document) => document
+        .Descendants()
+        .Where(node => node.Name.LocalName == "PackageReference")
+        .Select(node => node.Attribute("Include")?.Value ?? string.Empty)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+
     private static string[] FindContractsProjects(string root) => Directory.GetFiles(
         Path.Combine(root, "src", "Modules"),
         "*.Contracts.csproj",
@@ -290,6 +354,16 @@ public sealed class DependencyRulesTests
         || package.Contains("EntityFramework", StringComparison.OrdinalIgnoreCase)
         || package.Contains("Dapper", StringComparison.OrdinalIgnoreCase)
         || package.Contains("Http", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsForbiddenApplicationPackage(string package) =>
+        package.Contains("Amazon", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("LocalStack", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("AspNetCore", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("Dynamo", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("EntityFramework", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("Dapper", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("Microsoft.Extensions.Configuration", StringComparison.OrdinalIgnoreCase)
+        || package.Contains("Microsoft.Extensions.Options", StringComparison.OrdinalIgnoreCase);
 
     private static string FormatFailures(TestResult result) => result.FailingTypeNames is { Count: > 0 }
         ? $"Forbidden dependencies found in: {string.Join(", ", result.FailingTypeNames)}"

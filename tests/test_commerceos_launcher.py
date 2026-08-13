@@ -9,6 +9,7 @@ from tools.commerceos import (
     config_from_args,
     cdk_command,
     ports,
+    start_localstack,
     stop_localstack,
 )
 
@@ -44,6 +45,20 @@ class CommerceOsLauncherTests(unittest.TestCase):
 
         self.assertEqual(0, result)
         run.assert_called_once()
+
+    @patch("tools.commerceos.localstack_ready", return_value=False)
+    @patch("tools.commerceos.require_docker", return_value="docker")
+    @patch("tools.commerceos.subprocess.run")
+    def test_start_reports_unavailable_docker_daemon_before_checking_the_image(
+        self, run, _docker, _ready
+    ):
+        run.return_value.returncode = 1
+
+        result = start_localstack(LocalStackConfig(94), timeout=1)
+
+        self.assertEqual(1, result)
+        self.assertEqual(["docker", "info"], run.call_args.args[0])
+        self.assertEqual(1, run.call_count)
 
     def test_config_from_args_preserves_profile(self):
         config = config_from_args(Namespace(instance=94, profile="localstack-dev"))
