@@ -20,7 +20,7 @@ Không tự ý thay đổi source code, database schema, migration hoặc cấu 
 Chuyển các requirement rời rạc hiện tại thành cấu trúc:
 
 ```text
-docs-dev/name_folder
+tasks
 └── planning/
     ├── README.md
     ├── PRODUCT_ROADMAP.md
