@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.DynamoDBv2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Application/CommerceOS.SubscriptionBilling.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Contracts/CommerceOS.SubscriptionBilling.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Domain/CommerceOS.SubscriptionBilling.Domain.csproj" />
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Infrastructure/CommerceOS.SubscriptionBilling.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../src/Modules/SubscriptionBilling/catalog/initial-catalog.v1.json" Link="initial-catalog.v1.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

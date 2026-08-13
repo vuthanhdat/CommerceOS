@@ -25,7 +25,8 @@ Domain/Application/Infrastructure boundary, task-prefixed DynamoDB table,
 tenant-scoped persistence contracts, strong subject discovery, and separate
 trusted read/mutation authority contexts. Authority resolution revalidates current
 Tenant and Membership state on every request and fails closed. TASK-0114 is now
-Ready; TASK-0112 and TASK-0113 remain blocked by their Subscription dependencies.
+Ready; TASK-0113 is now Ready after the Subscription catalog bootstrap. TASK-0112
+remains blocked by entitlement authority.
 
 ## Definition of Done
 Cross-Tenant access is non-disclosing; current authority/last-owner/limits are concurrency safe; successful onboarding proves Tenant + Owner + Trial; suspension is non-destructive and audited.

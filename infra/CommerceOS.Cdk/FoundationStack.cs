@@ -44,5 +44,18 @@ public sealed class FoundationStack : Stack
                 Encryption = TableEncryption.AWS_MANAGED,
                 RemovalPolicy = profile.RemovalPolicy
             });
+
+        _ = new Table(
+            this,
+            "SubscriptionBillingTable",
+            new TableProps
+            {
+                TableName = $"{profile.ResourcePrefix}-subscription-billing",
+                PartitionKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "PK", Type = AttributeType.STRING },
+                SortKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "SK", Type = AttributeType.STRING },
+                BillingMode = BillingMode.PAY_PER_REQUEST,
+                Encryption = TableEncryption.AWS_MANAGED,
+                RemovalPolicy = profile.RemovalPolicy
+            });
     }
 }

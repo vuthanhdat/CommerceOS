@@ -6,16 +6,24 @@
     <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Domain/CommerceOS.Tenancy.Domain.csproj" />
     <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Application/CommerceOS.Tenancy.Application.csproj" />
     <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Infrastructure/CommerceOS.Tenancy.Infrastructure.csproj" />
+    <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Domain/CommerceOS.SubscriptionBilling.Domain.csproj" />
+    <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Contracts/CommerceOS.SubscriptionBilling.Contracts.csproj" />
+    <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Application/CommerceOS.SubscriptionBilling.Application.csproj" />
+    <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Infrastructure/CommerceOS.SubscriptionBilling.Infrastructure.csproj" />
     <Project Path="src/CommerceOS.Api/CommerceOS.Api.csproj" />
   </Folder>
   <Folder Name="/infra/">
     <Project Path="infra/CommerceOS.Cdk/CommerceOS.Cdk.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/CommerceOS.SubscriptionBilling.Bootstrap/CommerceOS.SubscriptionBilling.Bootstrap.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CommerceOS.Platform.UnitTests/CommerceOS.Platform.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.ArchitectureTests/CommerceOS.ArchitectureTests.csproj" />
     <Project Path="tests/CommerceOS.Cdk.Tests/CommerceOS.Cdk.Tests.csproj" />
     <Project Path="tests/CommerceOS.Tenancy.UnitTests/CommerceOS.Tenancy.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.SubscriptionBilling.UnitTests/CommerceOS.SubscriptionBilling.UnitTests.csproj" />
   </Folder>
 </Solution>
 

@@ -163,12 +163,13 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
-    public void ZeroContractsSkeletonRemainsValid()
+    public void SubscriptionBillingCatalogContractIsRegistered()
     {
         var root = FindRepositoryRoot();
         var contractsProjects = FindContractsProjects(root);
 
-        Assert.Empty(contractsProjects);
+        var contract = Assert.Single(contractsProjects);
+        Assert.EndsWith("CommerceOS.SubscriptionBilling.Contracts.csproj", contract, StringComparison.Ordinal);
     }
 
     [Fact]

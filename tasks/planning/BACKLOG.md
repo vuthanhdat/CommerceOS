@@ -13,12 +13,12 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0110 Establish Tenancy module and owned persistence (Done) | F02 | P0 | REQ-SEC-001, REQ-TEN-001..005 | TASK-0101, TASK-0103 | Completed 2026-08-13 |
 | TASK-0111 Implement trusted Tenant discovery/read/mutation authority (Done) | F02 | P0 | REQ-SEC-001..002, REQ-TEN-002 | TASK-0110 | Completed 2026-08-13 |
 | TASK-0112 Implement Membership, roles, limits and Invitation lifecycle | F02 | P0 | REQ-TEN-003..004, REQ-SUB-003 | TASK-0110, TASK-0121 | Blocked |
-| TASK-0113 Implement merchant onboarding and Trial bootstrap recovery | F02 | P0 | REQ-TEN-001, REQ-SUB-001 | TASK-0110, TASK-0120 | Blocked |
+| TASK-0113 Implement merchant onboarding and Trial bootstrap recovery | F02 | P0 | REQ-TEN-001, REQ-SUB-001 | TASK-0110, TASK-0120 | **Ready** |
 | TASK-0114 Implement platform Tenant suspend/reactivate/support path | F02 | P1 | REQ-SEC-003, REQ-TEN-005, REQ-AUD-001 | TASK-0111 | **Ready** |
-| TASK-0120 Bootstrap immutable Trial and paid PlanVersion catalog | F03 | P0 | REQ-SUB-001..002 | TASK-0101 | **Ready** |
-| TASK-0121 Implement current EntitlementSet evaluation authority | F03 | P0 | REQ-SUB-002..004 | TASK-0120 | Blocked |
+| TASK-0120 Bootstrap immutable Trial and paid PlanVersion catalog (Done) | F03 | P0 | REQ-SUB-001..002 | TASK-0101 | Completed 2026-08-13 |
+| TASK-0121 Implement current EntitlementSet evaluation authority | F03 | P0 | REQ-SUB-002..004 | TASK-0120 | **Ready** |
 | TASK-0122 Enforce Membership/Warehouse hard limits at owner boundaries | F03 | P0 | REQ-SUB-003 | TASK-0121, TASK-0110, TASK-0161 | Blocked |
-| TASK-0123 Build SaaS billing provider seam and PlatformCharge evidence | F03 | P1 | REQ-SUB-008 | TASK-0120 | Blocked |
+| TASK-0123 Build SaaS billing provider seam and PlatformCharge evidence | F03 | P1 | REQ-SUB-008 | TASK-0120 | **Ready** |
 | TASK-0124 Implement paid activation, upgrade, downgrade, renewal/cancel/grace | F03 | P1 | REQ-SUB-005..008 | TASK-0121, TASK-0123 | Blocked |
 | TASK-0125 Implement order-volume UsageMeter warning and support queries | F03 | P2 | REQ-SUB-004 | TASK-0121, TASK-0160 | Blocked |
 | TASK-0130 Establish Catalog module and Tenant-owned persistence | F04 | P0 | REQ-CAT-001..006 | TASK-0111, TASK-0121 | Blocked |
@@ -77,6 +77,6 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 
 ## Ready frontier
 
-- F01 and TASK-0110 are complete. `TASK-0111` (trusted Tenant authority) and `TASK-0120` (Subscription catalog) are the current safe implementation frontier.
+- F01, TASK-0110, TASK-0111, and TASK-0120 are complete. `TASK-0113` (onboarding), `TASK-0114` (Tenant platform lifecycle), `TASK-0121` (entitlement authority), and `TASK-0123` (SaaS provider seam) are the current safe implementation frontier.
 - `TASK-0150`, `TASK-0190`, and `TASK-0210` are explicit decision/refinement tasks and are not implementation-ready.
 - All other tasks are blocked by concrete dependencies, not by arbitrary phase gating.

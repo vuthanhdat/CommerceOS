@@ -81,4 +81,25 @@ public sealed class FoundationStackTests
                 ])
             });
     }
+
+    [Fact]
+    public void FoundationStackCreatesAnIsolatedSubscriptionBillingTable()
+    {
+        var app = new App();
+        var stack = new FoundationStack(app, "test-foundation", EnvironmentProfile.Create("localstack-test", "0042"));
+        var template = Template.FromStack(stack);
+
+        template.HasResourceProperties(
+            "AWS::DynamoDB::Table",
+            new Dictionary<string, object>
+            {
+                ["TableName"] = "commerceos-test-0042-subscription-billing",
+                ["BillingMode"] = "PAY_PER_REQUEST",
+                ["KeySchema"] = Match.ArrayWith(
+                [
+                    new Dictionary<string, object> { ["AttributeName"] = "PK", ["KeyType"] = "HASH" },
+                    new Dictionary<string, object> { ["AttributeName"] = "SK", ["KeyType"] = "RANGE" }
+                ])
+            });
+    }
 }

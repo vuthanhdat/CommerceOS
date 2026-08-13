@@ -65,6 +65,10 @@ class LocalStackConfig:
         return f"{self.resource_prefix}-localstack"
 
     @property
+    def subscription_billing_table_name(self) -> str:
+        return f"{self.resource_prefix}-subscription-billing"
+
+    @property
     def cdk_environment(self) -> str:
         return self.profile
 
@@ -78,6 +82,7 @@ class LocalStackConfig:
             "synthetic_access_key": "test",
             "synthetic_secret_key": "test",
             "resource_prefix": self.resource_prefix,
+            "subscription_billing_table": self.subscription_billing_table_name,
             "container_name": self.container_name,
             "reset_policy": "clean-container",
             "localstack_image": os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", DEFAULT_LOCALSTACK_IMAGE),
@@ -105,6 +110,7 @@ def lifecycle_environment(config: LocalStackConfig) -> dict[str, str]:
             "COMMERCEOS_INSTANCE": f"{config.instance:04d}",
             "COMMERCEOS_RESOURCE_PREFIX": config.resource_prefix,
             "COMMERCEOS_LOCALSTACK_ENDPOINT": config.endpoint,
+            "COMMERCEOS_SUBSCRIPTION_BILLING_TABLE": config.subscription_billing_table_name,
         }
     )
     return environment
@@ -112,6 +118,18 @@ def lifecycle_environment(config: LocalStackConfig) -> dict[str, str]:
 
 def run(command: list[str], config: LocalStackConfig | None = None) -> int:
     return subprocess.call(command, env=lifecycle_environment(config) if config else None)
+
+
+def bootstrap_subscription_catalog(config: LocalStackConfig) -> int:
+    return run(
+        [
+            "dotnet",
+            "run",
+            "--project",
+            "tools/CommerceOS.SubscriptionBilling.Bootstrap/CommerceOS.SubscriptionBilling.Bootstrap.csproj",
+        ],
+        config,
+    )
 
 
 def require_docker() -> str:
@@ -399,12 +417,16 @@ def main() -> int:
             result = cdk_command(config, "bootstrap")
         if result == 0:
             result = cdk_command(config, "deploy")
+        if result == 0:
+            result = bootstrap_subscription_catalog(config)
         return result
     result = start_localstack(config, args.timeout)
     for action in ("synth", "bootstrap", "deploy") if result == 0 else ():
         result = cdk_command(config, action)
         if result != 0:
             break
+    if result == 0:
+        result = bootstrap_subscription_catalog(config)
     if result == 0:
         result = smoke_localstack(config)
     return result

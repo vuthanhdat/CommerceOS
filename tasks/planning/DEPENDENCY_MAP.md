@@ -49,7 +49,7 @@ flowchart TD
   T0110 --> T0112["TASK-0112 Membership + invitation"]
   T0111 --> T0113["TASK-0113 Onboarding + Trial recovery"]
   T0120["TASK-0120 Subscription catalog + Trial terms"] --> T0113
-  T0113 --> T0121["TASK-0121 Entitlement authority"]
+  T0120 --> T0121["TASK-0121 Entitlement authority"]
   T0121 --> T0122["TASK-0122 Resource limits"]
   T0120 --> T0123["TASK-0123 SaaS billing provider + PlatformCharge"]
   T0123 --> T0124["TASK-0124 Paid lifecycle"]

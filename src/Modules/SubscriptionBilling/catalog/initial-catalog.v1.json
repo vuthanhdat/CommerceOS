@@ -1,0 +1,47 @@
+{
+  "version": "2026-08-13-v1",
+  "trial": {
+    "version": "trial-v1",
+    "durationDays": 30,
+    "coreCommerceCapabilities": true,
+    "maxActiveMemberships": 3,
+    "maxWarehouses": 1,
+    "scheduledProductIngestion": true,
+    "orderVolumeWarningThreshold": 500
+  },
+  "paidPlans": [
+    {
+      "plan": "Starter",
+      "version": "starter-v1",
+      "monthlyPriceVnd": 199000,
+      "coreCommerceCapabilities": true,
+      "maxActiveMemberships": 3,
+      "maxWarehouses": 1,
+      "scheduledProductIngestion": false,
+      "orderVolumeWarningThreshold": 500,
+      "isAvailableForNewPurchase": true
+    },
+    {
+      "plan": "Growth",
+      "version": "growth-v1",
+      "monthlyPriceVnd": 499000,
+      "coreCommerceCapabilities": true,
+      "maxActiveMemberships": 10,
+      "maxWarehouses": 3,
+      "scheduledProductIngestion": true,
+      "orderVolumeWarningThreshold": 2000,
+      "isAvailableForNewPurchase": true
+    },
+    {
+      "plan": "Business",
+      "version": "business-v1",
+      "monthlyPriceVnd": 999000,
+      "coreCommerceCapabilities": true,
+      "maxActiveMemberships": 30,
+      "maxWarehouses": 10,
+      "scheduledProductIngestion": true,
+      "orderVolumeWarningThreshold": 10000,
+      "isAvailableForNewPurchase": true
+    }
+  ]
+}

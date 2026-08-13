@@ -7,6 +7,7 @@ from unittest.mock import patch
 from tools.commerceos import (
     LocalStackConfig,
     config_from_args,
+    bootstrap_subscription_catalog,
     cdk_command,
     ports,
     start_localstack,
@@ -33,8 +34,9 @@ class CommerceOsLauncherTests(unittest.TestCase):
         ):
             config = LocalStackConfig(94)
             values = json.loads(json.dumps(config.as_dict()))
-            self.assertEqual("cloudformation,logs", values["localstack_services"])
-            self.assertEqual("1", values["localstack_debug"])
+        self.assertEqual("cloudformation,logs", values["localstack_services"])
+        self.assertEqual("1", values["localstack_debug"])
+        self.assertEqual("commerceos-localstack-test-0094-subscription-billing", values["subscription_billing_table"])
 
     @patch("tools.commerceos.require_docker", return_value="docker")
     @patch("tools.commerceos.subprocess.run")
@@ -85,6 +87,17 @@ class CommerceOsLauncherTests(unittest.TestCase):
         self.assertIn("environment=localstack-test", command)
         self.assertEqual(LocalStackConfig(94), config)
 
+    @patch("tools.commerceos.run", return_value=0)
+    def test_catalog_bootstrap_uses_task_scoped_localstack_configuration(self, run):
+        config = LocalStackConfig(94)
+
+        self.assertEqual(0, bootstrap_subscription_catalog(config))
+
+        command, configured = run.call_args.args
+        self.assertEqual(["dotnet", "run", "--project"], command[:3])
+        self.assertIn("CommerceOS.SubscriptionBilling.Bootstrap.csproj", command[3])
+        self.assertEqual(config, configured)
+
     def test_lifecycle_environment_configures_s3_endpoint_for_cdklocal(self):
         from tools.commerceos import lifecycle_environment
 
@@ -92,6 +105,7 @@ class CommerceOsLauncherTests(unittest.TestCase):
 
         self.assertEqual("http://127.0.0.1:14660", environment["AWS_ENDPOINT_URL"])
         self.assertEqual(environment["AWS_ENDPOINT_URL"], environment["AWS_ENDPOINT_URL_S3"])
+        self.assertEqual("commerceos-localstack-test-0094-subscription-billing", environment["COMMERCEOS_SUBSCRIPTION_BILLING_TABLE"])
 
     @patch("tools.commerceos.shutil.which", return_value="aws")
     @patch("tools.commerceos.subprocess.run")
