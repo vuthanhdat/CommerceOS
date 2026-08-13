@@ -42,16 +42,6 @@ REQUIRED_FILES = [
     "docs/development/11-ci-cd-pipeline.md",
     "docs/development/12-infrastructure-as-code.md",
     "docs/development/13-free-tier-and-credit-guardrails.md",
-    "docs/development/14-codex-multi-agent-and-worktrees.md",
-    "docs/development/15-planning-factory-and-task-maturity.md",
-    "docs/development/16-task-orchestrator.md",
-    "docs/development/17-review-scope-and-finding-ownership.md",
-    "docs/agents/domain-architect.md",
-    "docs/agents/technical-architect.md",
-    "docs/agents/backlog-planner.md",
-    "docs/agents/builder.md",
-    "docs/agents/reviewer.md",
-    "docs/agents/verification.md",
     "docs/adr/ADR-000-template.md",
     "docs/adr/ADR-001-aws-cdk-infrastructure-as-code.md",
     "tasks/TASK-TEMPLATE.md",
@@ -66,7 +56,6 @@ REQUIRED_FILES = [
     "infra/CommerceOS.Cdk/CommerceOS.Cdk.csproj",
     "tests/CommerceOS.ArchitectureTests/CommerceOS.ArchitectureTests.csproj",
     "tools/commerceos.py",
-    "tools/orchestrator.py",
 ]
 
 TASK_REQUIRED_HEADINGS = [
@@ -226,129 +215,7 @@ def check_development_strategy(errors: list[str]) -> None:
                 errors,
             )
 
-    codex_path = ROOT / "docs" / "development" / "14-codex-multi-agent-and-worktrees.md"
-    if codex_path.exists():
-        text = codex_path.read_text(encoding="utf-8")
-        lower = text.lower()
-        if "terra" not in lower:
-            fail("Codex operating model must preserve the Terra-first policy", errors)
-        if "luna-first" in lower or "builder/routine implementation roles use luna" in lower:
-            fail("Codex operating model contains stale Luna-first policy", errors)
-        if "one writable task = one branch = one worktree" not in lower:
-            fail("Codex operating model must preserve one-task/one-branch/one-worktree isolation", errors)
-        if "maximum **2 active builder-style coding tasks in parallel**" not in lower:
-            fail("Codex operating model must preserve the default two-Builder concurrency limit", errors)
-
-    coding_policy_paths = (
-        ROOT / "AGENTS.md",
-        ROOT / "docs/agents/domain-architect.md",
-        ROOT / "docs/agents/technical-architect.md",
-        ROOT / "docs/agents/backlog-planner.md",
-        ROOT / "docs/agents/builder.md",
-        ROOT / "docs/agents/reviewer.md",
-        ROOT / "docs/agents/verification.md",
-        ROOT / "docs/development/14-codex-multi-agent-and-worktrees.md",
-        ROOT / "docs/development/16-task-orchestrator.md",
-        ROOT / "tools/commerceos_orchestrator/agents.py",
-        ROOT / "tools/commerceos_orchestrator/settings.py",
-        ROOT / "tools/orchestrator.py",
-    )
-    for policy_path in coding_policy_paths:
-        if not policy_path.is_file():
-            fail(f"Codex model-policy file is missing: {policy_path.relative_to(ROOT)}", errors)
-            continue
-        policy_text = policy_path.read_text(encoding="utf-8").lower()
-        if "gpt-5.6-luna" in policy_text or "luna-first" in policy_text:
-            fail(
-                f"Active Codex policy must not select Luna: {policy_path.relative_to(ROOT)}",
-                errors,
-            )
-
-    required_profile_bindings = {
-        ROOT / "AGENTS.md": ("gpt-5.6-sol", "gpt-5.6-terra"),
-        ROOT / "docs/agents/domain-architect.md": ("gpt-5.6-sol",),
-        ROOT / "docs/agents/technical-architect.md": ("gpt-5.6-sol",),
-        ROOT / "docs/agents/backlog-planner.md": ("gpt-5.6-sol",),
-        ROOT / "docs/agents/builder.md": ("gpt-5.6-terra",),
-        ROOT / "docs/agents/reviewer.md": ("gpt-5.6-terra",),
-        ROOT / "docs/agents/verification.md": ("gpt-5.6-terra",),
-        ROOT / "docs/development/14-codex-multi-agent-and-worktrees.md": (
-            "gpt-5.6-sol", "gpt-5.6-terra",
-        ),
-        ROOT / "docs/development/16-task-orchestrator.md": (
-            "gpt-5.6-sol", "gpt-5.6-terra",
-        ),
-        ROOT / "tools/commerceos_orchestrator/agents.py": (
-            'codexexecutionprofile("gpt-5.6-sol")',
-            'codexexecutionprofile("gpt-5.6-terra")',
-        ),
-        ROOT / "tools/commerceos_orchestrator/settings.py": (
-            "planning_codex_profile", "coding_codex_profile",
-        ),
-    }
-    for policy_path, bindings in required_profile_bindings.items():
-        if not policy_path.is_file():
-            continue
-        normalized = policy_path.read_text(encoding="utf-8").lower().replace(" ", "")
-        for binding in bindings:
-            if binding.replace(" ", "") not in normalized:
-                fail(
-                    f"Codex model-policy binding is missing from {policy_path.relative_to(ROOT)}: {binding}",
-                    errors,
-                )
-
-    dashboard_contracts = {
-        ROOT / "tools/commerceos_orchestrator/dashboard.py": (
-            '"/api/settings"',
-            '"/api/actions/"',
-            '"X-CommerceOS-Dashboard"',
-        ),
-        ROOT / "tools/commerceos_orchestrator/dashboard_ui.py": (
-            'data-action="validate"',
-            'data-action="plan"',
-            'data-action="dry-run"',
-            'data-action="run"',
-            'data-action="start"',
-            'data-action="resume"',
-            'data-action="stop"',
-            'data-action="force-stop"',
-            'data-action="cleanup"',
-            'id="settings-page"',
-        ),
-        ROOT / "tools/commerceos_orchestrator/settings.py": (
-            "class SettingsStore",
-            "def provider_capabilities",
-            "antigravity",
-        ),
-        ROOT / "tools/commerceos_orchestrator/runtime_control.py": (
-            "class WorkerRuntimeRegistry",
-            '"taskkill.exe", "/PID", str(pid), "/T", "/F"',
-            'self._exact_option(tail, "--worker-token") == registration.token',
-        ),
-    }
-    for contract_path, snippets in dashboard_contracts.items():
-        if not contract_path.is_file():
-            fail(f"Orchestrator dashboard contract file is missing: {contract_path.relative_to(ROOT)}", errors)
-            continue
-        contract_text = contract_path.read_text(encoding="utf-8")
-        for snippet in snippets:
-            if snippet not in contract_text:
-                fail(
-                    f"Orchestrator dashboard contract is missing {snippet!r} in {contract_path.relative_to(ROOT)}",
-                    errors,
-                )
-        if contract_path.name == "dashboard_ui.py" and "innerHTML" in contract_text:
-            fail("Orchestrator dashboard must render untrusted values without innerHTML", errors)
-
-
 def check_planning_factory(errors: list[str]) -> None:
-    planning_path = ROOT / "docs" / "development" / "15-planning-factory-and-task-maturity.md"
-    if planning_path.exists():
-        text = planning_path.read_text(encoding="utf-8")
-        for required in ["Outline", "Refined", "Ready", "BLOCKED — PLANNING DECISION REQUIRED"]:
-            if required not in text:
-                fail(f"Planning factory must preserve task maturity/stop rule: {required}", errors)
-
     task_template = ROOT / "tasks" / "TASK-TEMPLATE.md"
     if task_template.exists():
         text = task_template.read_text(encoding="utf-8")
@@ -356,32 +223,6 @@ def check_planning_factory(errors: list[str]) -> None:
             fail("Task template must default new tasks to Specification maturity: Outline", errors)
         if "## Planning readiness" not in text:
             fail("Task template must include a Planning readiness section", errors)
-
-    agents_path = ROOT / "AGENTS.md"
-    if agents_path.exists():
-        text = agents_path.read_text(encoding="utf-8")
-        if "Only a `Ready` task may be assigned to a Builder" not in text:
-            fail("AGENTS.md must forbid Builder execution of non-Ready tasks", errors)
-
-
-def run_orchestrator_checks(errors: list[str]) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        "unittest",
-        "discover",
-        "-s",
-        "tests/orchestrator",
-        "-p",
-        "test_*.py",
-    ]
-    print("\n==> Run Task Orchestrator tests", flush=True)
-    result = subprocess.run(command, cwd=ROOT, check=False)
-    if result.returncode != 0:
-        fail(
-            f"Task Orchestrator checks failed ({result.returncode}): {' '.join(command)}",
-            errors,
-        )
 
 
 def run_application_checks(errors: list[str]) -> None:
@@ -432,9 +273,6 @@ def main() -> int:
         check_local_markdown_links(ROOT / relative, errors)
 
     if not errors:
-        run_orchestrator_checks(errors)
-
-    if not errors:
         run_application_checks(errors)
 
     if errors:
@@ -449,8 +287,7 @@ def main() -> int:
     print("README/AGENTS local-link checks: PASS")
     print("Phase H0 definition check: PASS")
     print("Environment/IaC/LocalStack/Codex strategy checks: PASS")
-    print("Planning factory/task-maturity/agent-role checks: PASS")
-    print("Task Orchestrator tests: PASS")
+    print("Optional task-template checks: PASS")
     print("Application build/test/architecture/CDK checks: PASS")
     return 0
 

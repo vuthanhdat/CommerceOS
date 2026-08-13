@@ -1,18 +1,12 @@
-# Task catalogs
+# CommerceOS task catalog
 
-CommerceOS keeps two physically and operationally separate task catalogs:
+`commerceos/` contains product, domain, application, infrastructure, CI, and delivery planning
+records. These files are optional context for direct human–AI work; they do not activate an
+automated Builder/Reviewer workflow.
 
-- `commerceos/` — product, domain, application, infrastructure/runtime, CI, and delivery work.
-- `orchestrator/` — the local Task Orchestrator, agent workflow, review harness, and operator UI.
+`BACKLOG.v2.yaml` and the shards under `commerceos/backlog-v2/` preserve the existing product plan.
+Detailed specifications live under `commerceos/backlog/`, active manual work may be recorded under
+`commerceos/active/`, and completed records live under `commerceos/completed/`.
 
-`BACKLOG.v2.yaml` is a shared registry so dependencies can reference completed foundation work
-across catalogs. Its shards and detailed task artifacts are physically separated. One
-Orchestrator process operates on exactly one catalog; `commerceos` is the default.
-
-```text
-python tools/orchestrator.py --catalog commerceos validate
-python tools/orchestrator.py --catalog orchestrator validate
-```
-
-Each catalog receives separate SQLite state and logs under
-`.commerceos/orchestrator/<catalog>/` unless `--state` overrides the path.
+The standalone TaskOrchestrator source and its own development history now live in the sibling
+`TaskOrchestrator` repository and are not part of the CommerceOS runtime or verification harness.

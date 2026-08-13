@@ -54,24 +54,18 @@ See:
 - [LocalStack runtime and lifecycle](docs/architecture/localstack-runtime-and-lifecycle.md)
 - [Development environment strategy](docs/development/09-development-environment.md)
 
-## Development model — Harness Engineering
+## Development model — direct human–AI collaboration
 
-Before feature implementation, CommerceOS uses a repository-centered Harness Engineering workflow:
+CommerceOS uses direct human–AI collaboration supported by repository documentation, tests, and
+mechanical verification. Separate planning, implementation, and review agents are optional and run
+only when the human explicitly requests them.
 
 ```text
-Human intent
-    ↓
-Task specification
-    ↓
-Agent implementation
-    ↓
-Mechanical verification
-    ↓
-Review
-    ↓
-Human product validation
-    ↓
-Failure -> harness improvement
+Human request ↔ AI implementation
+              ↓
+      Mechanical verification
+              ↓
+       Human validation
 ```
 
 Start here:
@@ -91,7 +85,6 @@ Start here:
 - [CI pipeline](docs/development/11-ci-cd-pipeline.md)
 - [Infrastructure as Code](docs/development/12-infrastructure-as-code.md)
 - [Historical AWS Free Tier guardrails — superseded](docs/development/13-free-tier-and-credit-guardrails.md)
-- [Codex multi-agent & worktree model](docs/development/14-codex-multi-agent-and-worktrees.md)
 - [Task template](tasks/TASK-TEMPLATE.md)
 - [ADR template](docs/adr/ADR-000-template.md)
 
@@ -214,7 +207,6 @@ reset/stop/remove state as required
 - [Delivery roadmap](docs/07-delivery-roadmap.md)
 - [Task catalog guide](tasks/README.md)
 - [CommerceOS implementation backlog](tasks/commerceos/BACKLOG.md)
-- [Task Orchestrator tooling backlog](tasks/orchestrator/BACKLOG.md)
 
 ## Important scope boundaries
 

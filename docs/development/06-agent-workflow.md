@@ -1,89 +1,42 @@
-# CommerceOS — Agent Development Workflow
+# CommerceOS — Direct AI Development Workflow
 
-## 1. Goal
+## Goal
 
-The default workflow separates **intent, implementation, verification, and review** so AI output is constrained by repository evidence rather than confidence.
+The default workflow is a direct conversation between the human and the AI. Repository evidence,
+tests, and architecture rules constrain implementation; ordinary work does not require separate
+Planner, Builder, or Reviewer agents.
 
 ```text
-Human/product intent
-        ↓
-Task specification
-        ↓
-Builder agent
-        ↓
-Mechanical verification
-        ↓
-Self-review
-        ↓
-Independent review / CI
-        ↓
-Human product validation
-        ↓
-Merge
+Human request ↔ AI
+                  ↓
+          Inspect relevant context
+                  ↓
+             Implement
+                  ↓
+       Focused + repository checks
+                  ↓
+          Human validation
 ```
 
-## 2. Builder workflow
+## Workflow
 
-### Step 1 — Resolve scope
+1. Resolve scope from the current conversation and relevant repository files.
+2. Inspect the nearest implementation, tests, domain rules, and accepted ADRs.
+3. State any assumption that materially affects behavior or architecture.
+4. Implement the smallest coherent change directly in the current workspace.
+5. Verify continuously with focused tests and finish with proportionate repository checks.
+6. Self-review tenant isolation, domain ownership, failure behavior, idempotency, accounting and
+   inventory invariants, observability, and LocalStack boundaries where applicable.
+7. Report the result, verification evidence, risks, and intentionally deferred work.
 
-Read the active task and relevant product/domain/architecture docs. Understand goal, acceptance criteria, in/out-of-scope boundaries, and invariants before editing.
+## Human decisions
 
-### Step 2 — Inspect current implementation
+Ask the human when a missing choice would materially change product meaning, architecture, security,
+cost, or external behavior. Do not invent such decisions merely to keep implementation moving.
 
-Identify owning domain, existing contracts/patterns, closest tests, relevant ADRs, and reusable fixtures/tools. Prefer extending a coherent pattern over inventing a parallel one.
+Any future return to real AWS remains a human architecture decision under ADR-012.
 
-### Step 3 — Plan the smallest vertical change
+## No silent guardrail bypass
 
-Make the acceptance criteria true with the least architecture change necessary. If a material architectural mechanism is missing, return to Technical Architect/ADR rather than deciding it silently as Builder.
-
-### Step 4 — Implement
-
-Keep business rules in Domain/Application. Keep persistence, AWS SDK usage, LocalStack endpoints/configuration, transport, and emulator-specific concerns at Infrastructure/Delivery boundaries.
-
-Do not bypass tenant, idempotency, accounting, inventory, event, or provider-ambiguity rules for expedience.
-
-### Step 5 — Verify continuously
-
-Run focused tests while developing, then the repository verification command before completion. Run task-declared LocalStack verification when infrastructure semantics are affected.
-
-### Step 6 — Self-review
-
-Review the diff against:
-
-1. acceptance criteria and scope;
-2. domain/module ownership;
-3. tenant isolation/authorization;
-4. failure/retry/idempotency/Unknown semantics;
-5. accounting/inventory invariants;
-6. observability;
-7. infrastructure capability and LocalStack configuration boundaries;
-8. bootstrap/reset/resource isolation when relevant;
-9. known LocalStack limitations and unsupported behavior;
-10. unnecessary complexity/dead code;
-11. documentation/ADR requirements.
-
-### Step 7 — Completion summary
-
-Report what changed, verification evidence, acceptance criteria, architecture/security/runtime implications, LocalStack limitations/reset evidence where applicable, and intentional follow-up work.
-
-## 3. Reviewer workflow
-
-The reviewer assumes the Builder may have made a locally reasonable but systemically wrong decision.
-
-Review product correctness, scope, invariants, distributed failure behavior, operability, security, architecture/runtime boundaries, test quality, and emulator limitations.
-
-For distributed/external operations ask what happens on timeout, duplicate/out-of-order delivery, partial completion, retry, poison message, process restart, and reconciliation.
-
-For infrastructure changes ask whether the capability is justified, LocalStack-specific details are confined to configuration/adapters, lifecycle is reproducible, and exact AWS compatibility is not overclaimed.
-
-## 4. Human role
-
-Human review should focus increasingly on product value, architecture trade-offs, learning goals, and sequencing rather than manually rediscovering structural rules the harness can enforce.
-
-Any future return to real AWS is a human architecture decision under ADR-012, not a Builder convenience choice.
-
-## 5. No silent guardrail bypass
-
-If a check blocks implementation, understand the guardrail and fix the implementation when the rule is valid. If the rule is obsolete, change it explicitly with rationale and relevant architecture/harness documentation.
-
-A green pipeline obtained by unjustifiably weakening the harness is a failed task.
+If a check blocks implementation, fix the implementation when the rule is valid. If the rule is
+obsolete, change it explicitly with rationale and update the relevant documentation or test.

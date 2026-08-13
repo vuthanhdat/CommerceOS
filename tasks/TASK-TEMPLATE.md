@@ -6,7 +6,8 @@ Owner: <human/agent>
 Created: YYYY-MM-DD
 Depends on: <TASK-XXXX, ADR-XXX, domain/architecture baseline, or N/A>
 
-> `Backlog` does not mean implementation-ready. A Builder may take this task only when `Specification maturity: Ready` and all dependencies/gates are satisfied.
+> This template is optional planning support for direct human–AI work. The human may authorize
+> implementation directly without an automated task lifecycle.
 
 ## Goal
 
@@ -32,7 +33,7 @@ Why is this capability needed? Which business/domain rules matter?
 - Material ADRs accepted? Yes/No/N/A — references:
 - Remaining planning blockers:
 
-Use `docs/development/15-planning-factory-and-task-maturity.md` before changing maturity to `Ready`.
+Resolve material product and architecture decisions with the human before implementation.
 
 ## In scope
 
@@ -122,13 +123,13 @@ Under ADR-012, a task must not require a real AWS account, AWS IAM/OIDC deployme
 
 Optional notes discovered during implementation. Do not use this section to silently expand scope or replace an unresolved planning decision.
 
-If a Builder discovers a material unresolved business/domain/architecture decision, stop with `BLOCKED — PLANNING DECISION REQUIRED` and route it to the appropriate planning role.
+If implementation discovers a material unresolved business/domain/architecture decision, explain
+the decision and ask the human instead of guessing.
 
 ## Completion summary
 
-The Builder may prepare evidence for this section, but must not move the task or edit canonical
-lifecycle indexes. The Orchestrator copies/finalizes this section only after independent review,
-integration, and post-bookkeeping verification.
+Record this section manually when the task file is used. It is not controlled by an automated
+Orchestrator lifecycle.
 
 ### What changed
 

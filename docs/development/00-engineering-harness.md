@@ -145,7 +145,8 @@ Critical invariants are mechanically enforced where possible.
 
 ### H4 — Agent-reviewable
 
-Builder and reviewer roles/checklists are separated enough that implementation confidence is independently challenged.
+The direct-working agent self-reviews against repository checks, and the human may request an
+independent review when risk or uncertainty justifies it.
 
 ### H5 — Agent-driven
 

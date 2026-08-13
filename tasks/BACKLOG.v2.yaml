@@ -1,6 +1,6 @@
 schema_version: 1
 authority: tasks/BACKLOG.v2.yaml
-catalog_model: physically_separated_shared_registry
+catalog_model: commerceos_product_catalog
 default_catalog: commerceos
 generated_by: TASK-0089
 generated_on: 2026-08-10
@@ -8,7 +8,7 @@ reconciled_on: 2026-08-11
 runtime_target: localstack
 real_aws_execution: prohibited_unless_adr_012_superseded
 
-# `cloud_verification` is retained as a legacy schema field for orchestrator compatibility.
+# `cloud_verification` is retained as planning metadata for infrastructure-sensitive work.
 # Under ADR-012 its values mean infrastructure-sensitive verification against LocalStack,
 # never authorization to deploy or validate in a real AWS account.
 task_fields:
@@ -43,14 +43,6 @@ ready_refinement_requirements:
   - no task requires AWS account, IAM/OIDC, Budget/credit, cloud authorization, or real-cloud preview/staging under ADR-012
 
 execution_metadata:
-  TASK-0090:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, git-worktrees, main-merge-lane]
-    merge_policy: verified_serial_main
-  TASK-0093:
-    lifecycle_state: Completed
-    exclusive_resources: [repo-architecture-tests]
-    merge_policy: verified_serial_main
   TASK-0094:
     lifecycle_state: Completed
     exclusive_resources: [localstack-foundation]
@@ -58,62 +50,6 @@ execution_metadata:
   TASK-0095:
     lifecycle_state: Backlog
     exclusive_resources: [ci-localstack-infrastructure]
-    merge_policy: verified_serial_main
-  TASK-0167:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, orchestrator-ui, codex-runner]
-    merge_policy: verified_serial_main
-  TASK-0168:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, canonical-backlog, orchestrator-runtime]
-    merge_policy: verified_serial_main
-  TASK-0169:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, agent-contracts, orchestrator-runtime]
-    merge_policy: verified_serial_main
-  TASK-0170:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, agent-contracts, verification-runner]
-    merge_policy: verified_serial_main
-  TASK-0171:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, agent-contracts, codex-runner]
-    merge_policy: verified_serial_main
-  TASK-0172:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, review-ledger, codex-runner]
-    merge_policy: verified_serial_main
-  TASK-0173:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, canonical-backlog, main-merge-lane]
-    merge_policy: verified_serial_main
-  TASK-0174:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime]
-    merge_policy: verified_serial_main
-  TASK-0175:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, codex-runner, model-policy]
-    merge_policy: verified_serial_main
-  TASK-0176:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime, agent-providers]
-    merge_policy: verified_serial_main
-  TASK-0177:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, orchestrator-ui, codex-runner, agent-profiles]
-    merge_policy: verified_serial_main
-  TASK-0178:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime]
-    merge_policy: verified_serial_main
-  TASK-0179:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, git-worktrees, orchestrator-runtime]
-    merge_policy: verified_serial_main
-  TASK-0180:
-    lifecycle_state: Completed
-    exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime, codex-runner]
     merge_policy: verified_serial_main
 
 lifecycle_semantics:
@@ -148,10 +84,9 @@ completed_roots:
   - [TASK-0003, tasks/commerceos/completed/TASK-0003-codebase-skeleton.md]
   - [TASK-0087, tasks/commerceos/completed/TASK-0087-domain-baseline-reconciliation.md]
   - [TASK-0088, tasks/commerceos/completed/TASK-0088-technical-architecture-baseline-reconciliation.md]
-  - [TASK-0089, tasks/orchestrator/completed/TASK-0089-backlog-readiness-and-skeleton-reconciliation.md]
   - [TASK-0091, tasks/commerceos/completed/TASK-0091-subscription-billing-domain-baseline-extension.md]
   - [TASK-0092, tasks/commerceos/completed/TASK-0092-subscription-billing-technical-architecture-reconciliation.md]
-  - [TASK-0093, tasks/orchestrator/completed/TASK-0093-architecture-test-contract-remediation.md]
+  - [TASK-0093, tasks/commerceos/completed/TASK-0093-architecture-test-contract-remediation.md]
 
 task_shards:
   - tasks/commerceos/backlog-v2/00-foundation-tenancy.yaml
@@ -159,7 +94,6 @@ task_shards:
   - tasks/commerceos/backlog-v2/02-storefront-commerce.yaml
   - tasks/commerceos/backlog-v2/03-procurement-subscription-accounting.yaml
   - tasks/commerceos/backlog-v2/04-hardening-future.yaml
-  - tasks/orchestrator/backlog-v2/00-harness.yaml
 
 ready_frontier:
   - TASK-0095
