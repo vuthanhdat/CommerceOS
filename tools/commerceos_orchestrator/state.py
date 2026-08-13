@@ -153,8 +153,8 @@ class RunStateStore:
             self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
         return ids
 
-    def force_stop(self, worker_pid: int) -> list[str]:
-        """Preserve active task checkpoints while marking their worker forcibly stopped."""
+    def begin_force_stop(self, worker_pid: int) -> list[str]:
+        """Atomically fence transitions before the registered worker is terminated."""
         now = utc_now()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -177,10 +177,23 @@ class RunStateStore:
             connection.execute("COMMIT")
         self.add_event(
             None,
-            "FORCE_STOPPED",
+            "FORCE_STOP_REQUESTED",
             json.dumps({"worker_pid": worker_pid, "preserved_tasks": ids}),
         )
         self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
+        return ids
+
+    def record_force_stopped(self, worker_pid: int, preserved_tasks: list[str]) -> None:
+        self.add_event(
+            None,
+            "FORCE_STOPPED",
+            json.dumps({"worker_pid": worker_pid, "preserved_tasks": preserved_tasks}),
+        )
+
+    def force_stop(self, worker_pid: int) -> list[str]:
+        """State-only convenience used when the worker is already known to be stopped."""
+        ids = self.begin_force_stop(worker_pid)
+        self.record_force_stopped(worker_pid, ids)
         return ids
 
     def clear_stop_and_run(self) -> None:
@@ -352,6 +365,26 @@ class RunStateStore:
         event_detail: dict[str, str | None]
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            control = connection.execute(
+                "SELECT state FROM control_state WHERE id = 1"
+            ).fetchone()[0]
+            if control == OrchestratorState.STOPPED.value:
+                connection.execute("ROLLBACK")
+                self.add_event(
+                    task_id,
+                    "TRANSITION_REJECTED",
+                    json.dumps(
+                        {
+                            "task_id": task_id,
+                            "to": execution_state.value,
+                            "actor": actor or "UNKNOWN",
+                            "contract_version": CONTRACT_VERSION,
+                            "reason": "force-stop transition fence is active",
+                        },
+                        sort_keys=True,
+                    ),
+                )
+                raise InvalidTransitionError("force-stop transition fence is active")
             existing = connection.execute(
                 "SELECT * FROM task_runs WHERE task_id = ?", (task_id,)
             ).fetchone()

@@ -15,6 +15,7 @@ from commerceos_orchestrator.runtime_control import (
     WorkerRuntimeRegistry,
 )
 from commerceos_orchestrator.state import RunStateStore
+from commerceos_orchestrator.state import InvalidTransitionError
 
 
 class RuntimeControlTests(unittest.TestCase):
@@ -74,6 +75,31 @@ class RuntimeControlTests(unittest.TestCase):
 
             terminate.assert_not_called()
             self.assertEqual(state.control_state(), OrchestratorState.RUNNING)
+
+    def test_force_stop_fence_rejects_late_stage_transition(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state = RunStateStore(root / "runtime" / "state.db")
+            state.clear_stop_and_run()
+            state.claim_task("TASK-0100", branch="agent/task", worktree=str(root / "worktree"))
+            state.update_task("TASK-0100", TaskExecutionState.INITIAL_BUILD)
+            before = state.task_run("TASK-0100")
+
+            state.begin_force_stop(4321)
+            with self.assertRaisesRegex(InvalidTransitionError, "force-stop transition fence"):
+                state.update_task(
+                    "TASK-0100",
+                    TaskExecutionState.PRE_REVIEW_VERIFICATION,
+                    actor="VERIFICATION_RUNNER",
+                )
+
+            after = state.task_run("TASK-0100")
+            self.assertEqual(after.execution_state, before.execution_state)
+            self.assertEqual(after.output_artifact_id, before.output_artifact_id)
+            rejection = next(
+                item for item in state.recent_events(10) if item["kind"] == "TRANSITION_REJECTED"
+            )
+            self.assertIn("force-stop transition fence", rejection["detail"])
 
     def test_force_stop_terminates_tree_then_preserves_registration_checkpoint(self):
         with tempfile.TemporaryDirectory() as td:
@@ -143,12 +169,25 @@ class RuntimeControlTests(unittest.TestCase):
             )
             valid = (
                 f"python {root / 'tools/orchestrator.py'} --repo {root} "
-                "--catalog commerceos --worker-token secret-token resume"
+                f"--state {state.path} --catalog commerceos "
+                "--worker-token secret-token resume"
             )
             with patch.object(registry, "_command_line", return_value=valid):
                 self.assertTrue(registry._identity_matches(registration))
             with patch.object(
                 registry, "_command_line", return_value=valid.replace("secret-token", "other")
+            ):
+                self.assertFalse(registry._identity_matches(registration))
+            with patch.object(
+                registry,
+                "_command_line",
+                return_value=valid.replace("--repo " + str(root) + " ", ""),
+            ):
+                self.assertFalse(registry._identity_matches(registration))
+            with patch.object(
+                registry,
+                "_command_line",
+                return_value=valid.replace("--catalog commerceos", "--catalog commerceos2"),
             ):
                 self.assertFalse(registry._identity_matches(registration))
 

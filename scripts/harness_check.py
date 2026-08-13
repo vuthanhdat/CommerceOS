@@ -323,7 +323,7 @@ def check_development_strategy(errors: list[str]) -> None:
         ROOT / "tools/commerceos_orchestrator/runtime_control.py": (
             "class WorkerRuntimeRegistry",
             '"taskkill.exe", "/PID", str(pid), "/T", "/F"',
-            "registration.token.lower() in normalized_command",
+            'self._exact_option(tail, "--worker-token") == registration.token',
         ),
     }
     for contract_path, snippets in dashboard_contracts.items():

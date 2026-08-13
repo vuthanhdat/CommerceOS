@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -98,6 +99,7 @@ class WorkerRuntimeRegistry:
         if not self._identity_matches(registration):
             raise RuntimeControlError("registered PID no longer identifies the expected Orchestrator worker")
 
+        preserved = state.begin_force_stop(registration.pid)
         self._terminate_tree(registration.pid)
         deadline = time.monotonic() + 5
         while self._pid_alive(registration.pid) and time.monotonic() < deadline:
@@ -105,7 +107,7 @@ class WorkerRuntimeRegistry:
         if self._pid_alive(registration.pid):
             raise RuntimeControlError("Orchestrator worker process tree did not terminate")
 
-        preserved = state.force_stop(registration.pid)
+        state.record_force_stopped(registration.pid, preserved)
         self.clear(registration.token)
         return {
             "stopped_pid": registration.pid,
@@ -162,19 +164,56 @@ class WorkerRuntimeRegistry:
             return False
 
     def _identity_matches(self, registration: WorkerRegistration) -> bool:
-        command_line = self._command_line(registration.pid).lower()
-        normalized_root = str(self.root).lower().replace("\\", "/")
-        normalized_command = command_line.replace("\\", "/")
+        try:
+            args = self._split_command_line(self._command_line(registration.pid))
+        except (ValueError, OSError):
+            return False
+        expected_script = (self.root / "tools" / "orchestrator.py").resolve()
+        script_indexes = [
+            index
+            for index, value in enumerate(args)
+            if Path(value).is_absolute() and Path(value).resolve() == expected_script
+        ]
+        if len(script_indexes) != 1 or args[-1] != registration.command:
+            return False
+        tail = args[script_indexes[0] + 1 : -1]
         return (
-            "orchestrator.py" in normalized_command
-            and registration.command in normalized_command
-            and registration.token.lower() in normalized_command
-            and (
-                f"--catalog {registration.catalog}" in normalized_command
-                or f"--catalog={registration.catalog}" in normalized_command
-            )
-            and (normalized_root in normalized_command or "--repo" not in normalized_command)
+            self._exact_option(tail, "--repo") == str(self.root)
+            and self._exact_option(tail, "--state") == str(self.state_path)
+            and self._exact_option(tail, "--catalog") == registration.catalog
+            and self._exact_option(tail, "--worker-token") == registration.token
         )
+
+    @staticmethod
+    def _exact_option(args: list[str], name: str) -> str | None:
+        values: list[str] = []
+        for index, value in enumerate(args):
+            if value == name and index + 1 < len(args):
+                values.append(args[index + 1])
+            elif value.startswith(name + "="):
+                values.append(value.split("=", 1)[1])
+        return values[0] if len(values) == 1 else None
+
+    @staticmethod
+    def _split_command_line(command_line: str) -> list[str]:
+        if not command_line:
+            return []
+        if os.name != "nt":
+            return shlex.split(command_line)
+        import ctypes
+
+        argc = ctypes.c_int()
+        shell32 = ctypes.windll.shell32
+        shell32.CommandLineToArgvW.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int)]
+        shell32.CommandLineToArgvW.restype = ctypes.POINTER(ctypes.c_wchar_p)
+        argv = shell32.CommandLineToArgvW(command_line, ctypes.byref(argc))
+        if not argv:
+            raise OSError("CommandLineToArgvW failed")
+        try:
+            return [argv[index] for index in range(argc.value)]
+        finally:
+            ctypes.windll.kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+            ctypes.windll.kernel32.LocalFree(argv)
 
     @staticmethod
     def _command_line(pid: int) -> str:
