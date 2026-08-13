@@ -30,6 +30,23 @@ class StateAndSchedulerTests(unittest.TestCase):
             self.assertEqual(state.request_stop(), [])
             self.assertEqual(state.control_state(), OrchestratorState.STOPPED)
 
+    def test_force_stopped_active_work_remains_resumable(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = RunStateStore(Path(td) / "state.db")
+            state.clear_stop_and_run()
+            self.assertTrue(state.claim_task("TASK-0100", branch="agent/task", worktree="task-wt"))
+            state.update_task("TASK-0100", TaskExecutionState.INITIAL_BUILD, attempt_delta=1)
+
+            self.assertEqual(state.force_stop(99), ["TASK-0100"])
+            self.assertEqual(state.control_state(), OrchestratorState.STOPPED)
+            self.assertEqual(
+                [run.task_id for run in state.active_task_runs()], ["TASK-0100"]
+            )
+            state.clear_stop_and_run()
+            self.assertEqual(state.control_state(), OrchestratorState.RUNNING)
+            self.assertEqual(state.task_run("TASK-0100").execution_state,
+                             TaskExecutionState.INITIAL_BUILD)
+
     def test_local_human_required_is_not_auto_redispatched(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

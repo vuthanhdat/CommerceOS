@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import threading
 import time
 import webbrowser
+import uuid
 from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +23,7 @@ from .service import TaskOrchestrator
 from .settings import SettingsStore, SettingsValidationError
 from .state import RunStateStore
 from .observability import evidence_counters, workflow_status
+from .runtime_control import RuntimeControlError, WorkerRuntimeRegistry
 
 
 class _QuietThreadingHTTPServer(ThreadingHTTPServer):
@@ -37,6 +41,7 @@ class DashboardReadModel:
         self.root = root.resolve()
         self.state = state_store
         self.catalog = catalog
+        self.worker_registry = WorkerRuntimeRegistry(self.root, self.state.path, catalog)
 
     def status(self) -> dict[str, object]:
         snapshot = BacklogReader(self.root, self.catalog).load()
@@ -67,6 +72,7 @@ class DashboardReadModel:
         return {
             "catalog": self.catalog,
             "orchestrator_state": self.state.control_state().value,
+            "worker": self.worker_registry.status(),
             "progress": {
                 "completed": completed,
                 "total": total,
@@ -168,21 +174,70 @@ class RuntimeController:
     def __init__(self, orchestrator: TaskOrchestrator):
         self.orchestrator = orchestrator
         self._lock = threading.Lock()
-        self._thread: threading.Thread | None = None
+        self._process: subprocess.Popen[str] | None = None
+        self._output = None
+        root = getattr(orchestrator, "root", None)
+        state = getattr(orchestrator, "state", None)
+        catalog = getattr(orchestrator, "catalog", None)
+        self.registry = (
+            WorkerRuntimeRegistry(root, state.path, catalog)
+            if root is not None and state is not None and catalog is not None
+            else None
+        )
 
     def start(self, *, resume: bool = False) -> bool:
         with self._lock:
-            if self._thread and self._thread.is_alive():
+            if self.is_busy(locked=True):
                 if resume:
                     self.orchestrator.state.clear_stop_and_run()
                 return False
-            self._thread = threading.Thread(
-                target=self.orchestrator.run,
-                kwargs={"resume": resume},
-                name="commerceos-orchestrator",
-                daemon=True,
+            if self.registry is None:
+                raise RuntimeControlError("runtime process control is unavailable")
+            command = "resume" if resume else "run"
+            token = uuid.uuid4().hex
+            output_path = self.orchestrator.state.path.parent / "runtime-worker.log"
+            self._output = output_path.open("a", encoding="utf-8", newline="\n")
+            argv = [
+                sys.executable,
+                str(self.orchestrator.root / "tools" / "orchestrator.py"),
+                "--repo",
+                str(self.orchestrator.root),
+                "--state",
+                str(self.orchestrator.state.path),
+                "--catalog",
+                self.orchestrator.catalog,
+                "--worker-token",
+                token,
+                command,
+            ]
+            options: dict[str, object] = {"start_new_session": os.name != "nt"}
+            if os.name == "nt":
+                options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            self._process = subprocess.Popen(
+                argv,
+                cwd=self.orchestrator.root,
+                stdin=subprocess.DEVNULL,
+                stdout=self._output,
+                stderr=subprocess.STDOUT,
+                text=True,
+                **options,
             )
-            self._thread.start()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if self._process.poll() is not None:
+                    self._close_output()
+                    raise RuntimeControlError(
+                        f"Orchestrator worker exited during startup ({self._process.returncode})"
+                    )
+                registration = self.registry.load(required=False)
+                if registration and registration.pid == self._process.pid:
+                    break
+                time.sleep(0.02)
+            else:
+                WorkerRuntimeRegistry._terminate_tree(self._process.pid)
+                self._process.wait(timeout=5)
+                self._close_output()
+                raise RuntimeControlError("Orchestrator worker did not register during startup")
             return True
 
     def stop(self) -> list[str]:
@@ -191,9 +246,34 @@ class RuntimeController:
     def resume(self) -> bool:
         return self.start(resume=True)
 
-    def is_busy(self) -> bool:
+    def force_stop(self) -> dict[str, object]:
+        if self.registry is None:
+            raise RuntimeControlError("runtime process control is unavailable")
+        result = self.registry.force_stop(self.orchestrator.state)
         with self._lock:
-            return bool(self._thread and self._thread.is_alive())
+            if self._process is not None:
+                self._process.poll()
+            self._close_output()
+        return result
+
+    def is_busy(self, *, locked: bool = False) -> bool:
+        def value() -> bool:
+            if self._process is not None and self._process.poll() is None:
+                return True
+            if self.registry is None:
+                return False
+            registration = self.registry.load(required=False)
+            return bool(registration and self.registry._pid_alive(registration.pid))
+
+        if locked:
+            return value()
+        with self._lock:
+            return value()
+
+    def _close_output(self) -> None:
+        if self._output is not None:
+            self._output.close()
+            self._output = None
 
     def execute(self, action: str) -> tuple[dict[str, object], HTTPStatus]:
         if action == "validate":
@@ -224,6 +304,9 @@ class RuntimeController:
         if action == "stop":
             return {"action": action, "accepted": True,
                     "draining": self.stop()}, HTTPStatus.ACCEPTED
+        if action == "force-stop":
+            result = self.force_stop()
+            return {"action": action, "accepted": True, **result}, HTTPStatus.OK
         if action == "cleanup":
             if self.is_busy():
                 return {"action": action, "error": "scheduler is busy"}, HTTPStatus.CONFLICT

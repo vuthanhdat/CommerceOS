@@ -153,6 +153,36 @@ class RunStateStore:
             self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
         return ids
 
+    def force_stop(self, worker_pid: int) -> list[str]:
+        """Preserve active task checkpoints while marking their worker forcibly stopped."""
+        now = utc_now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """
+                SELECT task_id FROM task_runs
+                WHERE execution_state NOT IN (
+                    'PLANNING_COMPLETED', 'COMPLETED', 'PLANNING_REQUIRED',
+                    'ORCHESTRATOR_ACTION_REQUIRED', 'BLOCKED', 'HUMAN_REQUIRED'
+                )
+                ORDER BY task_id
+                """
+            ).fetchall()
+            ids = [row["task_id"] for row in rows]
+            connection.execute(
+                "UPDATE control_state SET state = ?, updated_at = ? WHERE id = 1",
+                (OrchestratorState.STOPPED.value, now),
+            )
+            connection.execute("UPDATE task_runs SET drain_at_stop = 0 WHERE drain_at_stop != 0")
+            connection.execute("COMMIT")
+        self.add_event(
+            None,
+            "FORCE_STOPPED",
+            json.dumps({"worker_pid": worker_pid, "preserved_tasks": ids}),
+        )
+        self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
+        return ids
+
     def clear_stop_and_run(self) -> None:
         now = utc_now()
         with self._connect() as connection:

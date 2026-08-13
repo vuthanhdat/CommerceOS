@@ -90,9 +90,13 @@ closed rather than targeting an arbitrary PID.
 
 ## Reliability and idempotency impact
 
-Repeated Force Stop after a successful stop returns a stable not-running result. A crash between
-process termination and state persistence is recoverable because a later Force Stop can reconcile a
-dead registered worker to `STOPPED` only after validating the registration belongs to this runtime.
+Repeated Force Stop after a successful stop reports that no registered worker is running. A stale
+registration never authorizes state mutation; the operator can inspect it before explicit recovery.
+
+## Cost impact
+
+No provider or infrastructure cost change. Force Stop avoids continued model/tool runtime from a
+hung worker; Resume may rerun the interrupted bounded stage and consume its normal local/model cost.
 
 ## Observability impact
 
@@ -106,4 +110,3 @@ never place prompts, secrets, or full command lines in the event detail.
 - Dashboard/CLI contract tests for Force Stop and Resume.
 - Existing Orchestrator suite and full repository harness.
 - LocalStack/infrastructure verification: No; local process-control harness only.
-

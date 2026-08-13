@@ -77,6 +77,7 @@ python tools/orchestrator.py status
 python tools/orchestrator.py run
 python tools/orchestrator.py start
 python tools/orchestrator.py stop
+python tools/orchestrator.py force-stop
 python tools/orchestrator.py resume
 python tools/orchestrator.py cleanup
 python tools/orchestrator.py ui
@@ -301,6 +302,27 @@ When Stop is accepted:
 5. transition to `STOPPED` after active drain work reaches a safe terminal state.
 
 Stop is not a hard process kill. A stop request survives process restart.
+
+### Immediate Force Stop
+
+`force-stop` and the dashboard **Force Stop now** button are the emergency path for a worker or
+agent that is no longer making progress. The worker runs as a dashboard-owned child process and
+registers its repository/catalog-scoped PID in ignored local runtime state. Force Stop validates
+that identity, terminates the worker process tree, clears graceful-drain intent, and sets control
+state to `STOPPED`.
+
+Force Stop deliberately preserves the current task execution state, branch, worktree, attempt
+counters, uncommitted files, and evidence pointers. A later `resume` starts a fresh worker and uses
+the existing stage recovery path; the interrupted stage may run again from its beginning.
+
+`cleanup` is unrelated: it removes worktrees only for terminal tasks and must not be used as a
+runtime stop control. A missing, stale, malformed, or identity-mismatched worker registration fails
+closed without signalling an arbitrary PID or changing task state.
+
+CLI status and the dashboard report worker health independently from persisted control state as
+`RUNNING`, `UNREGISTERED`, `STALE`, `IDENTITY_MISMATCH`, or `INVALID`. In particular,
+`Orchestrator: RUNNING` with any worker state other than `RUNNING` is stale control data, not proof
+that an agent is still executing.
 
 ## 12. Recovery and blockers
 

@@ -311,6 +311,7 @@ def check_development_strategy(errors: list[str]) -> None:
             'data-action="start"',
             'data-action="resume"',
             'data-action="stop"',
+            'data-action="force-stop"',
             'data-action="cleanup"',
             'id="settings-page"',
         ),
@@ -318,6 +319,11 @@ def check_development_strategy(errors: list[str]) -> None:
             "class SettingsStore",
             "def provider_capabilities",
             "antigravity",
+        ),
+        ROOT / "tools/commerceos_orchestrator/runtime_control.py": (
+            "class WorkerRuntimeRegistry",
+            '"taskkill.exe", "/PID", str(pid), "/T", "/F"',
+            "registration.token.lower() in normalized_command",
         ),
     }
     for contract_path, snippets in dashboard_contracts.items():

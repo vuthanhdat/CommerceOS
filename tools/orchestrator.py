@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +36,10 @@ from commerceos_orchestrator.settings import (  # noqa: E402
     SettingsStore,
     SettingsValidationError,
 )
+from commerceos_orchestrator.runtime_control import (  # noqa: E402
+    RuntimeControlError,
+    WorkerRuntimeRegistry,
+)
 from commerceos_orchestrator.state import RunStateStore  # noqa: E402
 from commerceos_orchestrator.verification import VerificationRunner  # noqa: E402
 from commerceos_orchestrator.workspace import GitWorkspaceManager, WorkspaceError  # noqa: E402
@@ -60,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--worker-token", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
     for name in (
         "status",
@@ -68,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         "dry-run",
         "run",
         "stop",
+        "force-stop",
         "resume",
         "cleanup",
         "ui",
@@ -172,6 +180,34 @@ def print_json(value: object) -> None:
     print(json.dumps(value, indent=2, ensure_ascii=False))
 
 
+def spawn_registered_worker(args, state: RunStateStore) -> int:
+    token = uuid.uuid4().hex
+    command = [
+        sys.executable,
+        str(args.repo.resolve() / "tools" / "orchestrator.py"),
+        "--repo", str(args.repo.resolve()),
+        "--state", str(state.path),
+        "--catalog", args.catalog,
+        "--max-builders", str(args.max_builders),
+        "--max-fix-attempts", str(args.max_fix_attempts),
+        "--allow-cloud" if args.allow_cloud else "--no-allow-cloud",
+        "--worker-token", token,
+        args.command,
+    ]
+    process = subprocess.Popen(command, cwd=args.repo.resolve())
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            WorkerRuntimeRegistry._terminate_tree(process.pid)
+            process.wait(timeout=5)
+        state.force_stop(process.pid)
+        WorkerRuntimeRegistry(args.repo.resolve(), state.path, args.catalog).clear(token)
+        return 130
+
+
 def cleanup(orchestrator, state: RunStateStore) -> int:
     snapshot = BacklogReader(orchestrator.root, orchestrator.catalog).load()
     cleaned: list[str] = []
@@ -232,11 +268,21 @@ def main() -> int:
         if args.command == "stop":
             print_json({"accepted": True, "draining": orchestrator.request_stop()})
             return 0
+        registry = WorkerRuntimeRegistry(orchestrator.root, state.path, args.catalog)
+        if args.command == "force-stop":
+            print_json({"accepted": True, **registry.force_stop(state)})
+            return 0
         if args.command == "run":
-            orchestrator.run()
+            if not args.worker_token:
+                return spawn_registered_worker(args, state)
+            with registry.registered_worker("run", token=args.worker_token):
+                orchestrator.run()
             return 0
         if args.command == "resume":
-            orchestrator.run(resume=True)
+            if not args.worker_token:
+                return spawn_registered_worker(args, state)
+            with registry.registered_worker("resume", token=args.worker_token):
+                orchestrator.run(resume=True)
             return 0
         if args.command == "cleanup":
             return cleanup(orchestrator, state)
@@ -261,7 +307,7 @@ def main() -> int:
                 server.shutdown()
             return 0
         raise AssertionError(args.command)
-    except (BacklogValidationError, SettingsValidationError) as exc:
+    except (BacklogValidationError, SettingsValidationError, RuntimeControlError) as exc:
         print(f"CONFIGURATION INVALID: {exc}", file=sys.stderr)
         return 2
 

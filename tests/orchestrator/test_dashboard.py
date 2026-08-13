@@ -46,8 +46,13 @@ class DashboardTests(unittest.TestCase):
                 self.assertIn("activeStates", html)
                 self.assertIn("Owner:", html)
                 self.assertIn("Next:", html)
-                for command in ("Validate", "Plan", "Dry run", "Run", "Resume", "Cleanup"):
+                for command in (
+                    "Validate", "Plan", "Dry run", "Run", "Resume", "Force Stop now",
+                    "Cleanup terminal worktrees",
+                ):
                     self.assertIn(f">{command}<", html)
+                self.assertIn("Graceful Stop drains active work.", html)
+                self.assertIn("Task state and worktrees will be preserved", html)
                 self.assertIn("Agent settings", html)
                 self.assertIn("Sandbox", html)
                 self.assertIn("danger-full-access", html)
@@ -62,6 +67,7 @@ class DashboardTests(unittest.TestCase):
                 with urlopen(server.url + "api/status", timeout=2) as response:
                     status = json.load(response)
                 self.assertEqual(status["ready_frontier"], ["TASK-0100"])
+                self.assertEqual(status["worker"]["state"], "UNREGISTERED")
                 ready_task = next(task for task in status["tasks"] if task["id"] == "TASK-0100")
                 self.assertIsNone(ready_task["current_actor"])
                 self.assertIn("evidence_counters", ready_task)
@@ -151,6 +157,35 @@ class DashboardTests(unittest.TestCase):
                 with self.assertRaises(HTTPError) as caught:
                     urlopen(request, timeout=3)
                 self.assertEqual(caught.exception.code, HTTPStatus.NOT_FOUND)
+            finally:
+                server.shutdown()
+                thread.join(timeout=2)
+
+    def test_force_stop_action_is_distinct_from_cleanup(self):
+        class StubRuntime:
+            def execute(self, action):
+                if action == "force-stop":
+                    return {
+                        "action": action,
+                        "accepted": True,
+                        "preserved_tasks": ["TASK-0100"],
+                        "worktrees_removed": False,
+                    }, HTTPStatus.OK
+                return {"error": "unsupported action"}, HTTPStatus.NOT_FOUND
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_backlog(root, [row("TASK-0100")], ready=["TASK-0100"], metadata={"TASK-0100": ""})
+            state = RunStateStore(root / "state.db")
+            server = LocalDashboardServer(root, state, port=0, runtime=StubRuntime())
+            thread = server.serve_in_thread()
+            try:
+                request = self.control_request(server.url + "api/actions/force-stop")
+                with urlopen(request, timeout=3) as response:
+                    value = json.load(response)
+                self.assertTrue(value["accepted"])
+                self.assertEqual(value["preserved_tasks"], ["TASK-0100"])
+                self.assertFalse(value["worktrees_removed"])
             finally:
                 server.shutdown()
                 thread.join(timeout=2)
