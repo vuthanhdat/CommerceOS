@@ -20,10 +20,12 @@ TASK-0110 -> TASK-0111; TASK-0110 + TASK-0121 -> TASK-0112; TASK-0110 + TASK-012
 
 ## Progress
 
-TASK-0110 is complete. Tenancy now owns its Domain/Application/Infrastructure
-boundary, task-prefixed DynamoDB table, tenant-scoped persistence contracts, and
-access-pattern ledger. TASK-0111 is Ready to build trusted authority resolution;
-all later Tenancy behavior remains blocked by its stated dependencies.
+TASK-0110 and TASK-0111 are complete. Tenancy now owns its
+Domain/Application/Infrastructure boundary, task-prefixed DynamoDB table,
+tenant-scoped persistence contracts, strong subject discovery, and separate
+trusted read/mutation authority contexts. Authority resolution revalidates current
+Tenant and Membership state on every request and fails closed. TASK-0114 is now
+Ready; TASK-0112 and TASK-0113 remain blocked by their Subscription dependencies.
 
 ## Definition of Done
 Cross-Tenant access is non-disclosing; current authority/last-owner/limits are concurrency safe; successful onboarding proves Tenant + Owner + Trial; suspension is non-destructive and audited.

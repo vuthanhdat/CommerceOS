@@ -136,6 +136,79 @@ public sealed class DynamoDbTenancyStore : ITenancyStore
         }
     }
 
+    public async Task<ConditionalWriteResult> SaveMembershipAsync(
+        TrustedTenantPersistenceScope scope,
+        Membership membership,
+        long? expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        if (scope.TenantId != membership.TenantId)
+        {
+            throw new ArgumentException("Membership writes must use the matching trusted tenant scope.", nameof(membership));
+        }
+
+        var membershipPartition = TenantPartition(membership.TenantId);
+        var membershipKey = $"MEMBERSHIP#{Encode(membership.Id.Value)}";
+        var authorityKey = $"AUTHORITY#SUBJECT#{Encode(membership.SubjectId.Value)}";
+        var discoveryPartition = $"SUBJECT#{Encode(membership.SubjectId.Value)}";
+        var discoveryKey = $"MEMBERSHIP#{Encode(membership.Id.Value)}#TENANT#{Encode(membership.TenantId.Value)}";
+        var membershipCondition = expectedRevision is null
+            ? "attribute_not_exists(PK)"
+            : "Revision = :expectedRevision AND SubjectId = :subjectId AND TenantId = :tenantId";
+        var authorityCondition = expectedRevision is null
+            ? "attribute_not_exists(PK)"
+            : "MembershipId = :membershipId AND SubjectId = :subjectId";
+
+        var transaction = new TransactWriteItemsRequest
+        {
+            TransactItems =
+            [
+                new TransactWriteItem
+                {
+                    Put = new Put
+                    {
+                        TableName = _options.TableName,
+                        Item = MembershipItem(membership, membershipPartition, membershipKey),
+                        ConditionExpression = membershipCondition,
+                        ExpressionAttributeValues = expectedRevision is null
+                            ? null
+                            : MembershipUpdateValues(membership, expectedRevision.Value)
+                    }
+                },
+                new TransactWriteItem
+                {
+                    Put = new Put
+                    {
+                        TableName = _options.TableName,
+                        Item = AuthorityItem(membership, membershipPartition, authorityKey),
+                        ConditionExpression = authorityCondition,
+                        ExpressionAttributeValues = expectedRevision is null
+                            ? null
+                            : AuthorityUpdateValues(membership)
+                    }
+                },
+                new TransactWriteItem
+                {
+                    Put = new Put
+                    {
+                        TableName = _options.TableName,
+                        Item = DiscoveryItem(membership, discoveryPartition, discoveryKey)
+                    }
+                }
+            ]
+        };
+
+        try
+        {
+            await _client.TransactWriteItemsAsync(transaction, cancellationToken);
+            return ConditionalWriteResult.Applied;
+        }
+        catch (TransactionCanceledException)
+        {
+            return ConditionalWriteResult.RevisionConflict;
+        }
+    }
+
     private static Tenant ReadTenant(Dictionary<string, AttributeValue> item) => new(
         new TenantId(item["TenantId"].S),
         Enum.Parse<TenantStatus>(item["Status"].S, false),
@@ -149,6 +222,50 @@ public sealed class DynamoDbTenancyStore : ITenancyStore
         Enum.Parse<MerchantRole>(item["Role"].S, false),
         Enum.Parse<MembershipStatus>(item["Status"].S, false),
         long.Parse(item["Revision"].N, CultureInfo.InvariantCulture));
+
+    private static Dictionary<string, AttributeValue> MembershipItem(Membership membership, string partitionKey, string sortKey) => new()
+    {
+        [PartitionKey] = String(partitionKey),
+        [SortKey] = String(sortKey),
+        ["MembershipId"] = String(membership.Id.Value),
+        ["TenantId"] = String(membership.TenantId.Value),
+        ["SubjectId"] = String(membership.SubjectId.Value),
+        ["Role"] = String(membership.Role.ToString()),
+        ["Status"] = String(membership.Status.ToString()),
+        ["Revision"] = Number(membership.Revision)
+    };
+
+    private static Dictionary<string, AttributeValue> AuthorityItem(Membership membership, string partitionKey, string sortKey) => new()
+    {
+        [PartitionKey] = String(partitionKey),
+        [SortKey] = String(sortKey),
+        ["MembershipId"] = String(membership.Id.Value),
+        ["SubjectId"] = String(membership.SubjectId.Value),
+        ["Revision"] = Number(membership.Revision)
+    };
+
+    private static Dictionary<string, AttributeValue> DiscoveryItem(Membership membership, string partitionKey, string sortKey) => new()
+    {
+        [PartitionKey] = String(partitionKey),
+        [SortKey] = String(sortKey),
+        ["TenantId"] = String(membership.TenantId.Value),
+        ["MembershipId"] = String(membership.Id.Value),
+        ["MembershipStatus"] = String(membership.Status.ToString()),
+        ["MembershipRevision"] = Number(membership.Revision)
+    };
+
+    private static Dictionary<string, AttributeValue> MembershipUpdateValues(Membership membership, long expectedRevision) => new()
+    {
+        [":expectedRevision"] = Number(expectedRevision),
+        [":subjectId"] = String(membership.SubjectId.Value),
+        [":tenantId"] = String(membership.TenantId.Value)
+    };
+
+    private static Dictionary<string, AttributeValue> AuthorityUpdateValues(Membership membership) => new()
+    {
+        [":membershipId"] = String(membership.Id.Value),
+        [":subjectId"] = String(membership.SubjectId.Value)
+    };
 
     private static Dictionary<string, AttributeValue> Key(string partitionKey, string sortKey) => new()
     {

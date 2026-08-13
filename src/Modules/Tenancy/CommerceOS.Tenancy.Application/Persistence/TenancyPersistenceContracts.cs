@@ -51,4 +51,10 @@ public interface ITenancyStore
         Tenant tenant,
         long? expectedRevision,
         CancellationToken cancellationToken);
+
+    Task<ConditionalWriteResult> SaveMembershipAsync(
+        TrustedTenantPersistenceScope scope,
+        Membership membership,
+        long? expectedRevision,
+        CancellationToken cancellationToken);
 }
