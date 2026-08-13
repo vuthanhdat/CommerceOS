@@ -699,6 +699,7 @@ class PlanningAwareTaskOrchestrator:
             if control in {
                 OrchestratorState.STOP_REQUESTED,
                 OrchestratorState.STOPPING,
+                OrchestratorState.FORCE_STOPPING,
                 OrchestratorState.STOPPED,
             }:
                 self.delegate.state.set_control_state(OrchestratorState.STOPPED)

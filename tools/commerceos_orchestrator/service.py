@@ -127,7 +127,12 @@ class TaskOrchestrator:
     def run(self, *, resume: bool = False) -> None:
         snapshot = self.validate()
         current = self.state.control_state()
-        if current in {OrchestratorState.STOP_REQUESTED, OrchestratorState.STOPPING}:
+        if current == OrchestratorState.FORCE_STOPPING:
+            if resume:
+                self.state.clear_stop_and_run()
+            else:
+                return
+        elif current in {OrchestratorState.STOP_REQUESTED, OrchestratorState.STOPPING}:
             if resume:
                 self.state.reset_retryable_terminal_runs()
                 self.state.clear_stop_and_run()

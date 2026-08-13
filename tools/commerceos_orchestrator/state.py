@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -17,6 +18,13 @@ def utc_now() -> str:
 
 class InvalidTransitionError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ForceStopFence:
+    worker_pid: int
+    previous_control: OrchestratorState
+    preserved_tasks: tuple[str, ...]
 
 
 class RunStateStore:
@@ -153,11 +161,14 @@ class RunStateStore:
             self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
         return ids
 
-    def begin_force_stop(self, worker_pid: int) -> list[str]:
+    def begin_force_stop(self, worker_pid: int) -> ForceStopFence:
         """Atomically fence transitions before the registered worker is terminated."""
         now = utc_now()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            previous = OrchestratorState(
+                connection.execute("SELECT state FROM control_state WHERE id = 1").fetchone()[0]
+            )
             rows = connection.execute(
                 """
                 SELECT task_id FROM task_runs
@@ -171,30 +182,70 @@ class RunStateStore:
             ids = [row["task_id"] for row in rows]
             connection.execute(
                 "UPDATE control_state SET state = ?, updated_at = ? WHERE id = 1",
-                (OrchestratorState.STOPPED.value, now),
+                (OrchestratorState.FORCE_STOPPING.value, now),
             )
-            connection.execute("UPDATE task_runs SET drain_at_stop = 0 WHERE drain_at_stop != 0")
             connection.execute("COMMIT")
         self.add_event(
             None,
             "FORCE_STOP_REQUESTED",
             json.dumps({"worker_pid": worker_pid, "preserved_tasks": ids}),
         )
-        self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
-        return ids
+        self.add_event(None, "CONTROL", OrchestratorState.FORCE_STOPPING.value)
+        return ForceStopFence(worker_pid, previous, tuple(ids))
 
-    def record_force_stopped(self, worker_pid: int, preserved_tasks: list[str]) -> None:
+    def complete_force_stop(self, fence: ForceStopFence) -> None:
+        now = utc_now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            control = connection.execute(
+                "SELECT state FROM control_state WHERE id = 1"
+            ).fetchone()[0]
+            if control != OrchestratorState.FORCE_STOPPING.value:
+                connection.execute("ROLLBACK")
+                raise RuntimeError("force-stop fence is no longer active")
+            connection.execute(
+                "UPDATE control_state SET state = ?, updated_at = ? WHERE id = 1",
+                (OrchestratorState.STOPPED.value, now),
+            )
+            connection.execute("UPDATE task_runs SET drain_at_stop = 0 WHERE drain_at_stop != 0")
+            connection.execute("COMMIT")
         self.add_event(
             None,
             "FORCE_STOPPED",
-            json.dumps({"worker_pid": worker_pid, "preserved_tasks": preserved_tasks}),
+            json.dumps(
+                {"worker_pid": fence.worker_pid, "preserved_tasks": list(fence.preserved_tasks)}
+            ),
         )
+        self.add_event(None, "CONTROL", OrchestratorState.STOPPED.value)
+
+    def abort_force_stop(self, fence: ForceStopFence, detail: str) -> None:
+        now = utc_now()
+        restored = False
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            control = connection.execute(
+                "SELECT state FROM control_state WHERE id = 1"
+            ).fetchone()[0]
+            if control == OrchestratorState.FORCE_STOPPING.value:
+                connection.execute(
+                    "UPDATE control_state SET state = ?, updated_at = ? WHERE id = 1",
+                    (fence.previous_control.value, now),
+                )
+                restored = True
+            connection.execute("COMMIT")
+        self.add_event(
+            None,
+            "FORCE_STOP_FAILED",
+            json.dumps({"worker_pid": fence.worker_pid, "detail": detail[:500]}),
+        )
+        if restored:
+            self.add_event(None, "CONTROL", fence.previous_control.value)
 
     def force_stop(self, worker_pid: int) -> list[str]:
         """State-only convenience used when the worker is already known to be stopped."""
-        ids = self.begin_force_stop(worker_pid)
-        self.record_force_stopped(worker_pid, ids)
-        return ids
+        fence = self.begin_force_stop(worker_pid)
+        self.complete_force_stop(fence)
+        return list(fence.preserved_tasks)
 
     def clear_stop_and_run(self) -> None:
         now = utc_now()
@@ -277,6 +328,7 @@ class RunStateStore:
             if control in {
                 OrchestratorState.STOP_REQUESTED.value,
                 OrchestratorState.STOPPING.value,
+                OrchestratorState.FORCE_STOPPING.value,
                 OrchestratorState.STOPPED.value,
             }:
                 connection.execute("ROLLBACK")
@@ -368,7 +420,7 @@ class RunStateStore:
             control = connection.execute(
                 "SELECT state FROM control_state WHERE id = 1"
             ).fetchone()[0]
-            if control == OrchestratorState.STOPPED.value:
+            if control == OrchestratorState.FORCE_STOPPING.value:
                 connection.execute("ROLLBACK")
                 self.add_event(
                     task_id,

@@ -311,6 +311,10 @@ registers its repository/catalog-scoped PID in ignored local runtime state. Forc
 that identity, terminates the worker process tree, clears graceful-drain intent, and sets control
 state to `STOPPED`.
 
+During termination, persisted control briefly enters `FORCE_STOPPING`; this fences task transitions
+without falsely claiming completion. `STOPPED` and cleared drain intent are committed only after the
+process tree is confirmed gone. A termination error restores the prior control/drain state.
+
 Force Stop deliberately preserves the current task execution state, branch, worktree, attempt
 counters, uncommitted files, and evidence pointers. A later `resume` starts a fresh worker and uses
 the existing stage recovery path; the interrupted stage may run again from its beginning.

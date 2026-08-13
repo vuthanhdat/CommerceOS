@@ -99,19 +99,23 @@ class WorkerRuntimeRegistry:
         if not self._identity_matches(registration):
             raise RuntimeControlError("registered PID no longer identifies the expected Orchestrator worker")
 
-        preserved = state.begin_force_stop(registration.pid)
-        self._terminate_tree(registration.pid)
-        deadline = time.monotonic() + 5
-        while self._pid_alive(registration.pid) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        if self._pid_alive(registration.pid):
-            raise RuntimeControlError("Orchestrator worker process tree did not terminate")
+        fence = state.begin_force_stop(registration.pid)
+        try:
+            self._terminate_tree(registration.pid)
+            deadline = time.monotonic() + 5
+            while self._pid_alive(registration.pid) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if self._pid_alive(registration.pid):
+                raise RuntimeControlError("Orchestrator worker process tree did not terminate")
+        except Exception as exc:
+            state.abort_force_stop(fence, repr(exc))
+            raise
 
-        state.record_force_stopped(registration.pid, preserved)
+        state.complete_force_stop(fence)
         self.clear(registration.token)
         return {
             "stopped_pid": registration.pid,
-            "preserved_tasks": preserved,
+            "preserved_tasks": list(fence.preserved_tasks),
             "control_state": "STOPPED",
             "worktrees_removed": False,
         }

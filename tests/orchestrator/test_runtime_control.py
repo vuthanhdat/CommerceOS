@@ -85,7 +85,8 @@ class RuntimeControlTests(unittest.TestCase):
             state.update_task("TASK-0100", TaskExecutionState.INITIAL_BUILD)
             before = state.task_run("TASK-0100")
 
-            state.begin_force_stop(4321)
+            fence = state.begin_force_stop(4321)
+            self.assertEqual(state.control_state(), OrchestratorState.FORCE_STOPPING)
             with self.assertRaisesRegex(InvalidTransitionError, "force-stop transition fence"):
                 state.update_task(
                     "TASK-0100",
@@ -100,6 +101,45 @@ class RuntimeControlTests(unittest.TestCase):
                 item for item in state.recent_events(10) if item["kind"] == "TRANSITION_REJECTED"
             )
             self.assertIn("force-stop transition fence", rejection["detail"])
+            state.abort_force_stop(fence, "test cleanup")
+            self.assertEqual(state.control_state(), OrchestratorState.RUNNING)
+
+    def test_termination_failure_rolls_back_fence_without_mutating_task(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state = RunStateStore(root / "runtime" / "state.db")
+            state.clear_stop_and_run()
+            state.claim_task("TASK-0100", branch="agent/task", worktree=str(root / "worktree"))
+            state.update_task("TASK-0100", TaskExecutionState.INITIAL_BUILD)
+            before = state.task_run("TASK-0100")
+            registry = WorkerRuntimeRegistry(root, state.path, "commerceos")
+            registry._write(
+                WorkerRegistration(
+                    pid=4321,
+                    token="token",
+                    repository=str(root),
+                    catalog="commerceos",
+                    state_path=str(state.path),
+                    command="resume",
+                    started_at="now",
+                )
+            )
+            with (
+                patch.object(registry, "_pid_alive", return_value=True),
+                patch.object(registry, "_identity_matches", return_value=True),
+                patch.object(
+                    registry,
+                    "_terminate_tree",
+                    side_effect=RuntimeControlError("termination failed"),
+                ),
+                self.assertRaisesRegex(RuntimeControlError, "termination failed"),
+            ):
+                registry.force_stop(state)
+
+            after = state.task_run("TASK-0100")
+            self.assertEqual(state.control_state(), OrchestratorState.RUNNING)
+            self.assertEqual(after, before)
+            self.assertTrue(registry.path.exists())
 
     def test_force_stop_terminates_tree_then_preserves_registration_checkpoint(self):
         with tempfile.TemporaryDirectory() as td:
