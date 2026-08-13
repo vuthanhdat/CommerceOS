@@ -1,4 +1,5 @@
 using Amazon.CDK;
+using Amazon.CDK.AWS.DynamoDB;
 using Amazon.CDK.AWS.Logs;
 using Constructs;
 
@@ -30,5 +31,18 @@ public sealed class FoundationStack : Stack
             });
 
         logGroup.ApplyRemovalPolicy(profile.RemovalPolicy);
+
+        _ = new Table(
+            this,
+            "TenancyTable",
+            new TableProps
+            {
+                TableName = $"{profile.ResourcePrefix}-tenancy",
+                PartitionKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "PK", Type = AttributeType.STRING },
+                SortKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "SK", Type = AttributeType.STRING },
+                BillingMode = BillingMode.PAY_PER_REQUEST,
+                Encryption = TableEncryption.AWS_MANAGED,
+                RemovalPolicy = profile.RemovalPolicy
+            });
     }
 }

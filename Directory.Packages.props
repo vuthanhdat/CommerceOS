@@ -3,6 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="AWSSDK.DynamoDBv2" Version="4.0.17.11" />
     <PackageVersion Include="Amazon.CDK.Lib" Version="2.263.0" />
     <PackageVersion Include="Constructs" Version="10.8.1" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />

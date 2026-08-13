@@ -60,4 +60,25 @@ public sealed class FoundationStackTests
         Assert.Equal("000000000000", profile.AccountId);
         Assert.Equal("us-east-1", profile.Region);
     }
+
+    [Fact]
+    public void FoundationStackCreatesAnIsolatedTenancyTable()
+    {
+        var app = new App();
+        var stack = new FoundationStack(app, "test-foundation", EnvironmentProfile.Create("localstack-test", "0042"));
+        var template = Template.FromStack(stack);
+
+        template.HasResourceProperties(
+            "AWS::DynamoDB::Table",
+            new Dictionary<string, object>
+            {
+                ["TableName"] = "commerceos-test-0042-tenancy",
+                ["BillingMode"] = "PAY_PER_REQUEST",
+                ["KeySchema"] = Match.ArrayWith(
+                [
+                    new Dictionary<string, object> { ["AttributeName"] = "PK", ["KeyType"] = "HASH" },
+                    new Dictionary<string, object> { ["AttributeName"] = "SK", ["KeyType"] = "RANGE" }
+                ])
+            });
+    }
 }

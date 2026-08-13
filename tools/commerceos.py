@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_LOCALSTACK_IMAGE = "localstack/localstack:4.8.1"
-DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,s3,iam,sts,ssm"
+DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,dynamodb,s3,iam,sts,ssm"
 
 
 def parse_instance(raw: str) -> int:

@@ -18,5 +18,12 @@ One Tenancy implementation module/table. Subject discovery is candidate discover
 ## Task sequence
 TASK-0110 -> TASK-0111; TASK-0110 + TASK-0121 -> TASK-0112; TASK-0110 + TASK-0120 -> TASK-0113; TASK-0111 -> TASK-0114.
 
+## Progress
+
+TASK-0110 is complete. Tenancy now owns its Domain/Application/Infrastructure
+boundary, task-prefixed DynamoDB table, tenant-scoped persistence contracts, and
+access-pattern ledger. TASK-0111 is Ready to build trusted authority resolution;
+all later Tenancy behavior remains blocked by its stated dependencies.
+
 ## Definition of Done
 Cross-Tenant access is non-disclosing; current authority/last-owner/limits are concurrency safe; successful onboarding proves Tenant + Owner + Trial; suspension is non-destructive and audited.

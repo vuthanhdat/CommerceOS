@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../CommerceOS.Tenancy.Domain/CommerceOS.Tenancy.Domain.csproj" />
+  </ItemGroup>
+</Project>

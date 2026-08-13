@@ -3,6 +3,9 @@
     <Project Path="src/Modules/Platform/CommerceOS.Platform.Domain/CommerceOS.Platform.Domain.csproj" />
     <Project Path="src/Modules/Platform/CommerceOS.Platform.Application/CommerceOS.Platform.Application.csproj" />
     <Project Path="src/Modules/Platform/CommerceOS.Platform.Infrastructure/CommerceOS.Platform.Infrastructure.csproj" />
+    <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Domain/CommerceOS.Tenancy.Domain.csproj" />
+    <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Application/CommerceOS.Tenancy.Application.csproj" />
+    <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Infrastructure/CommerceOS.Tenancy.Infrastructure.csproj" />
     <Project Path="src/CommerceOS.Api/CommerceOS.Api.csproj" />
   </Folder>
   <Folder Name="/infra/">
@@ -12,6 +15,7 @@
     <Project Path="tests/CommerceOS.Platform.UnitTests/CommerceOS.Platform.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.ArchitectureTests/CommerceOS.ArchitectureTests.csproj" />
     <Project Path="tests/CommerceOS.Cdk.Tests/CommerceOS.Cdk.Tests.csproj" />
+    <Project Path="tests/CommerceOS.Tenancy.UnitTests/CommerceOS.Tenancy.UnitTests.csproj" />
   </Folder>
 </Solution>
 
