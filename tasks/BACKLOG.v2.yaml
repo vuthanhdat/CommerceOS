@@ -111,6 +111,10 @@ execution_metadata:
     lifecycle_state: Completed
     exclusive_resources: [repository-task-state, git-worktrees, orchestrator-runtime]
     merge_policy: verified_serial_main
+  TASK-0180:
+    lifecycle_state: Backlog
+    exclusive_resources: [repository-task-state, orchestrator-ui, orchestrator-runtime, codex-runner]
+    merge_policy: verified_serial_main
 
 lifecycle_semantics:
   Backlog: canonical task exists but is not claimed by a Builder
@@ -159,3 +163,4 @@ task_shards:
 
 ready_frontier:
   - TASK-0095
+  - TASK-0180

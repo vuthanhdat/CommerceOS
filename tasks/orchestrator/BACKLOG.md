@@ -37,6 +37,8 @@ Recently completed:
 
 ## Ready frontier
 
+- `TASK-0180` — Add immediate Force Stop with resumable runtime recovery (`Ready`).
+
 
 
 ## Strict workflow boundary program
