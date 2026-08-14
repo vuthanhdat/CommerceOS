@@ -3,6 +3,7 @@ using Amazon.Runtime;
 using CommerceOS.SubscriptionBilling.Application.Catalog;
 using CommerceOS.SubscriptionBilling.Application.Entitlements;
 using CommerceOS.SubscriptionBilling.Application.PlatformCharges;
+using CommerceOS.SubscriptionBilling.Application.PaidLifecycle;
 using CommerceOS.SubscriptionBilling.Application.Trial;
 using CommerceOS.SubscriptionBilling.Contracts;
 using CommerceOS.SubscriptionBilling.Infrastructure.Persistence;
@@ -70,6 +71,9 @@ public static class OnboardingEndpoints
         services.AddSingleton<DeterministicSaasBillingProviderState>();
         services.AddSingleton<IPlatformBillingProvider, DeterministicSaasBillingProvider>();
         services.AddSingleton<PlatformChargeService>();
+        services.AddSingleton<IPaidSubscriptionStore, DynamoDbPaidSubscriptionStore>();
+        services.AddSingleton<ISubscriptionUsageAssessor, FailClosedSubscriptionUsageAssessor>();
+        services.AddSingleton<PaidSubscriptionLifecycleService>();
         services.AddSingleton<TenantOnboardingCoordinator>();
         services.AddSingleton<IOnboardingIdentityResolver>(configuration["COMMERCEOS_TEST_IDENTITY_ENABLED"] == "1"
             ? new DevelopmentHeaderOnboardingIdentityResolver()

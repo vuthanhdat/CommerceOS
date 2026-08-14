@@ -3,6 +3,7 @@ using Amazon.Runtime;
 using CommerceOS.SubscriptionBilling.Application.Catalog;
 using CommerceOS.SubscriptionBilling.Application.Entitlements;
 using CommerceOS.SubscriptionBilling.Application.PlatformCharges;
+using CommerceOS.SubscriptionBilling.Application.PaidLifecycle;
 using CommerceOS.SubscriptionBilling.Application.Trial;
 using CommerceOS.SubscriptionBilling.Contracts;
 using CommerceOS.SubscriptionBilling.Domain;
@@ -84,5 +85,35 @@ public sealed class DynamoDbSubscriptionCatalogStoreIntegrationTests
         Assert.Equal(PlatformChargeOutcome.OutcomeUnknown, attempted.Charge.Outcome);
         Assert.Equal(PlatformChargeOutcome.Succeeded, settled.Outcome);
         Assert.Equal(PlatformChargeOutcome.Succeeded, duplicate.Outcome);
+    }
+
+    [Fact]
+    public async Task PaidSubscriptionPeriodAndHistoryCommitAgainstConfiguredLocalStack()
+    {
+        var endpoint = Environment.GetEnvironmentVariable("COMMERCEOS_LOCALSTACK_ENDPOINT");
+        var tableName = Environment.GetEnvironmentVariable("COMMERCEOS_SUBSCRIPTION_BILLING_TABLE");
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(tableName)) return;
+
+        using var client = new AmazonDynamoDBClient(new BasicAWSCredentials("test", "test"), new AmazonDynamoDBConfig { ServiceURL = endpoint, AuthenticationRegion = "us-east-1" });
+        var options = new DynamoDbSubscriptionBillingOptions(tableName);
+        var catalogStore = new DynamoDbSubscriptionCatalogStore(client, options);
+        using var stream = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "initial-catalog.v1.json"));
+        await new CatalogBootstrapService(catalogStore).BootstrapAsync(CatalogSeedLoader.Load(stream), CancellationToken.None);
+        var charges = new DynamoDbPlatformChargeStore(client, options);
+        var paid = new DynamoDbPaidSubscriptionStore(client, options);
+        var service = new PaidSubscriptionLifecycleService(catalogStore, paid, charges, new DeterministicSaasBillingProvider(new DeterministicSaasBillingProviderState()), new FitsUsage());
+        var tenantId = $"paid-{Guid.NewGuid():N}";
+
+        var activated = await service.ActivateOrUpgradeAsync(new ActivatePaidSubscriptionCommand(tenantId, "Starter", "starter-v1", "activate", "corr"), CancellationToken.None);
+        var replay = await service.ActivateOrUpgradeAsync(new ActivatePaidSubscriptionCommand(tenantId, "Starter", "starter-v1", "activate", "corr"), CancellationToken.None);
+
+        Assert.Equal(PaidLifecycleOutcome.Applied, activated.Outcome);
+        Assert.Equal(PaidLifecycleOutcome.AlreadyApplied, replay.Outcome);
+        Assert.Equal("starter-v1", (await paid.GetCurrentAsync(tenantId, CancellationToken.None))!.Entitlements.PlanVersionId);
+    }
+
+    private sealed class FitsUsage : ISubscriptionUsageAssessor
+    {
+        public Task<bool> FitsTargetAsync(string trustedTenantId, PaidEntitlementSnapshot target, CancellationToken cancellationToken) => Task.FromResult(true);
     }
 }

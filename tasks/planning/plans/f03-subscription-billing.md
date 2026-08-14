@@ -26,7 +26,9 @@ DynamoDB table, and LocalStack lifecycle bootstrap for its table/seed. TASK-0121
 now provides current fail-closed EntitlementSet evaluation with interval/state
 provenance. TASK-0123 is complete: PlatformCharge/evidence persistence and a dedicated
 deterministic SaaS-provider seam preserve Unknown safely and reconcile verified evidence without
-regression. TASK-0124 is now Ready.
+regression. TASK-0124 is complete: paid periods/history, upgrades, restrictive downgrade
+assessment, renewal/grace/end/reactivation now follow the approved SaaS lifecycle. TASK-0125
+remains blocked by Sales; TASK-0122 remains blocked by owner-domain limit work.
 
 ## Definition of Done
 Trial/Starter/Growth/Business terms are immutable/versioned; Unknown charge state is preserved; limits never auto-delete owner-domain resources; checkout is never blocked by warning threshold.
