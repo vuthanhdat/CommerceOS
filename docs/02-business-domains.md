@@ -292,6 +292,11 @@ MVP rules:
 
 Refund is not immediate when requested.
 
+Owner, Admin, and Staff may request a refund. Only Owner or Admin may approve or
+reject it; Viewer has neither permission. This capability is resolved from
+trusted Merchant Access, not from screen visibility, subscription state, or a
+client-supplied role.
+
 ```text
 RefundRequested
       ↓ dedicated merchant approval experience
@@ -341,7 +346,7 @@ Core postings/business triggers:
 
 - `PaymentCaptured` → Cash / Customer Deposits;
 - `OrderFulfilled` → Customer Deposits / Sales Revenue;
-- moving weighted-average inventory valuation lives in Accounting;
+- moving weighted-average inventory valuation lives in Accounting, with one authoritative cost pool per Tenant + Product (not per Warehouse);
 - `StockIssued` is the single COGS trigger → COGS / Inventory;
 - accepted receipt accounting uses Inventory / GRNI;
 - `SupplierInvoiceRecorded` clears GRNI to AP with approved variance to PPV;

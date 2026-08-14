@@ -28,9 +28,9 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0134 Implement external source mapping and explicit ImportCandidate apply (Done) | F04 | P1 | REQ-CAT-006, REQ-PDI-006 | TASK-0131 | Completed 2026-08-14 |
 | TASK-0140 Implement PDI source registry and governance (Done) | F05 | P1 | REQ-PDI-001 | TASK-0121, TASK-0134 | Completed 2026-08-14 |
 | TASK-0141 Implement one policy-approved adapter and manual URL ingestion (Done) | F05 | P1 | REQ-PDI-002..003 | TASK-0140 | Completed 2026-08-14 |
-| TASK-0142 Implement crawler queue, raw snapshot, normalize, retry/rate/DLQ | F05 | P1 | REQ-PDI-002, REQ-PDI-004..005 | TASK-0141, TASK-0102 | Blocked |
-| TASK-0143 Implement merchant ImportCandidate review and Catalog apply | F05 | P1 | REQ-PDI-006 | TASK-0142, TASK-0134 | Blocked |
-| TASK-0144 Implement scheduled refresh with policy and entitlement recheck | F05 | P2 | REQ-PDI-007, REQ-SUB-004 | TASK-0143, TASK-0121 | Blocked |
+| TASK-0142 Implement crawler queue, raw snapshot, normalize, retry/rate/DLQ | F05 | P1 | REQ-PDI-002, REQ-PDI-004..005 | TASK-0141, TASK-0102 | Done |
+| TASK-0143 Implement merchant ImportCandidate review and Catalog apply | F05 | P1 | REQ-PDI-006 | TASK-0142, TASK-0134 | Done |
+| TASK-0144 Implement scheduled refresh with policy and entitlement recheck | F05 | P2 | REQ-PDI-007, REQ-SUB-004 | TASK-0143, TASK-0121 | Done |
 | TASK-0150 Resolve Storefront Tenant public-address semantics (Done) | F06 | P0 | REQ-STO-001 | N/A | Completed 2026-08-14 |
 | TASK-0151 Implement PublicTenantContext and storefront list/detail reads (Done) | F06 | P0 | REQ-STO-001..002, REQ-CAT-005 | TASK-0150, TASK-0131, TASK-0111 | Completed 2026-08-14 |
 | TASK-0152 Implement transient cart experience (Done) | F06 | P1 | REQ-CHK-001 | TASK-0151 | Completed 2026-08-14 |
@@ -50,8 +50,8 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0181 Implement GoodsReceipt and compensating correction evidence (Done) | F09 | P1 | REQ-PROC-002 | TASK-0180 | Completed 2026-08-14 |
 | TASK-0182 Integrate GoodsReceipt to Inventory idempotently (Done) | F09 | P1 | REQ-PROC-002, REQ-INV-003, REQ-HARD-001 | TASK-0181, TASK-0162 | Completed 2026-08-14 |
 | TASK-0183 Implement SupplierInvoice, variance approval and SupplierPayment evidence (Done) | F09 | P1 | REQ-PROC-003 | TASK-0181 | Completed 2026-08-14 |
-| TASK-0190 Resolve moving-weighted-average authoritative cost-pool scope | F10 | P0 | REQ-ACC-004 | N/A | **Needs clarification** |
-| TASK-0191 Establish Accounting module and required chart bootstrap | F10 | P0 | REQ-ACC-001, REQ-ACC-004 | TASK-0190, TASK-0113 | Blocked |
+| TASK-0190 Resolve moving-weighted-average authoritative cost-pool scope | F10 | P0 | REQ-ACC-004 | N/A | Done |
+| TASK-0191 Establish Accounting module and required chart bootstrap | F10 | P0 | REQ-ACC-001, REQ-ACC-004 | TASK-0190, TASK-0113 | Ready |
 | TASK-0192 Implement balanced immutable Journal posting and reversal | F10 | P0 | REQ-ACC-002 | TASK-0191 | Blocked |
 | TASK-0193 Implement sale/deposit/revenue/COGS fact consumers and valuation | F10 | P0 | REQ-ACC-003..004, REQ-HARD-001 | TASK-0192, TASK-0162, TASK-0165 | Blocked |
 | TASK-0194 Implement procurement and stock-adjustment Accounting consumers | F10 | P1 | REQ-ACC-005 | TASK-0192, TASK-0182, TASK-0183 | Blocked |
@@ -59,8 +59,8 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0200 Establish Reporting projections from producer-owned facts | F11 | P1 | REQ-REP-001..002 | TASK-0160, TASK-0195 | Blocked |
 | TASK-0201 Implement operational KPI projections and Tenant business-date semantics | F11 | P1 | REQ-REP-001 | TASK-0200 | Blocked |
 | TASK-0202 Implement financial/back-office reporting views | F11 | P1 | REQ-REP-002 | TASK-0200, TASK-0195 | Blocked |
-| TASK-0210 Resolve exact merchant refund-approval role/capability mapping | F12 | P0 | REQ-REF-001 | N/A | **Needs clarification** |
-| TASK-0211 Implement Sales refund request and terminal approve/reject review | F12 | P0 | REQ-REF-001 | TASK-0210, TASK-0160 | Blocked |
+| TASK-0210 Resolve exact merchant refund-approval role/capability mapping | F12 | P0 | REQ-REF-001 | N/A | Done |
+| TASK-0211 Implement Sales refund request and terminal approve/reject review | F12 | P0 | REQ-REF-001 | TASK-0210, TASK-0160 | Ready |
 | TASK-0212 Implement RefundApproved reliable choreography/fan-out | F12 | P0 | REQ-REF-002..004, REQ-HARD-001 | TASK-0211, TASK-0102 | Blocked |
 | TASK-0213 Implement Inventory return and Payments refund/reconciliation effects | F12 | P0 | REQ-REF-002..003 | TASK-0212, TASK-0162, TASK-0165 | Blocked |
 | TASK-0214 Implement refund Accounting corrections and progress projection | F12 | P0 | REQ-REF-004 | TASK-0213, TASK-0195 | Blocked |
@@ -77,6 +77,8 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 
 ## Ready frontier
 
-- F01, TASK-0110..0114, TASK-0120..0124, TASK-0130..0131, and TASK-0161 are complete. The completed owner-boundary guards unblock their dependent resource-growth work.
-- `TASK-0150`, `TASK-0190`, and `TASK-0210` are explicit decision/refinement tasks and are not implementation-ready.
-- All other tasks are blocked by concrete dependencies, not by arbitrary phase gating.
+- `TASK-0125`, `TASK-0141`, `TASK-0172`, `TASK-0182`, `TASK-0183`, and `TASK-0221` are complete.
+- `TASK-0142`, `TASK-0143`, and `TASK-0144` are complete. The PDI source policy must remain current at operation time.
+- `TASK-0190` is complete: Accounting cost pools are `Tenant + Product`; Warehouse is not a valuation dimension.
+- `TASK-0191` and `TASK-0211` are Ready. Accounting and refund work now have their required domain decisions.
+- All remaining tasks are blocked by concrete dependencies, not by arbitrary phase gating.

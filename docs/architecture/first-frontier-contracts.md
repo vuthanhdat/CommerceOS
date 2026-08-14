@@ -482,9 +482,7 @@ ADR-007 still governs:
 Builders must stop rather than invent:
 
 - Storefront Tenant-address owner/lifecycle/uniqueness;
-- moving-weighted-average cost-pool scope;
 - Category/Brand historical normalized-name reuse if needed;
-- exact refund approval role/capability mapping if not supplied by task/domain refinement;
 - any non-restock refund behavior.
 
 ## 21. Stop condition

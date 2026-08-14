@@ -235,3 +235,11 @@ the ADR-010 state machine's branch/wait/retry/catch control flow through the
 Step Functions API; owner-domain effects are separately verified through the
 project-owned application contracts. This is not a claim of AWS execution or
 service-integration equivalence.
+
+TASK-0142 maps the PDI worker capability to the
+`product-data-crawl` SQS queue, its `product-data-crawl-dlq`, the
+`product-data-raw-snapshots` bucket (seven-day lifecycle), and the
+ProductDataIngestion DynamoDB table. EventBridge Scheduler is deliberately not
+used for TASK-0144: schedule dispatch is an application use case whose policy
+and entitlement recheck is covered by unit/contract tests, avoiding a claim of
+unsupported scheduler-emulator fidelity.

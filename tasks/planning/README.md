@@ -77,4 +77,4 @@ Before marking Done, update:
 - The historical task files referenced by older roadmap prose (`TASK-0093`–`TASK-0095` and earlier V2 task numbers) are not present on current `main`; they are not silently recreated. This backlog starts at `TASK-0100`.
 - `prompt_arrange_doc.md` now declares `tasks/planning/` as the output root. Older examples inside that prompt that still say `docs/planning/` are treated as stale path examples.
 - Older real-AWS wording in top-level NFR/roadmap history is superseded for runtime purposes by ADR-012; the underlying business/reliability/security intent is preserved.
-- Current approved MVP `PD-001`–`PD-053` decisions are resolved. Remaining implementation blockers are narrower domain/contract gaps explicitly recorded in the technical baseline, especially Accounting moving-weighted-average cost-pool scope and refund-approval capability mapping.
+- Current approved MVP `PD-001`–`PD-053` decisions are resolved. Remaining implementation blockers are narrower domain/contract gaps explicitly recorded in the technical baseline.

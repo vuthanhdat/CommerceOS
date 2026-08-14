@@ -65,11 +65,11 @@ This index normalizes requirements from the existing `docs/` baseline. It does n
 | REQ-ACC-001 | Every Tenant gets required control-account semantic roles; non-control accounts can be added/deactivated under policy. | `docs/domains/commerce-operations.md` | Approved |
 | REQ-ACC-002 | Posted journals are balanced, immutable, traceable and source-idempotent; corrections use reversal/compensating entries. | `docs/01-non-functional-requirements.md`, domain baseline | Approved |
 | REQ-ACC-003 | PaymentCaptured, OrderFulfilled and StockIssued generate distinct approved sale/deposit/revenue/COGS postings. | `docs/domains/commerce-operations.md` | Approved |
-| REQ-ACC-004 | Moving weighted-average inventory valuation is Accounting authority and uses immutable issue-cost provenance. | `docs/domains/commerce-operations.md` | Approved policy; cost-pool dimension remains unresolved |
+| REQ-ACC-004 | Moving weighted-average inventory valuation is Accounting authority, keyed by trusted Tenant + Product, and uses immutable issue-cost provenance. | `docs/domains/product-decisions.md` | Approved |
 | REQ-ACC-005 | Procurement and stock-adjustment facts generate approved GRNI/AP/PPV/gain-loss postings without foreign-table reads. | `docs/domains/commerce-operations.md` | Approved |
 | REQ-REP-001 | Operational KPI formulas are defined from authoritative facts and Tenant business timezone. | `docs/domains/commerce-operations.md` | Approved |
 | REQ-REP-002 | General ledger/trial balance use Journal EffectiveDate; Reporting projections are never transactional/entitlement authority. | `docs/domains/commerce-operations.md` | Approved |
-| REQ-REF-001 | RefundRequested requires explicit merchant approve/reject; request alone has no stock/payment/accounting effect. | `docs/domains/commerce-operations.md` | Approved; exact approval role mapping remains open |
+| REQ-REF-001 | RefundRequested requires explicit merchant approve/reject; Owner/Admin/Staff may request, Owner/Admin alone may approve/reject, and request alone has no stock/payment/accounting effect. | `docs/domains/product-decisions.md` | Approved |
 | REQ-REF-002 | RefundApproved authorizes exactly-once restockable StockReturned for approved eligible quantity. | `docs/domains/commerce-operations.md` | Approved |
 | REQ-REF-003 | Payments refunds only approved intent; only verified provider evidence creates PaymentRefunded; Unknown is reconciled. | `docs/domains/commerce-operations.md` | Approved |
 | REQ-REF-004 | RefundApproved, StockReturned and PaymentRefunded independently drive append-only Accounting corrections; no global RefundCompleted truth. | ADR-011, technical baseline | Approved |
@@ -92,6 +92,6 @@ This index normalizes requirements from the existing `docs/` baseline. It does n
 ## Explicit open implementation questions
 
 - OQ-001 — Resolved by PD-052: Tenant-owned globally unique `/{storefrontSlug}` with permanent retirement/no reuse and no MVP custom domains or redirects.
-- OQ-002 — Accounting moving-weighted-average authoritative cost-pool dimension must be resolved before valuation persistence keys are finalized.
-- OQ-003 — Exact refund-approval role/capability mapping must be approved before refund approval API/UI is Ready.
+- OQ-002 — Resolved by PD-021: Accounting cost pool is Tenant + Product; Warehouse is not a valuation dimension.
+- OQ-003 — Resolved by PD-023: Owner/Admin/Staff may request; Owner/Admin approve/reject; Viewer has neither capability.
 - OQ-004 — Category/Brand historical normalized-name reuse semantics are only needed if implementation requires reuse after rename/retirement.

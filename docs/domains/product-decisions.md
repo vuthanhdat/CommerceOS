@@ -408,16 +408,16 @@ Accounting policies below define the **CommerceOS learning/MVP accounting model*
 
 - **Status:** Resolved
 - **Question:** Which context owns the immutable cost snapshot, which valuation method applies, and does StockIssued or OrderFulfilled trigger COGS?
-- **Decision:** MVP uses a moving weighted-average inventory cost maintained as Accounting valuation truth from accepted Procurement receipt cost evidence. Inventory continues to own quantity, not accounting value. `StockIssued` is the single COGS trigger: Accounting consumes the immutable issued quantity plus the applicable weighted-average cost snapshot and posts COGS / Inventory. `OrderFulfilled` must not create a second COGS effect for the same issue.
-- **Rationale:** Weighted average is simpler than FIFO/layer tracking while still teaching real valuation behavior. Using StockIssued ties COGS to the physical quantity movement and avoids duplicate effects from Sales fulfillment events. Keeping valuation in Accounting preserves Inventory's quantity ownership.
+- **Decision:** MVP uses a moving weighted-average inventory cost maintained as Accounting valuation truth from accepted Procurement receipt cost evidence. The authoritative cost pool is **Tenant + Product**; Warehouse is a physical quantity/location dimension and does not split accounting valuation. `StockIssued` is the single COGS trigger: Accounting consumes the immutable issued quantity plus the applicable weighted-average cost snapshot and posts COGS / Inventory. `OrderFulfilled` must not create a second COGS effect for the same issue. Warehouse transfers do not change the cost pool or produce a valuation journal. A restockable `StockReturned` reverses COGS at the original Accounting-owned StockIssued cost identified by its original issue provenance; it does not reprice the return at the current moving average.
+- **Rationale:** Tenant-wide product pools keep the MVP valuation coherent when stock moves between warehouses and avoid an artificial transfer valuation workflow. Using StockIssued ties COGS to the physical quantity movement and avoids duplicate effects from Sales fulfillment events. Keeping valuation in Accounting preserves Inventory's quantity ownership.
 - **Why material:** Catalog cost is advisory and cannot become accounting cost authority.
 - **Decision gate:** Resolved; Inventory/Accounting/Procurement tasks require reconciliation before Ready.
 - **Affected tasks:** TASK-0028–0031, TASK-0042, TASK-0044, TASK-0051, profit reporting.
 - **Approved policy constraint:** Catalog advisory cost is never posted as COGS; every stock issue creates at most one COGS effect.
-- **Approved by:** CommerceOS human Product Owner — delegated resolution instruction
-- **Approved on:** 2026-08-10
-- **Affected baseline documents updated:** Pending Domain Architect/Accounting reconciliation.
-- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
+- **Approved by:** CommerceOS human Product Owner
+- **Approved on:** 2026-08-14
+- **Affected baseline documents updated:** Accounting baseline, persistence access patterns and requirement index.
+- **Affected candidate tasks notified:** TASK-0191 is unblocked.
 
 ### PD-022 — Accounting recognition for procurement and supplier settlement
 
@@ -437,15 +437,15 @@ Accounting policies below define the **CommerceOS learning/MVP accounting model*
 
 - **Status:** Resolved
 - **Question:** What approval must occur before refund effects are accepted, and how do approved refunds affect stock, revenue/COGS, journals, and provider-refund truth?
-- **Decision:** MVP uses an explicit request-and-approval workflow. A refund begins as `RefundRequested` and must be reviewed in a dedicated merchant refund-approval experience before refund consequences are authorized. Approval records `RefundApproved`; rejection records `RefundRejected`. In MVP, approving the refund also means the merchant accepts the corresponding returned goods as restockable, so Inventory records the approved `StockReturned` quantity exactly once. Accounting creates linked reversal/compensating journal(s), never edits posted history: for already recognized fulfilled sales, the approved refund reverses the applicable revenue recognition (`Dr Sales Revenue / Cr Customer Deposits`) and the accepted `StockReturned` reverses the applicable COGS/inventory effect (`Dr Inventory / Cr COGS`) using the original issue-cost basis/provenance. Payment money movement remains owned by Payments: approval authorizes the refund operation, but `PaymentRefunded` exists only after verified provider evidence; when verified, Accounting clears the corresponding customer-deposit liability against Cash (`Dr Customer Deposits / Cr Cash`). Rejection produces no `StockReturned`, no refund accounting correction, and no payment-refund authorization. Non-restock refund semantics are outside the MVP policy established by this decision.
+- **Decision:** MVP uses an explicit request-and-approval workflow. Owner, Admin, and Staff may create `RefundRequested`; only Owner or Admin may approve or reject it, through the dedicated merchant refund-approval experience. Viewer has neither capability. Approval records `RefundApproved`; rejection records `RefundRejected`. UI visibility is not authorization, and the mapping has no amount threshold or plan/subscription shortcut in MVP. Approving a refund also means the merchant accepts the corresponding returned goods as restockable, so Inventory records the approved `StockReturned` quantity exactly once. Accounting creates linked reversal/compensating journal(s), never edits posted history: for already recognized fulfilled sales, the approved refund reverses the applicable revenue recognition (`Dr Sales Revenue / Cr Customer Deposits`) and the accepted `StockReturned` reverses the applicable COGS/inventory effect (`Dr Inventory / Cr COGS`) using the original issue-cost basis/provenance. Payment money movement remains owned by Payments: approval authorizes the refund operation, but `PaymentRefunded` exists only after verified provider evidence; when verified, Accounting clears the corresponding customer-deposit liability against Cash (`Dr Customer Deposits / Cr Cash`). Rejection produces no `StockReturned`, no refund accounting correction, and no payment-refund authorization. Non-restock refund semantics are outside the MVP policy established by this decision.
 - **Rationale:** A dedicated approval gate prevents an unreviewed refund request from automatically mutating stock or financial history. Tying approval to an accepted restock plus explicit compensating journals gives the MVP one auditable recovery path while preserving immutable journals and the existing rule that only verified provider evidence proves money was actually refunded.
 - **Decision gate:** Resolved; refund/return work still requires Domain/Technical/Backlog reconciliation before Ready.
 - **Affected tasks:** TASK-0050, TASK-0063–0066, refund back-office approval experience, Inventory returns, Accounting reconciliation, Reporting.
 - **Approved policy constraint:** `RefundRequested` alone has no stock/accounting/payment effect; `RefundApproved` authorizes one logical `StockReturned` plus linked compensating accounting effects; posted journals are never edited; `PaymentRefunded` still requires verified provider evidence; `RefundRejected` creates none of those effects.
 - **Approved by:** CommerceOS human Product Owner
-- **Approved on:** 2026-08-10
-- **Affected baseline documents updated:** `docs/domains/commerce-operations.md`, `docs/02-business-domains.md`, `docs/domains/product-decision-reconciliation.md` in the same Domain Architect reconciliation pass.
-- **Affected candidate tasks notified:** Pending Backlog Planner reconciliation.
+- **Approved on:** 2026-08-14
+- **Affected baseline documents updated:** refund domain/technical reconciliation, ADR-011, requirement index and backlog.
+- **Affected candidate tasks notified:** TASK-0211 is unblocked.
 
 ### PD-024 — Financial treatment of stock adjustments
 

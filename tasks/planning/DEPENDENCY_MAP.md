@@ -125,8 +125,8 @@ flowchart TD
 | Blocker | Affected tasks | Resolution |
 |---|---|---|
 | OQ-001 Storefront Tenant public-address semantics | TASK-0150–0154 and public catalog integration | Resolved by PD-052; implement Tenant-owned globally unique `/{storefrontSlug}` binding |
-| OQ-002 Accounting weighted-average cost-pool dimension | TASK-0191–0195 and refund COGS reversal | resolve domain scope before persistence keying |
-| OQ-003 Refund approval role/capability mapping | TASK-0211–0214 | explicit product/domain authority mapping |
+| OQ-002 Accounting weighted-average cost-pool dimension | TASK-0191–0195 and refund COGS reversal | Resolved by PD-021: trusted Tenant + Product valuation pool; Warehouse is not a valuation dimension |
+| OQ-003 Refund approval role/capability mapping | TASK-0211–0214 | Resolved by PD-023: Owner/Admin/Staff request; Owner/Admin approve/reject; Viewer neither |
 | External source policy changes over time | TASK-0141+ | implementation-time current policy/robots/terms review; disable source if unsafe |
 
 ## Parallelism guidance

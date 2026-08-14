@@ -6,8 +6,9 @@ Provide an internal learning double-entry ledger whose automated postings are ba
 ## Source requirements
 REQ-ACC-001..005, REQ-REP-002, REQ-HARD-001.
 
-## Blocking design gap
-OQ-002: the authoritative moving-weighted-average cost-pool dimension must be decided before valuation-state persistence keys are finalized.
+## Resolved design input
+PD-021 keys the authoritative moving-weighted-average valuation pool by trusted
+Tenant + Product. Warehouse is an Inventory-only quantity/location dimension.
 
 ## Scope
 control-account bootstrap; journal posting/reversal; moving-weighted-average valuation; sale/deposit/revenue/COGS consumers; procurement/adjustment consumers; reliable fact routes; GL/trial balance.

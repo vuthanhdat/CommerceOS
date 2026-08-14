@@ -75,6 +75,15 @@ public sealed class FoundationStack : Stack
         // CDK's AutoDeleteObjects provider targets nodejs24.x, which the pinned
         // LocalStack image does not currently accept. Test flows clean objects explicitly.
         _ = new Bucket(this, "FilesMediaBucket", new BucketProps { BucketName = $"{profile.ResourcePrefix}-files-media", Encryption = BucketEncryption.S3_MANAGED, BlockPublicAccess = BlockPublicAccess.BLOCK_ALL, RemovalPolicy = profile.RemovalPolicy, AutoDeleteObjects = false });
+        _ = new Bucket(this, "ProductDataRawSnapshotsBucket", new BucketProps
+        {
+            BucketName = $"{profile.ResourcePrefix}-product-data-raw-snapshots",
+            Encryption = BucketEncryption.S3_MANAGED,
+            BlockPublicAccess = BlockPublicAccess.BLOCK_ALL,
+            RemovalPolicy = profile.RemovalPolicy,
+            AutoDeleteObjects = false,
+            LifecycleRules = [new LifecycleRule { Expiration = Duration.Days(7), Enabled = true }]
+        });
 
         var onboardingDeadLetterQueue = new Queue(
             this,
@@ -99,6 +108,19 @@ public sealed class FoundationStack : Stack
                 },
                 RemovalPolicy = profile.RemovalPolicy
             });
+        var pdiDeadLetterQueue = new Queue(this, "ProductDataCrawlDeadLetterQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-product-data-crawl-dlq",
+            RetentionPeriod = Duration.Days(14),
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        var pdiCrawlQueue = new Queue(this, "ProductDataCrawlQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-product-data-crawl",
+            VisibilityTimeout = Duration.Seconds(60),
+            DeadLetterQueue = new DeadLetterQueue { Queue = pdiDeadLetterQueue, MaxReceiveCount = 3 },
+            RemovalPolicy = profile.RemovalPolicy
+        });
 
         var orderWorkflowRole = new Role(this, "OrderWorkflowRole", new RoleProps
         {
@@ -123,6 +145,7 @@ public sealed class FoundationStack : Stack
         // work-outbox relay; no cross-domain table access is granted.
         _ = tenancyTable.TableStreamArn;
         _ = onboardingRecoveryQueue.QueueArn;
+        _ = pdiCrawlQueue.QueueArn;
     }
 
     private Table ModuleTable(string constructId, string moduleName, EnvironmentProfile profile) => new(

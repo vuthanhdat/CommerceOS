@@ -1,6 +1,6 @@
 # F12 Tasks — Returns & Refunds
 
-- TASK-0210 — resolve refund approval capability (**Needs clarification**)
+- TASK-0210 — resolve refund approval capability (**Done**)
 - TASK-0211 — refund request/review
 - TASK-0212 — RefundApproved reliable choreography
 - TASK-0213 — Inventory return + Payments refund/reconcile

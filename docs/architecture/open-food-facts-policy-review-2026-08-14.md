@@ -12,3 +12,10 @@ same or stricter rate limit in the platform source policy. The adapter accepts
 only `https://world.openfoodfacts.org/api/v3.6/product/{barcode}.json`, with no
 query string, and keeps external observations as PDI work rather than Catalog
 products.
+
+The queue worker uses saved fixture payloads in tests and never performs a
+repeated live call. It classifies `Transient`/`RateLimited` as bounded retries;
+`NotFound`, `PolicyBlocked`, `ParserRejected`, and unexpected content go to the
+PDI DLQ with their original work identity. Raw JSON is written at a content-hash
+key and expires after seven days; normalized snapshots remain immutable and
+provenanced in the PDI store.

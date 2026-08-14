@@ -65,9 +65,7 @@ Resolved final inputs include the accepted Tenant Active/Suspended lifecycle, re
 Independent domain gaps still block only affected work:
 
 - Storefront Tenant-address implementation, using the approved Tenant-owned `/{storefrontSlug}` binding from PD-052;
-- Accounting moving-weighted-average cost-pool scope;
 - Category/Brand historical normalized-name reuse if implementation requires it;
-- refund approval role-to-capability mapping if not supplied during task refinement;
 - any future non-restock refund semantics.
 
 Infrastructure target changes do not alter these business semantics.
@@ -306,7 +304,7 @@ Accounting remains a separate persistence owner and consumes authoritative integ
 
 Posting + source dedup is atomic in Accounting; posted journals are immutable. Approved posting routes and correction semantics remain unchanged by the infrastructure target.
 
-Moving-weighted-average valuation is approved business policy, but its authoritative cost-pool dimension remains a domain gap before persistence keys are finalized.
+Moving-weighted-average valuation is Accounting-owned and uses one authoritative cost pool per trusted Tenant + Product. Warehouse remains an Inventory quantity/location dimension; a warehouse transfer does not change the pool or create a valuation journal. Accounting retains original StockIssued cost provenance for restockable return reversals.
 
 ## 15. Capability-first LocalStack mapping
 

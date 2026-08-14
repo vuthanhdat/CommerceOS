@@ -39,7 +39,10 @@ ApproveRefund(refundRequestId, expectedRevision, ...)
 RejectRefund(refundRequestId, expectedRevision, ...)
 ```
 
-The exact role-to-refund-approval capability mapping remains owned by Domain/Backlog refinement; Technical Architecture only requires that approval/rejection receive an explicitly authorized merchant mutation context.
+Trusted Merchant Access supplies the explicit authorization: Owner/Admin/Staff
+may request a refund, Owner/Admin alone may approve or reject it, and Viewer has
+neither capability. This ADR still requires an authorized merchant mutation
+context and does not treat UI visibility or client-supplied roles as authority.
 
 When Sales accepts `RefundApproved`, the same Sales transaction writes:
 

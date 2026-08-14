@@ -309,7 +309,7 @@ Accounting owns ChartOfAccounts/control accounts, Journal/lines, source claims, 
 | `ACC-AP-04` | GL/Trial Balance | Accounting-owned journal truth only |
 | `ACC-AP-05R` | StockIssued valuation/posting | source claim + Accounting-owned valuation/provenance update + COGS/Inventory journal |
 | `ACC-AP-06R` | GoodsReceipt valuation/posting | Procurement accepted cost evidence + Accounting-owned valuation state + Inventory/GRNI journal |
-| `ACC-AP-07` | moving-average cost pool | **DOMAIN DECISION REQUIRED** before key dimension is finalized |
+| `ACC-AP-07R` | moving-average cost pool | trusted `Tenant + Product` key; conditional update with accepted receipt/issue source claim; Warehouse is not a valuation key |
 | `ACC-AP-08R` | RefundApproved revenue correction | refund approval source claim + linked immutable Dr Sales Revenue / Cr Customer Deposits journal |
 | `ACC-AP-09R` | StockReturned COGS reversal | StockReturned source claim + original StockIssued Accounting provenance + immutable Dr Inventory / Cr COGS journal + valuation correction |
 | `ACC-AP-10R` | PaymentRefunded Cash settlement | payment-refund source claim + immutable Dr Customer Deposits / Cr Cash journal |

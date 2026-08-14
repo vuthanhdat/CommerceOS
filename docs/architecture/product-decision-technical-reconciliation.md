@@ -255,7 +255,10 @@ RejectRefund(refundRequestId, expectedRevision, ...)
 
 `RefundRequested` has no downstream refund effect. Approval/rejection is terminal for the logical request and duplicate-safe.
 
-The exact role-to-refund-approval capability mapping remains Domain/Backlog refinement; Builders may not guess it from screen visibility.
+Trusted Merchant Access resolves the refund capability: Owner/Admin/Staff may
+request; Owner/Admin alone may approve or reject; Viewer has neither capability.
+Builders must deny before Sales mutation when the trusted capability is absent;
+screen visibility and client-supplied roles remain non-authoritative.
 
 ### `RefundApproved` integration fact
 
@@ -355,7 +358,7 @@ Required additions:
 - durable linkage to original journal/source/issue provenance required for append-only reversals;
 - no foreign table lookup for refund postings.
 
-The moving-weighted-average authoritative cost-pool scope remains a separate domain gap before valuation-state keying is hardened.
+Moving-weighted-average valuation state keys by trusted Tenant + Product. Warehouse remains Inventory-only for quantity/location; transfer has no Accounting valuation effect. `StockReturned` locates the original Accounting StockIssued provenance and reverses that recorded issue cost, never a current moving-average estimate.
 
 ## 9. Integration matrix updates
 
@@ -442,11 +445,9 @@ Current accepted architecture decisions include:
 The final three PDs are no longer stop conditions. The following independent gaps remain and must not be guessed by Builders:
 
 1. Public Tenant route/index/cache-key implementation for the approved `/{storefrontSlug}` binding; owner/lifecycle/uniqueness are finalized by PD-052.
-2. Accounting moving-weighted-average cost-pool scope (`Tenant+Product`, `Tenant+Product+Warehouse`, or other domain-approved dimension). Persistence keying remains blocked until clarified.
-3. Category/Brand historical normalized-name reuse after rename/retirement if a task requires it.
-4. Refund approval role-to-capability mapping if a refund-approval task reaches refinement without a domain-authorized mapping.
-5. Any non-restock refund semantics; current MVP refund approval means accepted restockable return.
-6. Any product max-order-line limit. Architecture must solve DynamoDB transaction cardinality without inventing a commercial/business maximum.
+2. Category/Brand historical normalized-name reuse after rename/retirement if a task requires it.
+3. Any non-restock refund semantics; current MVP refund approval means accepted restockable return.
+4. Any product max-order-line limit. Architecture must solve DynamoDB transaction cardinality without inventing a commercial/business maximum.
 
 ## 13. Backlog Planner handoff
 

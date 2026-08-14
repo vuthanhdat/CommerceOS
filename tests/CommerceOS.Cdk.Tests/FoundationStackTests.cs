@@ -119,7 +119,7 @@ public sealed class FoundationStackTests
     }
 
     [Fact]
-    public void FoundationStackProvidesAStreamAndOnePurposeBuiltOnboardingRecoveryQueue()
+    public void FoundationStackProvidesAStreamAndPurposeBuiltRecoveryAndPdiQueues()
     {
         var app = new App();
         var stack = new FoundationStack(app, "test-foundation", EnvironmentProfile.Create("localstack-test", "0042"));
@@ -134,6 +134,15 @@ public sealed class FoundationStackTests
         template.HasResourceProperties(
             "AWS::SQS::Queue",
             new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-onboarding-trial-recovery-dlq" });
+        template.HasResourceProperties(
+            "AWS::SQS::Queue",
+            new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-product-data-crawl" });
+        template.HasResourceProperties(
+            "AWS::SQS::Queue",
+            new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-product-data-crawl-dlq" });
+        template.HasResourceProperties(
+            "AWS::S3::Bucket",
+            new Dictionary<string, object> { ["BucketName"] = "commerceos-test-0042-product-data-raw-snapshots", ["LifecycleConfiguration"] = Match.AnyValue() });
     }
 
     [Fact]
