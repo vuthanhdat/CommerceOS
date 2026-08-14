@@ -51,6 +51,9 @@
     <Project Path="src/Modules/Accounting/CommerceOS.Accounting.Domain/CommerceOS.Accounting.Domain.csproj" />
     <Project Path="src/Modules/Accounting/CommerceOS.Accounting.Application/CommerceOS.Accounting.Application.csproj" />
     <Project Path="src/Modules/Accounting/CommerceOS.Accounting.Infrastructure/CommerceOS.Accounting.Infrastructure.csproj" />
+    <Project Path="src/Modules/Reporting/CommerceOS.Reporting.Domain/CommerceOS.Reporting.Domain.csproj" />
+    <Project Path="src/Modules/Reporting/CommerceOS.Reporting.Application/CommerceOS.Reporting.Application.csproj" />
+    <Project Path="src/Modules/Reporting/CommerceOS.Reporting.Infrastructure/CommerceOS.Reporting.Infrastructure.csproj" />
     <Project Path="src/CommerceOS.Api/CommerceOS.Api.csproj" />
   </Folder>
   <Folder Name="/infra/">
@@ -76,6 +79,7 @@
     <Project Path="tests/CommerceOS.Payments.UnitTests/CommerceOS.Payments.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.OrderOrchestration.UnitTests/CommerceOS.OrderOrchestration.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.Accounting.UnitTests/CommerceOS.Accounting.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Reporting.UnitTests/CommerceOS.Reporting.UnitTests.csproj" />
   </Folder>
 </Solution>
 

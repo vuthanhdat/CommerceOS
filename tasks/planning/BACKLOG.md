@@ -56,12 +56,12 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0193 Implement sale/deposit/revenue/COGS fact consumers and valuation (Done) | F10 | P0 | REQ-ACC-003..004, REQ-HARD-001 | TASK-0192, TASK-0162, TASK-0165 | Completed 2026-08-14 |
 | TASK-0194 Implement procurement and stock-adjustment Accounting consumers (Done) | F10 | P1 | REQ-ACC-005 | TASK-0192, TASK-0182, TASK-0183 | Completed 2026-08-14 |
 | TASK-0195 Implement reliable fact routes plus General Ledger/Trial Balance (Done) | F10 | P0 | REQ-ACC-002, REQ-REP-002, REQ-HARD-001 | TASK-0193, TASK-0194, TASK-0102 | Completed 2026-08-14 |
-| TASK-0200 Establish Reporting projections from producer-owned facts | F11 | P1 | REQ-REP-001..002 | TASK-0160, TASK-0195 | Ready |
-| TASK-0201 Implement operational KPI projections and Tenant business-date semantics | F11 | P1 | REQ-REP-001 | TASK-0200 | Blocked |
-| TASK-0202 Implement financial/back-office reporting views | F11 | P1 | REQ-REP-002 | TASK-0200, TASK-0195 | Blocked |
+| TASK-0200 Establish Reporting projections from producer-owned facts (Done) | F11 | P1 | REQ-REP-001..002 | TASK-0160, TASK-0195 | Completed 2026-08-14 |
+| TASK-0201 Implement operational KPI projections and Tenant business-date semantics (Done) | F11 | P1 | REQ-REP-001 | TASK-0200 | Completed 2026-08-14 |
+| TASK-0202 Implement financial/back-office reporting views (Done) | F11 | P1 | REQ-REP-002 | TASK-0200, TASK-0195 | Completed 2026-08-14 |
 | TASK-0210 Resolve exact merchant refund-approval role/capability mapping | F12 | P0 | REQ-REF-001 | N/A | Done |
-| TASK-0211 Implement Sales refund request and terminal approve/reject review | F12 | P0 | REQ-REF-001 | TASK-0210, TASK-0160 | Ready |
-| TASK-0212 Implement RefundApproved reliable choreography/fan-out | F12 | P0 | REQ-REF-002..004, REQ-HARD-001 | TASK-0211, TASK-0102 | Blocked |
+| TASK-0211 Implement Sales refund request and terminal approve/reject review (Done) | F12 | P0 | REQ-REF-001 | TASK-0210, TASK-0160 | Completed 2026-08-14 |
+| TASK-0212 Implement RefundApproved reliable choreography/fan-out (Done) | F12 | P0 | REQ-REF-002..004, REQ-HARD-001 | TASK-0211, TASK-0102 | Completed 2026-08-14 |
 | TASK-0213 Implement Inventory return and Payments refund/reconciliation effects | F12 | P0 | REQ-REF-002..003 | TASK-0212, TASK-0162, TASK-0165 | Blocked |
 | TASK-0214 Implement refund Accounting corrections and progress projection | F12 | P0 | REQ-REF-004 | TASK-0213, TASK-0195 | Blocked |
 | TASK-0220 Establish Audit append/query module (Done) | F13 | P1 | REQ-AUD-001 | TASK-0110 | Completed 2026-08-14 |

@@ -75,6 +75,7 @@ public sealed class FoundationStack : Stack
         _ = ModuleTable("AuditTable", "audit", profile);
         _ = ModuleTable("MockPaymentProviderTable", "mock-payment-provider", profile);
         _ = ModuleTable("AccountingTable", "accounting", profile);
+        _ = ModuleTable("ReportingTable", "reporting", profile);
         // CDK's AutoDeleteObjects provider targets nodejs24.x, which the pinned
         // LocalStack image does not currently accept. Test flows clean objects explicitly.
         _ = new Bucket(this, "FilesMediaBucket", new BucketProps { BucketName = $"{profile.ResourcePrefix}-files-media", Encryption = BucketEncryption.S3_MANAGED, BlockPublicAccess = BlockPublicAccess.BLOCK_ALL, RemovalPolicy = profile.RemovalPolicy, AutoDeleteObjects = false });
@@ -144,6 +145,38 @@ public sealed class FoundationStack : Stack
             EventPattern = new EventPattern { DetailType = ["PaymentCaptured", "OrderFulfilled", "StockIssued", "GoodsReceiptRecorded", "SupplierInvoiceRecorded", "SupplierPaymentRecorded", "StockAdjusted"] },
             Targets = [new SqsEventTarget(accountingFactsQueue)]
         });
+        var refundInventoryDeadLetterQueue = new Queue(this, "RefundInventoryDeadLetterQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-refund-inventory-dlq",
+            RetentionPeriod = Duration.Days(14),
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        var refundInventoryQueue = new Queue(this, "RefundInventoryQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-refund-inventory",
+            VisibilityTimeout = Duration.Seconds(60),
+            DeadLetterQueue = new DeadLetterQueue { Queue = refundInventoryDeadLetterQueue, MaxReceiveCount = 5 },
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        var refundPaymentsDeadLetterQueue = new Queue(this, "RefundPaymentsDeadLetterQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-refund-payments-dlq",
+            RetentionPeriod = Duration.Days(14),
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        var refundPaymentsQueue = new Queue(this, "RefundPaymentsQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-refund-payments",
+            VisibilityTimeout = Duration.Seconds(60),
+            DeadLetterQueue = new DeadLetterQueue { Queue = refundPaymentsDeadLetterQueue, MaxReceiveCount = 5 },
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        _ = new Rule(this, "RefundApprovedFanOut", new RuleProps
+        {
+            EventBus = commerceFacts,
+            EventPattern = new EventPattern { DetailType = ["RefundApproved"] },
+            Targets = [new SqsEventTarget(refundInventoryQueue), new SqsEventTarget(refundPaymentsQueue), new SqsEventTarget(accountingFactsQueue)]
+        });
 
         var orderWorkflowRole = new Role(this, "OrderWorkflowRole", new RoleProps
         {
@@ -170,6 +203,8 @@ public sealed class FoundationStack : Stack
         _ = onboardingRecoveryQueue.QueueArn;
         _ = pdiCrawlQueue.QueueArn;
         _ = accountingFactsQueue.QueueArn;
+        _ = refundInventoryQueue.QueueArn;
+        _ = refundPaymentsQueue.QueueArn;
     }
 
     private Table ModuleTable(string constructId, string moduleName, EnvironmentProfile profile) => new(

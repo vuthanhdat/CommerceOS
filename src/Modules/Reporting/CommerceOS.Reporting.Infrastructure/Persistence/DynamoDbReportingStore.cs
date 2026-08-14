@@ -1,0 +1,33 @@
+using System.Globalization;
+using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.Model;
+using CommerceOS.Reporting.Application;
+using CommerceOS.Reporting.Domain;
+
+namespace CommerceOS.Reporting.Infrastructure.Persistence;
+
+public sealed record DynamoDbReportingOptions(string TableName);
+public sealed class DynamoDbReportingStore(IAmazonDynamoDB client, DynamoDbReportingOptions options) : IReportingStore
+{
+    public async Task<ReportingOutcome> ApplyAsync(TrustedReportingContext context, string projectionName, string eventId, DateOnly businessDate, OperationalDay delta, IReadOnlyList<ProductQuantity> productDeltas, DateTimeOffset occurredAt, CancellationToken ct)
+    {
+        if (delta.TenantId != context.TenantId || productDeltas.Count > 10) return ReportingOutcome.Invalid;
+        var writes = new List<TransactWriteItem>
+        {
+            new() { Put = new Put { TableName = options.TableName, Item = new() { ["PK"] = S(P(context.TenantId)), ["SK"] = S($"INBOX#{E(projectionName)}#{E(eventId)}") }, ConditionExpression = "attribute_not_exists(PK)" } },
+            new() { Update = new Update { TableName = options.TableName, Key = Key(context.TenantId, $"DAY#{businessDate:yyyyMMdd}"), UpdateExpression = "SET TenantId = :tenant, BusinessDate = :date, UpdatedAt = :at ADD ConfirmedOrderCount :orders, ConfirmedOrderTotalVnd :total, CancelledAmountVnd :cancelled, RefundedAmountVnd :refunded, FailedPayments :failed, TerminalPayments :terminal", ExpressionAttributeValues = new() { [":tenant"] = S(context.TenantId.Value), [":date"] = S(businessDate.ToString("O", CultureInfo.InvariantCulture)), [":at"] = S(occurredAt.ToString("O", CultureInfo.InvariantCulture)), [":orders"] = N(delta.ConfirmedOrderCount), [":total"] = N(delta.ConfirmedOrderTotalVnd), [":cancelled"] = N(delta.CancelledAmountVnd), [":refunded"] = N(delta.RefundedAmountVnd), [":failed"] = N(delta.FailedPayments), [":terminal"] = N(delta.TerminalPayments) } } }
+        };
+        writes.AddRange(productDeltas.Select(product => new TransactWriteItem { Update = new Update { TableName = options.TableName, Key = Key(context.TenantId, $"PRODUCT#{businessDate:yyyyMMdd}#{E(product.ProductId)}"), UpdateExpression = "SET ProductId = :product, NameSnapshot = :name ADD Quantity :quantity", ExpressionAttributeValues = new() { [":product"] = S(product.ProductId), [":name"] = S(product.NameSnapshot), [":quantity"] = N(product.Quantity) } } }));
+        try { await client.TransactWriteItemsAsync(new() { TransactItems = writes }, ct); return ReportingOutcome.Applied; } catch (TransactionCanceledException) { return ReportingOutcome.AlreadyApplied; }
+    }
+    public async Task<ProjectionCheckpoint?> GetCheckpointAsync(TrustedReportingContext context, string projectionName, CancellationToken ct)
+    { var item = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"CHECKPOINT#{E(projectionName)}") }, ct); return item.Item.Count == 0 ? null : new(context.TenantId, projectionName, item.Item.TryGetValue("LastEventId", out var id) ? id.S : null, item.Item.TryGetValue("LastOccurredAt", out var at) ? DateTimeOffset.Parse(at.S, CultureInfo.InvariantCulture) : null, item.Item["RebuildInProgress"].BOOL ?? false, DateTimeOffset.Parse(item.Item["UpdatedAt"].S, CultureInfo.InvariantCulture)); }
+    public async Task<IReadOnlyList<OperationalDay>> ListDaysAsync(TrustedReportingContext context, DateOnly from, DateOnly through, CancellationToken ct)
+    { var response = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(P(context.TenantId)), [":prefix"] = S("DAY#") } }, ct); return response.Items.Select(x => new OperationalDay(context.TenantId, DateOnly.Parse(x["BusinessDate"].S, CultureInfo.InvariantCulture), L(x, "ConfirmedOrderCount"), L(x, "ConfirmedOrderTotalVnd"), L(x, "CancelledAmountVnd"), L(x, "RefundedAmountVnd"), L(x, "FailedPayments"), L(x, "TerminalPayments"))).Where(x => x.BusinessDate >= from && x.BusinessDate <= through).ToArray(); }
+    public async Task<IReadOnlyList<ProductQuantity>> ListProductsAsync(TrustedReportingContext context, DateOnly from, DateOnly through, CancellationToken ct)
+    { var response = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(P(context.TenantId)), [":prefix"] = S("PRODUCT#") } }, ct); return response.Items.Where(x => DateOnly.ParseExact(x["SK"].S.Split('#')[1], "yyyyMMdd", CultureInfo.InvariantCulture) is var day && day >= from && day <= through).GroupBy(x => x["ProductId"].S).Select(x => new ProductQuantity(x.Key, x.Last()["NameSnapshot"].S, x.Sum(y => L(y, "Quantity")))).ToArray(); }
+    public Task<ReportingOutcome> BeginRebuildAsync(TrustedReportingContext context, string projectionName, CancellationToken ct) => SaveCheckpointAsync(context, projectionName, true, ct);
+    public Task<ReportingOutcome> CompleteRebuildAsync(TrustedReportingContext context, string projectionName, DateTimeOffset completedAt, CancellationToken ct) => SaveCheckpointAsync(context, projectionName, false, ct, completedAt);
+    private async Task<ReportingOutcome> SaveCheckpointAsync(TrustedReportingContext context, string projectionName, bool inProgress, CancellationToken ct, DateTimeOffset? updatedAt = null) { await client.UpdateItemAsync(new() { TableName = options.TableName, Key = Key(context.TenantId, $"CHECKPOINT#{E(projectionName)}"), UpdateExpression = "SET RebuildInProgress = :state, UpdatedAt = :at", ExpressionAttributeValues = new() { [":state"] = new() { BOOL = inProgress }, [":at"] = S((updatedAt ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture)) } }, ct); return ReportingOutcome.Applied; }
+    private static Dictionary<string, AttributeValue> Key(ReportingTenantId tenant, string sk) => new() { ["PK"] = S(P(tenant)), ["SK"] = S(sk) }; private static string P(ReportingTenantId tenant) => $"TENANT#{E(tenant.Value)}"; private static string E(string value) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(value)).TrimEnd('=').Replace('+', '-').Replace('/', '_'); private static AttributeValue S(string value) => new() { S = value }; private static AttributeValue N(long value) => new() { N = value.ToString(CultureInfo.InvariantCulture) }; private static long L(Dictionary<string, AttributeValue> x, string key) => long.Parse(x[key].N, CultureInfo.InvariantCulture);
+}

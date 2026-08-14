@@ -35,3 +35,23 @@ public sealed record SalesOrder(SalesOrderId Id, SalesTenantId TenantId, IReadOn
     }
 }
 public sealed class SalesRuleException(string code) : InvalidOperationException(code) { public string Code { get; } = code; }
+
+public enum RefundRequestStatus { Requested, Approved, Rejected }
+public sealed record RefundLine(string ProductId, long Quantity, string OriginalIssueReference)
+{
+    public static RefundLine Create(string productId, long quantity, string originalIssueReference) => string.IsNullOrWhiteSpace(productId) || string.IsNullOrWhiteSpace(originalIssueReference) || quantity <= 0 ? throw new SalesRuleException("REFUND_LINE_INVALID") : new(productId, quantity, originalIssueReference);
+}
+public sealed record RefundRequest(string Id, SalesTenantId TenantId, SalesOrderId OrderId, string PaymentId, long AmountVnd, string Currency, IReadOnlyList<RefundLine> Lines, RefundRequestStatus Status, string RequestSourceIdentity, string RequestedBy, string? DecisionSourceIdentity, string? DecidedBy, DateTimeOffset RequestedAt, DateTimeOffset? DecidedAt, long Revision)
+{
+    public static RefundRequest Create(string id, SalesTenantId tenantId, SalesOrderId orderId, string paymentId, long amountVnd, string currency, IReadOnlyList<RefundLine> lines, string sourceIdentity, string actorId, DateTimeOffset occurredAt)
+    {
+        if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(paymentId) || amountVnd <= 0 || currency != "VND" || lines.Count == 0 || string.IsNullOrWhiteSpace(sourceIdentity) || string.IsNullOrWhiteSpace(actorId)) throw new SalesRuleException("REFUND_REQUEST_INVALID");
+        return new(id, tenantId, orderId, paymentId, amountVnd, currency, lines.ToArray(), RefundRequestStatus.Requested, sourceIdentity, actorId, null, null, occurredAt, null, 1);
+    }
+    public RefundRequest Decide(RefundRequestStatus target, string sourceIdentity, string actorId, DateTimeOffset occurredAt, long expectedRevision)
+    {
+        if (target is RefundRequestStatus.Requested || Revision != expectedRevision || string.IsNullOrWhiteSpace(sourceIdentity) || string.IsNullOrWhiteSpace(actorId)) throw new SalesRuleException("REFUND_DECISION_INVALID");
+        if (Status is not RefundRequestStatus.Requested) { if (Status == target && DecisionSourceIdentity == sourceIdentity) return this; throw new SalesRuleException("REFUND_DECISION_TERMINAL"); }
+        return this with { Status = target, DecisionSourceIdentity = sourceIdentity, DecidedBy = actorId, DecidedAt = occurredAt, Revision = Revision + 1 };
+    }
+}

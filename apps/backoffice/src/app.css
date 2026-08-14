@@ -36,3 +36,17 @@ p {
   line-height: 1.65;
 }
 
+.report-card {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #33415c;
+  border-radius: 0.75rem;
+  background: #172033;
+}
+
+.report-card span { color: #9ba9c4; font-size: 0.85rem; }
+.report-card strong { font-size: 1.1rem; }
+.report-card small { color: #c1cada; }
+

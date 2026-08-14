@@ -112,6 +112,7 @@ public sealed class FoundationStackTests
     [InlineData("audit")]
     [InlineData("mock-payment-provider")]
     [InlineData("accounting")]
+    [InlineData("reporting")]
     public void FoundationStackCreatesEachReadyModuleOwnedTable(string moduleName)
     {
         var app = new App();
@@ -150,6 +151,12 @@ public sealed class FoundationStackTests
         template.HasResourceProperties(
             "AWS::Events::EventBus",
             new Dictionary<string, object> { ["Name"] = "commerceos-test-0042-commerce-facts" });
+        template.HasResourceProperties(
+            "AWS::SQS::Queue",
+            new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-refund-inventory" });
+        template.HasResourceProperties(
+            "AWS::SQS::Queue",
+            new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-refund-payments" });
         template.HasResourceProperties(
             "AWS::S3::Bucket",
             new Dictionary<string, object> { ["BucketName"] = "commerceos-test-0042-product-data-raw-snapshots", ["LifecycleConfiguration"] = Match.AnyValue() });

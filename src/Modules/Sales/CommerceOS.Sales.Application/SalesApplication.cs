@@ -15,6 +15,12 @@ public interface ISalesOrderStore
     Task<SalesStoreOutcome> SaveAsync(TrustedSalesContext context, SalesOrder before, SalesOrder after, CancellationToken cancellationToken);
     Task<SalesOrderPage> ListAsync(TrustedSalesContext context, string? cursor, int pageSize, CancellationToken cancellationToken);
 }
+public interface IRefundStore
+{
+    Task<RefundRequest?> GetRefundAsync(TrustedSalesContext context, string refundRequestId, CancellationToken ct);
+    Task<SalesStoreOutcome> CreateRefundAsync(TrustedSalesContext context, RefundRequest request, CancellationToken ct);
+    Task<SalesStoreOutcome> DecideRefundAsync(TrustedSalesContext context, RefundRequest before, RefundRequest after, CancellationToken ct);
+}
 public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlacement, ISalesOrderCancellation, ISalesOrderWorkflowProgress
 {
     public async Task<OrderPlacementResult> PlaceAsync(PlaceAcceptedOrder command, CancellationToken cancellationToken)
@@ -39,5 +45,39 @@ public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlace
     private async Task<SalesProgressOutcome> TransitionAsync(string tenant, string order, SalesOrderStatus target, string source, long revision, string correlation, CancellationToken ct)
     { var result = await ApplyTransitionAsync(new(new(tenant), correlation), new(order), target, source, revision, ct); return result is SalesStoreOutcome.Applied ? SalesProgressOutcome.Applied : SalesProgressOutcome.Conflict; }
     private static string Hash(PlaceAcceptedOrder command) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{command.TrustedTenantId}|{string.Join(';', command.Lines.Select(x => $"{x.ProductId}:{x.Quantity}:{x.UnitPriceVnd}"))}|{command.TotalVnd}|{command.Guest.Name}|{command.Guest.Email}|{command.Guest.Phone}|{command.Guest.Address}")));
+    private static string StableToken(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant()[..24];
+}
+
+public sealed class RefundReviewService(ISalesOrderStore orders, IRefundStore refunds, TimeProvider? clock = null) : ISalesRefundReview
+{
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    public async Task<RefundCommandResult> RequestAsync(RequestSalesRefund command, CancellationToken ct)
+    {
+        if (!CanRequest(command.Role) || string.IsNullOrWhiteSpace(command.TrustedTenantId) || string.IsNullOrWhiteSpace(command.SourceIdentity) || string.IsNullOrWhiteSpace(command.ActorId) || string.IsNullOrWhiteSpace(command.CorrelationId)) return new(CanRequest(command.Role) ? RefundCommandOutcome.Invalid : RefundCommandOutcome.Forbidden, null, null);
+        var context = new TrustedSalesContext(new(command.TrustedTenantId), command.CorrelationId); var order = await orders.GetAsync(context, new(command.OrderId), ct);
+        if (order is null || order.Status is not (SalesOrderStatus.Fulfilled or SalesOrderStatus.Completed) || command.AmountVnd > order.TotalVnd) return new(RefundCommandOutcome.Invalid, null, null);
+        try
+        {
+            var lines = command.Lines.Select(x => RefundLine.Create(x.ProductId, x.Quantity, x.OriginalIssueReference)).ToArray();
+            if (lines.GroupBy(x => x.ProductId).Any(x => x.Sum(y => y.Quantity) > order.Lines.Where(line => line.ProductId == x.Key).Sum(line => line.Quantity))) return new(RefundCommandOutcome.Invalid, null, null);
+            var id = $"refund:{StableToken($"{command.TrustedTenantId}|{command.SourceIdentity}")}"; var request = RefundRequest.Create(id, context.TenantId, order.Id, command.PaymentId, command.AmountVnd, command.Currency, lines, command.SourceIdentity, command.ActorId, _clock.GetUtcNow());
+            var outcome = await refunds.CreateRefundAsync(context, request, ct); return new(outcome is SalesStoreOutcome.Applied ? RefundCommandOutcome.Requested : outcome is SalesStoreOutcome.Replayed ? RefundCommandOutcome.AlreadyApplied : RefundCommandOutcome.Conflict, id, request.Status.ToString());
+        }
+        catch (SalesRuleException) { return new(RefundCommandOutcome.Invalid, null, null); }
+    }
+    public async Task<RefundCommandResult> DecideAsync(DecideSalesRefund command, CancellationToken ct)
+    {
+        if (!CanDecide(command.Role)) return new(RefundCommandOutcome.Forbidden, null, null);
+        var context = new TrustedSalesContext(new(command.TrustedTenantId), command.CorrelationId); var before = await refunds.GetRefundAsync(context, command.RefundRequestId, ct); if (before is null) return new(RefundCommandOutcome.NotFound, null, null);
+        try
+        {
+            var target = command.Approve ? RefundRequestStatus.Approved : RefundRequestStatus.Rejected; var after = before.Decide(target, command.SourceIdentity, command.ActorId, _clock.GetUtcNow(), command.ExpectedRevision);
+            if (after == before) return new(RefundCommandOutcome.AlreadyApplied, before.Id, before.Status.ToString());
+            var saved = await refunds.DecideRefundAsync(context, before, after, ct); return new(saved is SalesStoreOutcome.Applied ? command.Approve ? RefundCommandOutcome.Approved : RefundCommandOutcome.Rejected : RefundCommandOutcome.Conflict, before.Id, after.Status.ToString());
+        }
+        catch (SalesRuleException) { return new(RefundCommandOutcome.Conflict, before.Id, before.Status.ToString()); }
+    }
+    private static bool CanRequest(TrustedRefundRole role) => role is TrustedRefundRole.Owner or TrustedRefundRole.Admin or TrustedRefundRole.Staff;
+    private static bool CanDecide(TrustedRefundRole role) => role is TrustedRefundRole.Owner or TrustedRefundRole.Admin;
     private static string StableToken(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant()[..24];
 }
