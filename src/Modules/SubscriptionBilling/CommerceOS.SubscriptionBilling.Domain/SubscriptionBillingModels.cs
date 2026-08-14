@@ -66,6 +66,57 @@ public readonly record struct VndMoney
     public long Amount { get; }
 }
 
+public readonly record struct PlatformChargeId
+{
+    public PlatformChargeId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("PlatformChargeId must not be empty.", nameof(value));
+        }
+
+        Value = value;
+    }
+
+    public string Value { get; }
+
+    public override string ToString() => Value;
+}
+
+public enum PlatformChargeOutcome
+{
+    Pending,
+    OutcomeUnknown,
+    Succeeded,
+    DefinitivelyNotSettled
+}
+
+public enum PlatformChargeEvidenceKind
+{
+    VerifiedSuccess,
+    DefinitiveNoCommit,
+    OutcomeUnknown
+}
+
+public sealed record PlatformCharge(
+    PlatformChargeId Id,
+    string TenantId,
+    string SubscriptionReference,
+    string TermsReference,
+    string LogicalChargeIdentity,
+    VndMoney Amount,
+    string ProviderOperationId,
+    PlatformChargeOutcome Outcome,
+    long Revision,
+    DateTimeOffset CreatedAt);
+
+public sealed record PlatformChargeEvidence(
+    string EvidenceId,
+    PlatformChargeId ChargeId,
+    string ProviderOperationId,
+    PlatformChargeEvidenceKind Kind,
+    DateTimeOffset OccurredAt);
+
 public sealed record EntitlementTerms
 {
     public EntitlementTerms(

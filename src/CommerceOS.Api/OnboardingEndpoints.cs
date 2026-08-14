@@ -2,9 +2,11 @@ using Amazon.DynamoDBv2;
 using Amazon.Runtime;
 using CommerceOS.SubscriptionBilling.Application.Catalog;
 using CommerceOS.SubscriptionBilling.Application.Entitlements;
+using CommerceOS.SubscriptionBilling.Application.PlatformCharges;
 using CommerceOS.SubscriptionBilling.Application.Trial;
 using CommerceOS.SubscriptionBilling.Contracts;
 using CommerceOS.SubscriptionBilling.Infrastructure.Persistence;
+using CommerceOS.SubscriptionBilling.Infrastructure.Provider;
 using CommerceOS.Tenancy.Application.Onboarding;
 using CommerceOS.Tenancy.Domain;
 using CommerceOS.Tenancy.Infrastructure.Persistence;
@@ -64,6 +66,10 @@ public static class OnboardingEndpoints
         services.AddSingleton<ISubscriptionCatalogQuery, CatalogQueryService>();
         services.AddSingleton<ITrialSubscriptionStarter, TrialSubscriptionService>();
         services.AddSingleton<IEntitlementEvaluator, EntitlementEvaluator>();
+        services.AddSingleton<IPlatformChargeStore, DynamoDbPlatformChargeStore>();
+        services.AddSingleton<DeterministicSaasBillingProviderState>();
+        services.AddSingleton<IPlatformBillingProvider, DeterministicSaasBillingProvider>();
+        services.AddSingleton<PlatformChargeService>();
         services.AddSingleton<TenantOnboardingCoordinator>();
         services.AddSingleton<IOnboardingIdentityResolver>(configuration["COMMERCEOS_TEST_IDENTITY_ENABLED"] == "1"
             ? new DevelopmentHeaderOnboardingIdentityResolver()

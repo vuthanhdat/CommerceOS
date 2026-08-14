@@ -27,8 +27,10 @@ trusted read/mutation authority contexts. Authority resolution revalidates curre
 Tenant and Membership state on every request and fails closed. Onboarding now
 commits its local Tenant/initial Owner/work-outbox transaction, starts the
 SubscriptionBilling-owned Trial idempotently, and recovers any pending operation
-from the same durable source. TASK-0114 remains Ready; TASK-0112
-remains blocked by entitlement authority.
+from the same durable source. TASK-0114 is complete: platform lifecycle commands use distinct
+privileged contexts, expected revision/operation/reason controls, and a transactional source-owned
+Audit intent without rewriting Membership or Subscription state. Its support query is read-only and
+module-bounded. TASK-0112 remains blocked by entitlement authority.
 
 ## Definition of Done
 Cross-Tenant access is non-disclosing; current authority/last-owner/limits are concurrency safe; successful onboarding proves Tenant + Owner + Trial; suspension is non-destructive and audited.

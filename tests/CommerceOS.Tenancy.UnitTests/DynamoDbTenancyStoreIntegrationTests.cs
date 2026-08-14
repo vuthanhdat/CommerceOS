@@ -3,6 +3,7 @@ using Amazon.Runtime;
 using CommerceOS.Tenancy.Application.Authority;
 using CommerceOS.Tenancy.Application.Onboarding;
 using CommerceOS.Tenancy.Application.Persistence;
+using CommerceOS.Tenancy.Application.PlatformAdministration;
 using CommerceOS.Tenancy.Domain;
 using CommerceOS.Tenancy.Infrastructure.Persistence;
 using CommerceOS.SubscriptionBilling.Application.Catalog;
@@ -82,6 +83,39 @@ public sealed class DynamoDbTenancyStoreIntegrationTests
         Assert.True(result.IsAuthorized);
         Assert.Equal(tenantId, result.Context!.TenantId);
         Assert.Equal(MerchantRole.Owner, result.Context.Role);
+    }
+
+    [Fact]
+    public async Task PlatformLifecycleWritesAuditIntentAndPreservesMerchantRecordsAgainstConfiguredLocalStack()
+    {
+        var endpoint = Environment.GetEnvironmentVariable("COMMERCEOS_LOCALSTACK_ENDPOINT");
+        var tableName = Environment.GetEnvironmentVariable("COMMERCEOS_TENANCY_TABLE");
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(tableName))
+        {
+            return;
+        }
+
+        using var client = new AmazonDynamoDBClient(
+            new BasicAWSCredentials("test", "test"),
+            new AmazonDynamoDBConfig { ServiceURL = endpoint, AuthenticationRegion = "us-east-1" });
+        var store = new DynamoDbTenancyStore(client, new DynamoDbTenancyOptions(tableName));
+        var tenantId = new TenantId($"tenant-{Guid.NewGuid():N}");
+        var tenant = new Tenant(tenantId, TenantStatus.Active, new BusinessProfile("Merchant", "Asia/Ho_Chi_Minh"), 1);
+        var membership = new Membership(new MembershipId($"membership-{Guid.NewGuid():N}"), tenantId, new SubjectId($"subject-{Guid.NewGuid():N}"), MerchantRole.Owner, MembershipStatus.Active, 1);
+        var scope = new TrustedTenantPersistenceScope(tenantId);
+        Assert.Equal(ConditionalWriteResult.Applied, await store.SaveTenantAsync(scope, tenant, null, CancellationToken.None));
+        Assert.Equal(ConditionalWriteResult.Applied, await store.SaveMembershipAsync(scope, membership, null, CancellationToken.None));
+
+        var lifecycle = new TenantLifecycleAdministrationService(store);
+        var admin = TrustedPlatformAdminContext.FromAuthenticatedPlatformAdmin(new SubjectId("platform-admin"), "platform-correlation");
+        var suspended = await lifecycle.ExecuteAsync(admin, new TenantLifecycleCommand(tenantId, TenantLifecycleAction.Suspend, 1, "suspend-1", "support investigation"), CancellationToken.None);
+        var replay = await lifecycle.ExecuteAsync(admin, new TenantLifecycleCommand(tenantId, TenantLifecycleAction.Suspend, 1, "suspend-1", "support investigation"), CancellationToken.None);
+        var loadedMembership = await store.GetMembershipAsync(scope, membership.Id, CancellationToken.None);
+
+        Assert.Equal(TenantLifecycleOutcome.Applied, suspended.Outcome);
+        Assert.Equal(TenantLifecycleOutcome.Applied, replay.Outcome);
+        Assert.Equal(TenantStatus.Suspended, (await store.GetForPlatformSupportAsync(tenantId, CancellationToken.None))!.Status);
+        Assert.Equal(membership, loadedMembership);
     }
 
     [Fact]

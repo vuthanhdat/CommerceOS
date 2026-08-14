@@ -24,8 +24,9 @@ TASK-0120 is complete. SubscriptionBilling owns a version-controlled immutable
 Trial/paid catalog, a producer-owned catalog query contract, a task-prefixed
 DynamoDB table, and LocalStack lifecycle bootstrap for its table/seed. TASK-0121
 now provides current fail-closed EntitlementSet evaluation with interval/state
-provenance. TASK-0123 remains Ready; downstream work remains blocked by its
-stated dependencies.
+provenance. TASK-0123 is complete: PlatformCharge/evidence persistence and a dedicated
+deterministic SaaS-provider seam preserve Unknown safely and reconcile verified evidence without
+regression. TASK-0124 is now Ready.
 
 ## Definition of Done
 Trial/Starter/Growth/Business terms are immutable/versioned; Unknown charge state is preserved; limits never auto-delete owner-domain resources; checkout is never blocked by warning threshold.

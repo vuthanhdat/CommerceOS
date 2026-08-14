@@ -3,13 +3,14 @@ using System.Text;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using CommerceOS.Tenancy.Application.Persistence;
+using CommerceOS.Tenancy.Application.PlatformAdministration;
 using CommerceOS.Tenancy.Domain;
 
 namespace CommerceOS.Tenancy.Infrastructure.Persistence;
 
 public sealed record DynamoDbTenancyOptions(string TableName);
 
-public sealed class DynamoDbTenancyStore : ITenancyStore
+public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdministrationStore
 {
     private const string PartitionKey = "PK";
     private const string SortKey = "SK";
@@ -209,6 +210,106 @@ public sealed class DynamoDbTenancyStore : ITenancyStore
         }
     }
 
+    public async Task<Tenant?> GetForPlatformSupportAsync(TenantId tenantId, CancellationToken cancellationToken)
+    {
+        var response = await _client.GetItemAsync(new GetItemRequest
+        {
+            TableName = _options.TableName,
+            ConsistentRead = true,
+            Key = Key(TenantPartition(tenantId), "TENANT")
+        }, cancellationToken);
+
+        return response.Item is null || response.Item.Count == 0 ? null : ReadTenant(response.Item);
+    }
+
+    public async Task<TenantLifecycleResult> TransitionAsync(
+        TenantLifecycleCommand command,
+        TenantLifecycleAuditIntent auditIntent,
+        CancellationToken cancellationToken)
+    {
+        var current = await GetForPlatformSupportAsync(command.TenantId, cancellationToken);
+        var auditKey = $"AUDITINTENT#TENANT-LIFECYCLE#{Encode(command.OperationId)}";
+        var auditResponse = await _client.GetItemAsync(new GetItemRequest
+        {
+            TableName = _options.TableName,
+            ConsistentRead = true,
+            Key = Key(TenantPartition(command.TenantId), auditKey)
+        }, cancellationToken);
+
+        if (auditResponse.Item is not null && auditResponse.Item.Count != 0)
+        {
+            var existing = auditResponse.Item;
+            if (existing["Action"].S == command.Action.ToString()
+                && existing["Reason"].S == command.Reason
+                && existing["ActorSubjectId"].S == auditIntent.PlatformSubjectId.Value)
+            {
+                return new TenantLifecycleResult(
+                    Enum.Parse<TenantLifecycleOutcome>(existing["Outcome"].S, false),
+                    current);
+            }
+
+            return new TenantLifecycleResult(TenantLifecycleOutcome.RevisionConflict, current);
+        }
+
+        var targetStatus = command.Action is TenantLifecycleAction.Suspend ? TenantStatus.Suspended : TenantStatus.Active;
+        var outcome = current is null
+            ? TenantLifecycleOutcome.NotFound
+            : current.Revision != command.ExpectedRevision
+                ? TenantLifecycleOutcome.RevisionConflict
+                : current.Status == targetStatus
+                    ? TenantLifecycleOutcome.InvalidTransition
+                    : TenantLifecycleOutcome.Applied;
+        var completedAudit = auditIntent with { Outcome = outcome };
+
+        var transaction = new TransactWriteItemsRequest
+        {
+            TransactItems =
+            [
+                new TransactWriteItem
+                {
+                    Put = new Put
+                    {
+                        TableName = _options.TableName,
+                        Item = AuditIntentItem(completedAudit, TenantPartition(command.TenantId), auditKey),
+                        ConditionExpression = "attribute_not_exists(PK)"
+                    }
+                }
+            ]
+        };
+
+        if (outcome is TenantLifecycleOutcome.Applied)
+        {
+            var updated = current! with { Status = targetStatus, Revision = current.Revision + 1 };
+            transaction.TransactItems.Add(new TransactWriteItem
+            {
+                Put = new Put
+                {
+                    TableName = _options.TableName,
+                    Item = TenantItem(updated),
+                    ConditionExpression = "Revision = :expectedRevision AND #status = :expectedStatus",
+                    ExpressionAttributeNames = new Dictionary<string, string> { ["#status"] = "Status" },
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        [":expectedRevision"] = Number(current.Revision),
+                        [":expectedStatus"] = String(current.Status.ToString())
+                    }
+                }
+            });
+        }
+
+        try
+        {
+            await _client.TransactWriteItemsAsync(transaction, cancellationToken);
+            return new TenantLifecycleResult(outcome, outcome is TenantLifecycleOutcome.Applied
+                ? current! with { Status = targetStatus, Revision = current.Revision + 1 }
+                : current);
+        }
+        catch (TransactionCanceledException)
+        {
+            return new TenantLifecycleResult(TenantLifecycleOutcome.RevisionConflict, await GetForPlatformSupportAsync(command.TenantId, cancellationToken));
+        }
+    }
+
     private static Tenant ReadTenant(Dictionary<string, AttributeValue> item) => new(
         new TenantId(item["TenantId"].S),
         Enum.Parse<TenantStatus>(item["Status"].S, false),
@@ -233,6 +334,30 @@ public sealed class DynamoDbTenancyStore : ITenancyStore
         ["Role"] = String(membership.Role.ToString()),
         ["Status"] = String(membership.Status.ToString()),
         ["Revision"] = Number(membership.Revision)
+    };
+
+    private static Dictionary<string, AttributeValue> TenantItem(Tenant tenant) => new()
+    {
+        [PartitionKey] = String(TenantPartition(tenant.Id)),
+        [SortKey] = String("TENANT"),
+        ["TenantId"] = String(tenant.Id.Value),
+        ["Status"] = String(tenant.Status.ToString()),
+        ["DisplayName"] = String(tenant.Profile.DisplayName),
+        ["TimeZoneIana"] = String(tenant.Profile.TimeZoneIana),
+        ["Revision"] = Number(tenant.Revision)
+    };
+
+    private static Dictionary<string, AttributeValue> AuditIntentItem(TenantLifecycleAuditIntent audit, string partitionKey, string sortKey) => new()
+    {
+        [PartitionKey] = String(partitionKey),
+        [SortKey] = String(sortKey),
+        ["OperationId"] = String(audit.OperationId),
+        ["Action"] = String(audit.Action.ToString()),
+        ["ActorSubjectId"] = String(audit.PlatformSubjectId.Value),
+        ["CorrelationId"] = String(audit.CorrelationId),
+        ["Reason"] = String(audit.Reason),
+        ["Outcome"] = String(audit.Outcome.ToString()),
+        ["OccurredAt"] = String(audit.OccurredAt.ToString("O", CultureInfo.InvariantCulture))
     };
 
     private static Dictionary<string, AttributeValue> AuthorityItem(Membership membership, string partitionKey, string sortKey) => new()

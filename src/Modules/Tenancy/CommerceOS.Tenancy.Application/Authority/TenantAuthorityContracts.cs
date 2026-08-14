@@ -58,6 +58,52 @@ public enum TenantAuthorityFailureCode
 /// </summary>
 public sealed record TenantAuthorityFailure(TenantAuthorityFailureCode Code);
 
+/// <summary>
+/// High-privilege identity evidence issued by the platform administration delivery edge.
+/// It is intentionally distinct from a merchant authority context and never grants a Membership.
+/// </summary>
+public sealed class TrustedPlatformAdminContext
+{
+    private TrustedPlatformAdminContext(SubjectId platformSubjectId, string correlationId)
+    {
+        PlatformSubjectId = platformSubjectId;
+        CorrelationId = correlationId;
+    }
+
+    public SubjectId PlatformSubjectId { get; }
+
+    public string CorrelationId { get; }
+
+    public static TrustedPlatformAdminContext FromAuthenticatedPlatformAdmin(SubjectId platformSubjectId, string correlationId) =>
+        new(platformSubjectId, RequireCorrelation(correlationId));
+
+    private static string RequireCorrelation(string correlationId) =>
+        string.IsNullOrWhiteSpace(correlationId)
+            ? throw new ArgumentException("CorrelationId must not be empty.", nameof(correlationId))
+            : correlationId;
+}
+
+/// <summary>
+/// Read-only platform support evidence. This cannot be supplied to a lifecycle command.
+/// </summary>
+public sealed class TrustedPlatformSupportReadContext
+{
+    private TrustedPlatformSupportReadContext(SubjectId platformSubjectId, string correlationId)
+    {
+        PlatformSubjectId = platformSubjectId;
+        CorrelationId = correlationId;
+    }
+
+    public SubjectId PlatformSubjectId { get; }
+
+    public string CorrelationId { get; }
+
+    public static TrustedPlatformSupportReadContext FromAuthenticatedPlatformSupport(SubjectId platformSubjectId, string correlationId) =>
+        new(platformSubjectId, string.IsNullOrWhiteSpace(correlationId)
+            ? throw new ArgumentException("CorrelationId must not be empty.", nameof(correlationId))
+            : correlationId);
+}
+
 public sealed class TrustedTenantReadContext
 {
     internal TrustedTenantReadContext(
