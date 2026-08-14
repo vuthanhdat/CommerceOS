@@ -202,6 +202,14 @@ other task instance. The default image assumption is the pinned
 `localstack/localstack:4.8.1` community-era image; override it with
 `COMMERCEOS_LOCALSTACK_IMAGE` when a different locally verified image is needed.
 
+`localstack-dev` is the persistent developer profile. Its container uses Docker
+`unless-stopped` so it resumes after Docker Desktop restarts, and its LocalStack
+state is bind-mounted below the ignored
+`.commerceos/localstack/localstack-dev/<instance>/` directory. The test and
+stage profiles do not mount that state and remain disposable. Explicit `reset`
+or `destroy` still remove the named container by design; they are not reboot
+recovery commands.
+
 The foundation's current supported mapping is CloudFormation-compatible CDK
 deployment plus CloudWatch Logs. The repository uses the LocalStack-aware
 `cdklocal` wrapper for CDK commands; the wrapper is a host prerequisite and

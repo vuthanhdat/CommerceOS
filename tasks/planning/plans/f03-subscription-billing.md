@@ -22,8 +22,10 @@ TASK-0120 -> TASK-0121 -> TASK-0122; TASK-0120 -> TASK-0123 -> TASK-0124; TASK-0
 
 TASK-0120 is complete. SubscriptionBilling owns a version-controlled immutable
 Trial/paid catalog, a producer-owned catalog query contract, a task-prefixed
-DynamoDB table, and LocalStack lifecycle bootstrap for its table/seed. TASK-0121 and
-TASK-0123 are Ready; downstream work remains blocked by its stated dependencies.
+DynamoDB table, and LocalStack lifecycle bootstrap for its table/seed. TASK-0121
+now provides current fail-closed EntitlementSet evaluation with interval/state
+provenance. TASK-0123 remains Ready; downstream work remains blocked by its
+stated dependencies.
 
 ## Definition of Done
 Trial/Starter/Growth/Business terms are immutable/versioned; Unknown charge state is preserved; limits never auto-delete owner-domain resources; checkout is never blocked by warning threshold.

@@ -161,6 +161,13 @@ configuration boundary. `localstack-dev` may preserve state during exploration;
 the default `localstack-test` lifecycle uses a clean container reset. No required
 resource may be created manually in LocalStack.
 
+For a persistent developer runtime, use `--profile localstack-dev`. The launcher
+uses Docker's `unless-stopped` restart policy and stores LocalStack state under
+the ignored `.commerceos/localstack/localstack-dev/<instance>/` directory. After
+Docker Desktop starts following a machine reboot, that container and its local
+state resume automatically. `reset` and `destroy` intentionally remove their
+task-owned container; use the `localstack-test` profile for clean test runs.
+
 The foundation currently deploys only the CDK log-group resource. The default
 image assumption is the pinned `localstack/localstack:4.8.1` community-era image;
 newer images may require a Pro auth token, which is not a CommerceOS prerequisite.

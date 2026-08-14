@@ -102,4 +102,22 @@ public sealed class FoundationStackTests
                 ])
             });
     }
+
+    [Fact]
+    public void FoundationStackProvidesAStreamAndOnePurposeBuiltOnboardingRecoveryQueue()
+    {
+        var app = new App();
+        var stack = new FoundationStack(app, "test-foundation", EnvironmentProfile.Create("localstack-test", "0042"));
+        var template = Template.FromStack(stack);
+
+        template.HasResourceProperties(
+            "AWS::DynamoDB::Table",
+            new Dictionary<string, object> { ["StreamSpecification"] = new Dictionary<string, object> { ["StreamViewType"] = "NEW_IMAGE" } });
+        template.HasResourceProperties(
+            "AWS::SQS::Queue",
+            new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-onboarding-trial-recovery" });
+        template.HasResourceProperties(
+            "AWS::SQS::Queue",
+            new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-onboarding-trial-recovery-dlq" });
+    }
 }

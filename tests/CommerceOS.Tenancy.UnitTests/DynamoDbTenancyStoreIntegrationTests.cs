@@ -1,9 +1,13 @@
 using Amazon.DynamoDBv2;
 using Amazon.Runtime;
 using CommerceOS.Tenancy.Application.Authority;
+using CommerceOS.Tenancy.Application.Onboarding;
 using CommerceOS.Tenancy.Application.Persistence;
 using CommerceOS.Tenancy.Domain;
 using CommerceOS.Tenancy.Infrastructure.Persistence;
+using CommerceOS.SubscriptionBilling.Application.Catalog;
+using CommerceOS.SubscriptionBilling.Application.Trial;
+using CommerceOS.SubscriptionBilling.Infrastructure.Persistence;
 
 namespace CommerceOS.Tenancy.UnitTests;
 
@@ -78,5 +82,91 @@ public sealed class DynamoDbTenancyStoreIntegrationTests
         Assert.True(result.IsAuthorized);
         Assert.Equal(tenantId, result.Context!.TenantId);
         Assert.Equal(MerchantRole.Owner, result.Context.Role);
+    }
+
+    [Fact]
+    public async Task OnboardingCommitsTenantOwnerAndDurablyRecoversOneTrialAgainstConfiguredLocalStack()
+    {
+        var endpoint = Environment.GetEnvironmentVariable("COMMERCEOS_LOCALSTACK_ENDPOINT");
+        var tenancyTable = Environment.GetEnvironmentVariable("COMMERCEOS_TENANCY_TABLE");
+        var subscriptionTable = Environment.GetEnvironmentVariable("COMMERCEOS_SUBSCRIPTION_BILLING_TABLE");
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(tenancyTable) || string.IsNullOrWhiteSpace(subscriptionTable))
+        {
+            return;
+        }
+
+        using var client = new AmazonDynamoDBClient(
+            new BasicAWSCredentials("test", "test"),
+            new AmazonDynamoDBConfig { ServiceURL = endpoint, AuthenticationRegion = "us-east-1" });
+        var tenancy = new DynamoDbTenantOnboardingStore(client, new DynamoDbTenancyOptions(tenancyTable));
+        var catalog = new CatalogQueryService(new DynamoDbSubscriptionCatalogStore(client, new DynamoDbSubscriptionBillingOptions(subscriptionTable)));
+        var trials = new TrialSubscriptionService(catalog, new DynamoDbTrialSubscriptionStore(client, new DynamoDbSubscriptionBillingOptions(subscriptionTable)));
+        var coordinator = new TenantOnboardingCoordinator(tenancy, trials);
+        var context = TrustedOnboardingContext.FromVerifiedIdentity(new SubjectId($"subject-{Guid.NewGuid():N}"), "owner@example.test");
+        var profile = new BusinessProfile("LocalStack merchant", "Asia/Ho_Chi_Minh");
+
+        var first = await coordinator.RegisterAsync(context, "onboarding-1", profile, "correlation-1", CancellationToken.None);
+        var replay = await coordinator.RegisterAsync(context, "onboarding-1", profile, "correlation-2", CancellationToken.None);
+        var operation = await tenancy.GetAsync(context, "onboarding-1", CancellationToken.None);
+        var trial = await new DynamoDbTrialSubscriptionStore(client, new DynamoDbSubscriptionBillingOptions(subscriptionTable))
+            .GetForOnboardingAsync(first.TenantId!, first.OperationId!, CancellationToken.None);
+
+        Assert.Equal(MerchantOnboardingOutcome.Completed, first.Outcome);
+        Assert.Equal(first, replay);
+        Assert.NotNull(operation);
+        Assert.Equal(OnboardingStatus.Completed, operation.Status);
+        Assert.NotNull(trial);
+        Assert.Equal("trial-v1", trial.Entitlements.TrialTermsVersionId);
+        Assert.Equal(30, trial.Entitlements.DurationDays);
+        Assert.Equal(3, trial.Entitlements.MaxActiveMemberships);
+    }
+
+    [Fact]
+    public async Task PendingLocalStackOnboardingRecoversFromTheSameDurableWorkSource()
+    {
+        var endpoint = Environment.GetEnvironmentVariable("COMMERCEOS_LOCALSTACK_ENDPOINT");
+        var tenancyTable = Environment.GetEnvironmentVariable("COMMERCEOS_TENANCY_TABLE");
+        var subscriptionTable = Environment.GetEnvironmentVariable("COMMERCEOS_SUBSCRIPTION_BILLING_TABLE");
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(tenancyTable) || string.IsNullOrWhiteSpace(subscriptionTable))
+        {
+            return;
+        }
+
+        using var client = new AmazonDynamoDBClient(
+            new BasicAWSCredentials("test", "test"),
+            new AmazonDynamoDBConfig { ServiceURL = endpoint, AuthenticationRegion = "us-east-1" });
+        var tenancy = new DynamoDbTenantOnboardingStore(client, new DynamoDbTenancyOptions(tenancyTable));
+        var context = TrustedOnboardingContext.FromVerifiedIdentity(new SubjectId($"subject-{Guid.NewGuid():N}"), "owner@example.test");
+        var pending = await new TenantOnboardingCoordinator(tenancy, new FailingTrialStarter()).RegisterAsync(
+            context,
+            "onboarding-recovery-1",
+            new BusinessProfile("Recovery merchant", "Asia/Ho_Chi_Minh"),
+            "correlation-recovery",
+            CancellationToken.None);
+        var trialStarter = new TrialSubscriptionService(
+            new CatalogQueryService(new DynamoDbSubscriptionCatalogStore(client, new DynamoDbSubscriptionBillingOptions(subscriptionTable))),
+            new DynamoDbTrialSubscriptionStore(client, new DynamoDbSubscriptionBillingOptions(subscriptionTable)));
+        var work = new TrialBootstrapWorkItem(
+            $"trial-work-{pending.OperationId}",
+            pending.OperationId!,
+            pending.TenantId!,
+            $"merchant-onboarding:{pending.OperationId}",
+            "correlation-recovery");
+        var worker = new OnboardingTrialRecoveryWorker(tenancy, trialStarter);
+
+        var recovered = await worker.ProcessAsync(work, CancellationToken.None);
+        var duplicate = await worker.ProcessAsync(work, CancellationToken.None);
+
+        Assert.Equal(MerchantOnboardingOutcome.PendingTrial, pending.Outcome);
+        Assert.True(recovered);
+        Assert.False(duplicate);
+        Assert.Equal(OnboardingStatus.Completed, (await tenancy.GetAsync(context, "onboarding-recovery-1", CancellationToken.None))!.Status);
+    }
+
+    private sealed class FailingTrialStarter : CommerceOS.SubscriptionBilling.Contracts.ITrialSubscriptionStarter
+    {
+        public Task<CommerceOS.SubscriptionBilling.Contracts.TrialSubscriptionStartResult> StartTrialSubscriptionAsync(
+            CommerceOS.SubscriptionBilling.Contracts.StartTrialSubscriptionCommand command,
+            CancellationToken cancellationToken) => throw new TimeoutException();
     }
 }

@@ -11,12 +11,14 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
 DEFAULT_LOCALSTACK_IMAGE = "localstack/localstack:4.8.1"
-DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,dynamodb,s3,iam,sts,ssm"
+DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,dynamodb,s3,sqs,iam,sts,ssm"
+DEFAULT_LOCALSTACK_STATE_ROOT = ".commerceos/localstack"
 
 
 def parse_instance(raw: str) -> int:
@@ -69,8 +71,24 @@ class LocalStackConfig:
         return f"{self.resource_prefix}-subscription-billing"
 
     @property
+    def tenancy_table_name(self) -> str:
+        return f"{self.resource_prefix}-tenancy"
+
+    @property
     def cdk_environment(self) -> str:
         return self.profile
+
+    @property
+    def preserves_state(self) -> bool:
+        return self.profile == "localstack-dev"
+
+    @property
+    def state_directory(self) -> Path | None:
+        if not self.preserves_state:
+            return None
+
+        root = Path(os.environ.get("COMMERCEOS_LOCALSTACK_STATE_ROOT", DEFAULT_LOCALSTACK_STATE_ROOT))
+        return (root / self.profile / f"{self.instance:04d}").resolve()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -82,9 +100,13 @@ class LocalStackConfig:
             "synthetic_access_key": "test",
             "synthetic_secret_key": "test",
             "resource_prefix": self.resource_prefix,
+            "tenancy_table": self.tenancy_table_name,
             "subscription_billing_table": self.subscription_billing_table_name,
             "container_name": self.container_name,
-            "reset_policy": "clean-container",
+            "restart_policy": "unless-stopped",
+            "reset_policy": "preserve-container-state" if self.preserves_state else "clean-container",
+            "localstack_persistence": self.preserves_state,
+            "localstack_state_directory": str(self.state_directory) if self.state_directory else None,
             "localstack_image": os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", DEFAULT_LOCALSTACK_IMAGE),
             "localstack_services": os.environ.get("COMMERCEOS_LOCALSTACK_SERVICES", DEFAULT_LOCALSTACK_SERVICES),
             "localstack_debug": os.environ.get("COMMERCEOS_LOCALSTACK_DEBUG", "0"),
@@ -110,6 +132,7 @@ def lifecycle_environment(config: LocalStackConfig) -> dict[str, str]:
             "COMMERCEOS_INSTANCE": f"{config.instance:04d}",
             "COMMERCEOS_RESOURCE_PREFIX": config.resource_prefix,
             "COMMERCEOS_LOCALSTACK_ENDPOINT": config.endpoint,
+            "COMMERCEOS_TENANCY_TABLE": config.tenancy_table_name,
             "COMMERCEOS_SUBSCRIPTION_BILLING_TABLE": config.subscription_billing_table_name,
         }
     )
@@ -191,9 +214,18 @@ def start_localstack(config: LocalStackConfig, timeout: int) -> int:
         )
         if policy.returncode != 0:
             return policy.returncode
-        started = subprocess.run([docker, "start", config.container_name], check=False)
-        if started.returncode != 0:
-            return started.returncode
+        running = subprocess.run(
+            [docker, "container", "inspect", "--format", "{{.State.Running}}", config.container_name],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if running.returncode != 0:
+            return running.returncode
+        if running.stdout.strip().lower() != "true":
+            started = subprocess.run([docker, "start", config.container_name], check=False)
+            if started.returncode != 0:
+                return started.returncode
         return wait_for_localstack(config, timeout)
     image = os.environ.get("COMMERCEOS_LOCALSTACK_IMAGE", DEFAULT_LOCALSTACK_IMAGE)
     image_check = subprocess.run([docker, "image", "inspect", image], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -204,8 +236,7 @@ def start_localstack(config: LocalStackConfig, timeout: int) -> int:
             file=sys.stderr,
         )
         return 1
-    result = subprocess.run(
-        [
+    command = [
             docker,
             "run",
             "-d",
@@ -219,10 +250,19 @@ def start_localstack(config: LocalStackConfig, timeout: int) -> int:
             f"SERVICES={os.environ.get('COMMERCEOS_LOCALSTACK_SERVICES', DEFAULT_LOCALSTACK_SERVICES)}",
             "-e",
             f"DEBUG={os.environ.get('COMMERCEOS_LOCALSTACK_DEBUG', '0')}",
-            image,
-        ],
-        check=False,
-    )
+        ]
+    if config.state_directory:
+        config.state_directory.mkdir(parents=True, exist_ok=True)
+        command.extend(
+            [
+                "-e",
+                "PERSISTENCE=1",
+                "-v",
+                f"{config.state_directory}:/var/lib/localstack",
+            ]
+        )
+    command.append(image)
+    result = subprocess.run(command, check=False)
     if result.returncode != 0:
         return result.returncode
     return wait_for_localstack(config, timeout)

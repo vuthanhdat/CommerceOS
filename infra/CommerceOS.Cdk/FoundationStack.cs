@@ -1,6 +1,7 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.DynamoDB;
 using Amazon.CDK.AWS.Logs;
+using Amazon.CDK.AWS.SQS;
 using Constructs;
 
 namespace CommerceOS.Cdk;
@@ -32,7 +33,7 @@ public sealed class FoundationStack : Stack
 
         logGroup.ApplyRemovalPolicy(profile.RemovalPolicy);
 
-        _ = new Table(
+        var tenancyTable = new Table(
             this,
             "TenancyTable",
             new TableProps
@@ -42,6 +43,7 @@ public sealed class FoundationStack : Stack
                 SortKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "SK", Type = AttributeType.STRING },
                 BillingMode = BillingMode.PAY_PER_REQUEST,
                 Encryption = TableEncryption.AWS_MANAGED,
+                Stream = StreamViewType.NEW_IMAGE,
                 RemovalPolicy = profile.RemovalPolicy
             });
 
@@ -57,5 +59,34 @@ public sealed class FoundationStack : Stack
                 Encryption = TableEncryption.AWS_MANAGED,
                 RemovalPolicy = profile.RemovalPolicy
             });
+
+        var onboardingDeadLetterQueue = new Queue(
+            this,
+            "OnboardingTrialRecoveryDeadLetterQueue",
+            new QueueProps
+            {
+                QueueName = $"{profile.ResourcePrefix}-onboarding-trial-recovery-dlq",
+                RetentionPeriod = Duration.Days(14),
+                RemovalPolicy = profile.RemovalPolicy
+            });
+        var onboardingRecoveryQueue = new Queue(
+            this,
+            "OnboardingTrialRecoveryQueue",
+            new QueueProps
+            {
+                QueueName = $"{profile.ResourcePrefix}-onboarding-trial-recovery",
+                VisibilityTimeout = Duration.Seconds(30),
+                DeadLetterQueue = new DeadLetterQueue
+                {
+                    Queue = onboardingDeadLetterQueue,
+                    MaxReceiveCount = 5
+                },
+                RemovalPolicy = profile.RemovalPolicy
+            });
+
+        // ADR-009 intentionally reserves this stream for the narrowly-scoped
+        // work-outbox relay; no cross-domain table access is granted.
+        _ = tenancyTable.TableStreamArn;
+        _ = onboardingRecoveryQueue.QueueArn;
     }
 }

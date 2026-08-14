@@ -36,6 +36,7 @@ class CommerceOsLauncherTests(unittest.TestCase):
             values = json.loads(json.dumps(config.as_dict()))
         self.assertEqual("cloudformation,logs", values["localstack_services"])
         self.assertEqual("1", values["localstack_debug"])
+        self.assertEqual("commerceos-localstack-test-0094-tenancy", values["tenancy_table"])
         self.assertEqual("commerceos-localstack-test-0094-subscription-billing", values["subscription_billing_table"])
 
     @patch("tools.commerceos.require_docker", return_value="docker")
@@ -71,6 +72,33 @@ class CommerceOsLauncherTests(unittest.TestCase):
 
         test_config = LocalStackConfig(94)
         self.assertEqual("localstack-test", test_config.cdk_environment)
+        self.assertFalse(test_config.preserves_state)
+        self.assertIsNone(test_config.state_directory)
+        self.assertTrue(config.preserves_state)
+        self.assertTrue(str(config.state_directory).endswith(".commerceos\\localstack\\localstack-dev\\0094"))
+
+    @patch("tools.commerceos.wait_for_localstack", return_value=0)
+    @patch("tools.commerceos.localstack_ready", return_value=False)
+    @patch("tools.commerceos.require_docker", return_value="docker")
+    @patch("tools.commerceos.subprocess.run")
+    def test_dev_start_persists_state_and_configures_restart_after_machine_reboot(
+        self, run, _docker, _ready, _wait
+    ):
+        run.side_effect = [
+            Namespace(returncode=0),
+            Namespace(returncode=1),
+            Namespace(returncode=0),
+            Namespace(returncode=0),
+        ]
+        config = LocalStackConfig(94, "localstack-dev")
+
+        result = start_localstack(config, timeout=1)
+
+        self.assertEqual(0, result)
+        command = run.call_args_list[3].args[0]
+        self.assertIn("unless-stopped", command)
+        self.assertIn("PERSISTENCE=1", command)
+        self.assertIn(f"{config.state_directory}:/var/lib/localstack", command)
 
     @patch("tools.commerceos.shutil.which", return_value=None)
     def test_cdk_commands_fail_closed_without_cdklocal(self, _which):
@@ -105,6 +133,7 @@ class CommerceOsLauncherTests(unittest.TestCase):
 
         self.assertEqual("http://127.0.0.1:14660", environment["AWS_ENDPOINT_URL"])
         self.assertEqual(environment["AWS_ENDPOINT_URL"], environment["AWS_ENDPOINT_URL_S3"])
+        self.assertEqual("commerceos-localstack-test-0094-tenancy", environment["COMMERCEOS_TENANCY_TABLE"])
         self.assertEqual("commerceos-localstack-test-0094-subscription-billing", environment["COMMERCEOS_SUBSCRIPTION_BILLING_TABLE"])
 
     @patch("tools.commerceos.shutil.which", return_value="aws")

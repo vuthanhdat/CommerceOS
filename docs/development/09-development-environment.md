@@ -44,7 +44,7 @@ Purpose:
 - inspect queues/events/workflows/logs;
 - synthetic integration data.
 
-State may persist between runs, but all required resources must still be reproducible from repository-owned IaC/bootstrap commands.
+State may persist between runs, but all required resources must still be reproducible from repository-owned IaC/bootstrap commands. The launcher assigns this profile Docker's `unless-stopped` restart policy and a profile/instance-scoped bind mount below ignored `.commerceos/localstack/`, so a normal machine reboot does not discard the developer container or its synthetic state after Docker Desktop starts.
 
 ### `localstack-test`
 

@@ -13,5 +13,8 @@
     <ProjectReference Include="../../src/Modules/Tenancy/CommerceOS.Tenancy.Application/CommerceOS.Tenancy.Application.csproj" />
     <ProjectReference Include="../../src/Modules/Tenancy/CommerceOS.Tenancy.Domain/CommerceOS.Tenancy.Domain.csproj" />
     <ProjectReference Include="../../src/Modules/Tenancy/CommerceOS.Tenancy.Infrastructure/CommerceOS.Tenancy.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Contracts/CommerceOS.SubscriptionBilling.Contracts.csproj" />
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Application/CommerceOS.SubscriptionBilling.Application.csproj" />
+    <ProjectReference Include="../../src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Infrastructure/CommerceOS.SubscriptionBilling.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

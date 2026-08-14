@@ -20,12 +20,14 @@ TASK-0110 -> TASK-0111; TASK-0110 + TASK-0121 -> TASK-0112; TASK-0110 + TASK-012
 
 ## Progress
 
-TASK-0110 and TASK-0111 are complete. Tenancy now owns its
+TASK-0110, TASK-0111 and TASK-0113 are complete. Tenancy now owns its
 Domain/Application/Infrastructure boundary, task-prefixed DynamoDB table,
 tenant-scoped persistence contracts, strong subject discovery, and separate
 trusted read/mutation authority contexts. Authority resolution revalidates current
-Tenant and Membership state on every request and fails closed. TASK-0114 is now
-Ready; TASK-0113 is now Ready after the Subscription catalog bootstrap. TASK-0112
+Tenant and Membership state on every request and fails closed. Onboarding now
+commits its local Tenant/initial Owner/work-outbox transaction, starts the
+SubscriptionBilling-owned Trial idempotently, and recovers any pending operation
+from the same durable source. TASK-0114 remains Ready; TASK-0112
 remains blocked by entitlement authority.
 
 ## Definition of Done

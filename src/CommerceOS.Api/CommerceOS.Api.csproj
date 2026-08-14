@@ -2,6 +2,13 @@
   <ItemGroup>
     <ProjectReference Include="../Modules/Platform/CommerceOS.Platform.Application/CommerceOS.Platform.Application.csproj" />
     <ProjectReference Include="../Modules/Platform/CommerceOS.Platform.Infrastructure/CommerceOS.Platform.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Tenancy/CommerceOS.Tenancy.Application/CommerceOS.Tenancy.Application.csproj" />
+    <ProjectReference Include="../Modules/Tenancy/CommerceOS.Tenancy.Infrastructure/CommerceOS.Tenancy.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Application/CommerceOS.SubscriptionBilling.Application.csproj" />
+    <ProjectReference Include="../Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Infrastructure/CommerceOS.SubscriptionBilling.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.DynamoDBv2" />
   </ItemGroup>
 </Project>
 
