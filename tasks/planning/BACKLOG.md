@@ -20,14 +20,14 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0122 Enforce Membership/Warehouse hard limits at owner boundaries (Done) | F03 | P0 | REQ-SUB-003 | TASK-0121, TASK-0110, TASK-0161 | Completed 2026-08-14 |
 | TASK-0123 Build SaaS billing provider seam and PlatformCharge evidence | F03 | P1 | REQ-SUB-008 | TASK-0120 | **Done** |
 | TASK-0124 Implement paid activation, upgrade, downgrade, renewal/cancel/grace | F03 | P1 | REQ-SUB-005..008 | TASK-0121, TASK-0123 | **Done** |
-| TASK-0125 Implement order-volume UsageMeter warning and support queries | F03 | P2 | REQ-SUB-004 | TASK-0121, TASK-0160 | Blocked |
+| TASK-0125 Implement order-volume UsageMeter warning and support queries (Done) | F03 | P2 | REQ-SUB-004 | TASK-0121, TASK-0160 | Completed 2026-08-14 |
 | TASK-0130 Establish Catalog module and Tenant-owned persistence (Done) | F04 | P0 | REQ-CAT-001..006 | TASK-0111, TASK-0121 | Completed 2026-08-14 |
 | TASK-0131 Implement Product lifecycle, SKU, Money and slug rules (Done) | F04 | P0 | REQ-CAT-001..003, REQ-CAT-005 | TASK-0130 | Completed 2026-08-14 |
 | TASK-0132 Implement Category, Brand and Product specifications (Done) | F04 | P1 | REQ-CAT-004..005 | TASK-0131 | Completed 2026-08-14 |
 | TASK-0133 Implement Files/Media upload boundary and Product media association (Done) | F04 | P1 | REQ-MED-001 | TASK-0130 | Completed 2026-08-14 |
 | TASK-0134 Implement external source mapping and explicit ImportCandidate apply (Done) | F04 | P1 | REQ-CAT-006, REQ-PDI-006 | TASK-0131 | Completed 2026-08-14 |
 | TASK-0140 Implement PDI source registry and governance (Done) | F05 | P1 | REQ-PDI-001 | TASK-0121, TASK-0134 | Completed 2026-08-14 |
-| TASK-0141 Implement one policy-approved adapter and manual URL ingestion | F05 | P1 | REQ-PDI-002..003 | TASK-0140 | Blocked |
+| TASK-0141 Implement one policy-approved adapter and manual URL ingestion (Done) | F05 | P1 | REQ-PDI-002..003 | TASK-0140 | Completed 2026-08-14 |
 | TASK-0142 Implement crawler queue, raw snapshot, normalize, retry/rate/DLQ | F05 | P1 | REQ-PDI-002, REQ-PDI-004..005 | TASK-0141, TASK-0102 | Blocked |
 | TASK-0143 Implement merchant ImportCandidate review and Catalog apply | F05 | P1 | REQ-PDI-006 | TASK-0142, TASK-0134 | Blocked |
 | TASK-0144 Implement scheduled refresh with policy and entitlement recheck | F05 | P2 | REQ-PDI-007, REQ-SUB-004 | TASK-0143, TASK-0121 | Blocked |
@@ -48,8 +48,8 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0172 Verify workflow branches/retry/wait/idempotency in LocalStack (Done) | F08 | P0 | REQ-HARD-003 | TASK-0171, TASK-0102 | Completed 2026-08-14 |
 | TASK-0180 Implement Supplier and immutable submitted PurchaseOrder (Done) | F09 | P1 | REQ-PROC-001 | TASK-0131, TASK-0111 | Completed 2026-08-14 |
 | TASK-0181 Implement GoodsReceipt and compensating correction evidence (Done) | F09 | P1 | REQ-PROC-002 | TASK-0180 | Completed 2026-08-14 |
-| TASK-0182 Integrate GoodsReceipt to Inventory idempotently | F09 | P1 | REQ-PROC-002, REQ-INV-003, REQ-HARD-001 | TASK-0181, TASK-0162 | Blocked |
-| TASK-0183 Implement SupplierInvoice, variance approval and SupplierPayment evidence | F09 | P1 | REQ-PROC-003 | TASK-0181 | Blocked |
+| TASK-0182 Integrate GoodsReceipt to Inventory idempotently (Done) | F09 | P1 | REQ-PROC-002, REQ-INV-003, REQ-HARD-001 | TASK-0181, TASK-0162 | Completed 2026-08-14 |
+| TASK-0183 Implement SupplierInvoice, variance approval and SupplierPayment evidence (Done) | F09 | P1 | REQ-PROC-003 | TASK-0181 | Completed 2026-08-14 |
 | TASK-0190 Resolve moving-weighted-average authoritative cost-pool scope | F10 | P0 | REQ-ACC-004 | N/A | **Needs clarification** |
 | TASK-0191 Establish Accounting module and required chart bootstrap | F10 | P0 | REQ-ACC-001, REQ-ACC-004 | TASK-0190, TASK-0113 | Blocked |
 | TASK-0192 Implement balanced immutable Journal posting and reversal | F10 | P0 | REQ-ACC-002 | TASK-0191 | Blocked |
@@ -65,7 +65,7 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0213 Implement Inventory return and Payments refund/reconciliation effects | F12 | P0 | REQ-REF-002..003 | TASK-0212, TASK-0162, TASK-0165 | Blocked |
 | TASK-0214 Implement refund Accounting corrections and progress projection | F12 | P0 | REQ-REF-004 | TASK-0213, TASK-0195 | Blocked |
 | TASK-0220 Establish Audit append/query module (Done) | F13 | P1 | REQ-AUD-001 | TASK-0110 | Completed 2026-08-14 |
-| TASK-0221 Integrate privileged/security action Audit delivery | F13 | P1 | REQ-AUD-001, REQ-HARD-001 | TASK-0220, TASK-0114 | Blocked |
+| TASK-0221 Integrate privileged/security action Audit delivery (Done) | F13 | P1 | REQ-AUD-001, REQ-HARD-001 | TASK-0220, TASK-0114 | Completed 2026-08-14 |
 | TASK-0222 Implement per-recipient Notification state and critical-event consumers | F13 | P2 | REQ-NOT-001 | TASK-0200, TASK-0214 | Blocked |
 | TASK-0230 Standardize structured logs, correlation and operational metrics | F14 | P1 | REQ-OBS-001 | TASK-0172, TASK-0222 | Blocked |
 | TASK-0231 Build DLQ/recovery/redrive/operator diagnostic tooling | F14 | P1 | REQ-HARD-001, REQ-OBS-001 | TASK-0230 | Blocked |
