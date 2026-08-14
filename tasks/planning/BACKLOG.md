@@ -32,11 +32,11 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0143 Implement merchant ImportCandidate review and Catalog apply | F05 | P1 | REQ-PDI-006 | TASK-0142, TASK-0134 | Blocked |
 | TASK-0144 Implement scheduled refresh with policy and entitlement recheck | F05 | P2 | REQ-PDI-007, REQ-SUB-004 | TASK-0143, TASK-0121 | Blocked |
 | TASK-0150 Resolve Storefront Tenant public-address semantics (Done) | F06 | P0 | REQ-STO-001 | N/A | Completed 2026-08-14 |
-| TASK-0151 Implement PublicTenantContext and storefront list/detail reads | F06 | P0 | REQ-STO-001..002, REQ-CAT-005 | TASK-0150, TASK-0131, TASK-0111 | Ready |
-| TASK-0152 Implement transient cart experience | F06 | P1 | REQ-CHK-001 | TASK-0151 | Blocked |
-| TASK-0153 Implement authoritative checkout validation and repricing/reconfirm | F06 | P0 | REQ-CHK-002, REQ-CAT-003 | TASK-0152, TASK-0161 | Blocked |
-| TASK-0154 Implement idempotent guest order placement and immutable snapshot | F06 | P0 | REQ-SAL-001 | TASK-0153 | Blocked |
-| TASK-0160 Establish Sales module/order lifecycle persistence | F07 | P0 | REQ-SAL-001..003 | TASK-0154 | Blocked |
+| TASK-0151 Implement PublicTenantContext and storefront list/detail reads (Done) | F06 | P0 | REQ-STO-001..002, REQ-CAT-005 | TASK-0150, TASK-0131, TASK-0111 | Completed 2026-08-14 |
+| TASK-0152 Implement transient cart experience (Done) | F06 | P1 | REQ-CHK-001 | TASK-0151 | Completed 2026-08-14 |
+| TASK-0153 Implement authoritative checkout validation and repricing/reconfirm (Done) | F06 | P0 | REQ-CHK-002, REQ-CAT-003 | TASK-0152, TASK-0161 | Completed 2026-08-14 |
+| TASK-0154 Implement idempotent guest order placement and immutable snapshot (Done) | F06 | P0 | REQ-SAL-001 | TASK-0153 | Completed 2026-08-14 |
+| TASK-0160 Establish Sales module/order lifecycle persistence (Done) | F07 | P0 | REQ-SAL-001..003 | TASK-0154 | Completed 2026-08-14 |
 | TASK-0161 Establish Inventory Warehouse/StockItem persistence and limits (Done) | F07 | P0 | REQ-INV-001..002 | TASK-0131, TASK-0121 | Completed 2026-08-14 |
 | TASK-0162 Implement reserve/release/issue/receive/adjust stock operations (Done) | F07 | P0 | REQ-INV-001, REQ-INV-003 | TASK-0161 | Completed 2026-08-14 |
 | TASK-0163 Establish Payments obligation/attempt persistence and contracts | F07 | P0 | REQ-PAY-001, REQ-PAY-004 | TASK-0160 | Blocked |

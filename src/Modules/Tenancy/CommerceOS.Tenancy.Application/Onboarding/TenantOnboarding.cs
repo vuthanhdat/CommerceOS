@@ -229,7 +229,7 @@ public sealed class TenantOnboardingCoordinator
             context.SubjectId,
             idempotencyKey,
             fingerprint,
-            new Tenant(tenantId, TenantStatus.Active, profile, 1),
+            new Tenant(tenantId, TenantStatus.Active, profile, 1, $"store-{StableToken(source, "storefront")}"),
             new Membership(membershipId, tenantId, context.SubjectId, MerchantRole.Owner, MembershipStatus.Active, 1),
             OnboardingStatus.PendingTrial,
             correlationId);

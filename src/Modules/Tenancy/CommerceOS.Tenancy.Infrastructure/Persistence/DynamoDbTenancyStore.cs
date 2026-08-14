@@ -3,6 +3,7 @@ using System.Text;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using CommerceOS.Tenancy.Application.Persistence;
+using CommerceOS.Tenancy.Application;
 using CommerceOS.Tenancy.Application.PlatformAdministration;
 using CommerceOS.Tenancy.Domain;
 
@@ -10,7 +11,7 @@ namespace CommerceOS.Tenancy.Infrastructure.Persistence;
 
 public sealed record DynamoDbTenancyOptions(string TableName);
 
-public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdministrationStore
+public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdministrationStore, IPublicTenantDirectoryStore
 {
     private const string PartitionKey = "PK";
     private const string SortKey = "SK";
@@ -33,6 +34,14 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
         }, cancellationToken);
 
         return response.Item.Count == 0 ? null : ReadTenant(response.Item);
+    }
+
+    public async Task<Tenant?> GetByStorefrontSlugAsync(string normalizedSlug, CancellationToken cancellationToken)
+    {
+        var address = await _client.GetItemAsync(new GetItemRequest { TableName = _options.TableName, ConsistentRead = true, Key = Key($"PUBLIC#STORE#{Encode(normalizedSlug)}", "TENANT") }, cancellationToken);
+        if (address.Item.Count == 0) return null;
+        var tenant = await _client.GetItemAsync(new GetItemRequest { TableName = _options.TableName, ConsistentRead = true, Key = Key(TenantPartition(new TenantId(address.Item["TenantId"].S)), "TENANT") }, cancellationToken);
+        return tenant.Item.Count == 0 ? null : ReadTenant(tenant.Item);
     }
 
     public async Task<Membership?> GetMembershipAsync(
@@ -314,7 +323,8 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
         new TenantId(item["TenantId"].S),
         Enum.Parse<TenantStatus>(item["Status"].S, false),
         new BusinessProfile(item["DisplayName"].S, item["TimeZoneIana"].S),
-        long.Parse(item["Revision"].N, CultureInfo.InvariantCulture));
+        long.Parse(item["Revision"].N, CultureInfo.InvariantCulture),
+        item.TryGetValue("StorefrontSlug", out var storefrontSlug) ? storefrontSlug.S : null);
 
     private static Membership ReadMembership(Dictionary<string, AttributeValue> item) => new(
         new MembershipId(item["MembershipId"].S),
@@ -344,6 +354,7 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
         ["Status"] = String(tenant.Status.ToString()),
         ["DisplayName"] = String(tenant.Profile.DisplayName),
         ["TimeZoneIana"] = String(tenant.Profile.TimeZoneIana),
+        ["StorefrontSlug"] = String(tenant.StorefrontSlug ?? string.Empty),
         ["Revision"] = Number(tenant.Revision)
     };
 

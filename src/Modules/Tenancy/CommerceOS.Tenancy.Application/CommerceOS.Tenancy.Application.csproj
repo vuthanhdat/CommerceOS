@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="../CommerceOS.Tenancy.Domain/CommerceOS.Tenancy.Domain.csproj" />
+    <ProjectReference Include="../CommerceOS.Tenancy.Contracts/CommerceOS.Tenancy.Contracts.csproj" />
     <ProjectReference Include="../../SubscriptionBilling/CommerceOS.SubscriptionBilling.Contracts/CommerceOS.SubscriptionBilling.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -8,8 +8,20 @@ using CommerceOS.Catalog.Domain;
 namespace CommerceOS.Catalog.Infrastructure.Persistence;
 
 public sealed record DynamoDbCatalogOptions(string TableName);
-public sealed class DynamoDbCatalogStore(IAmazonDynamoDB client, DynamoDbCatalogOptions options) : ICatalogStore, ICatalogReferenceStore, ICatalogImportStore
+public sealed class DynamoDbCatalogStore(IAmazonDynamoDB client, DynamoDbCatalogOptions options) : ICatalogStore, ICatalogReferenceStore, ICatalogImportStore, IPublicCatalogProjectionStore
 {
+    public async Task<IReadOnlyList<Product>> ListPublishedAsync(CatalogTenantId tenantId, string? cursor, int pageSize, CancellationToken cancellationToken)
+    {
+        var response = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", FilterExpression = "#status = :published", ExpressionAttributeNames = new() { ["#status"] = "Status" }, ExpressionAttributeValues = new() { [":pk"] = S(P(tenantId)), [":prefix"] = S("PRODUCT#"), [":published"] = S(ProductStatus.Published.ToString()) }, Limit = Math.Clamp(pageSize, 1, 50), ExclusiveStartKey = string.IsNullOrWhiteSpace(cursor) ? null : Key(tenantId, $"PRODUCT#{E(cursor)}") }, cancellationToken);
+        return response.Items.Select(Read).ToArray();
+    }
+    public async Task<Product?> GetPublishedBySlugAsync(CatalogTenantId tenantId, string slug, CancellationToken cancellationToken)
+    {
+        var claim = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(tenantId, $"SLUG#{E(Product.Normalize(slug))}") }, cancellationToken);
+        return claim.Item.Count == 0 ? null : await GetPublishedAsync(tenantId, new ProductId(claim.Item["ProductId"].S), cancellationToken);
+    }
+    public async Task<Product?> GetPublishedAsync(CatalogTenantId tenantId, ProductId productId, CancellationToken cancellationToken)
+    { var product = await GetAsync(new(tenantId, "public-query"), productId, cancellationToken); return product?.Status is ProductStatus.Published ? product : null; }
     public async Task<Product?> GetAsync(TrustedCatalogMutationContext context, ProductId id, CancellationToken ct)
     {
         var response = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"PRODUCT#{E(id.Value)}") }, ct);

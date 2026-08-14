@@ -16,6 +16,14 @@
     <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Domain/CommerceOS.Inventory.Domain.csproj" />
     <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Application/CommerceOS.Inventory.Application.csproj" />
     <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Infrastructure/CommerceOS.Inventory.Infrastructure.csproj" />
+    <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Contracts/CommerceOS.Inventory.Contracts.csproj" />
+    <Project Path="src/Modules/Tenancy/CommerceOS.Tenancy.Contracts/CommerceOS.Tenancy.Contracts.csproj" />
+    <Project Path="src/Modules/Storefront/CommerceOS.Storefront.Domain/CommerceOS.Storefront.Domain.csproj" />
+    <Project Path="src/Modules/Storefront/CommerceOS.Storefront.Application/CommerceOS.Storefront.Application.csproj" />
+    <Project Path="src/Modules/Sales/CommerceOS.Sales.Domain/CommerceOS.Sales.Domain.csproj" />
+    <Project Path="src/Modules/Sales/CommerceOS.Sales.Contracts/CommerceOS.Sales.Contracts.csproj" />
+    <Project Path="src/Modules/Sales/CommerceOS.Sales.Application/CommerceOS.Sales.Application.csproj" />
+    <Project Path="src/Modules/Sales/CommerceOS.Sales.Infrastructure/CommerceOS.Sales.Infrastructure.csproj" />
     <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Domain/CommerceOS.FilesMedia.Domain.csproj" />
     <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Contracts/CommerceOS.FilesMedia.Contracts.csproj" />
     <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Application/CommerceOS.FilesMedia.Application.csproj" />
@@ -53,6 +61,8 @@
     <Project Path="tests/CommerceOS.MockPaymentProvider.UnitTests/CommerceOS.MockPaymentProvider.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.ProductDataIngestion.UnitTests/CommerceOS.ProductDataIngestion.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.Audit.UnitTests/CommerceOS.Audit.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Sales.UnitTests/CommerceOS.Sales.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Storefront.UnitTests/CommerceOS.Storefront.UnitTests.csproj" />
   </Folder>
 </Solution>
 

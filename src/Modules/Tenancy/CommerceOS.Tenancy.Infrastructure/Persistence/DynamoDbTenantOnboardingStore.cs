@@ -51,6 +51,7 @@ public sealed class DynamoDbTenantOnboardingStore : ITenantOnboardingStore
                     Put(OperationItem(operation, operationKey), "attribute_not_exists(PK)"),
                     Put(LocatorItem(operation, operationLocator), "attribute_not_exists(PK)"),
                     Put(TenantItem(operation.Tenant, tenantPartition), "attribute_not_exists(PK)"),
+                    Put(PublicAddressItem(operation.Tenant), "attribute_not_exists(PK)"),
                     Put(MembershipItem(operation.InitialOwner, tenantPartition), "attribute_not_exists(PK)"),
                     Put(AuthorityItem(operation.InitialOwner, tenantPartition), "attribute_not_exists(PK)"),
                     Put(DiscoveryItem(operation.InitialOwner, discoveryPartition), "attribute_not_exists(PK)"),
@@ -200,7 +201,15 @@ public sealed class DynamoDbTenantOnboardingStore : ITenantOnboardingStore
         ["Status"] = String(tenant.Status.ToString()),
         ["DisplayName"] = String(tenant.Profile.DisplayName),
         ["TimeZoneIana"] = String(tenant.Profile.TimeZoneIana),
+        ["StorefrontSlug"] = String(tenant.StorefrontSlug ?? throw new InvalidOperationException("Onboarded tenant requires a storefront slug.")),
         ["Revision"] = Number(tenant.Revision)
+    };
+
+    private static Dictionary<string, AttributeValue> PublicAddressItem(Tenant tenant) => new()
+    {
+        [PartitionKey] = String($"PUBLIC#STORE#{Encode(tenant.StorefrontSlug ?? throw new InvalidOperationException("Storefront slug required."))}"),
+        [SortKey] = String("TENANT"),
+        ["TenantId"] = String(tenant.Id.Value)
     };
 
     private static Dictionary<string, AttributeValue> MembershipItem(Membership membership, string partition) => new()

@@ -7,8 +7,13 @@ using CommerceOS.Inventory.Domain;
 namespace CommerceOS.Inventory.Infrastructure.Persistence;
 
 public sealed record DynamoDbInventoryOptions(string TableName);
-public sealed class DynamoDbInventoryStore(IAmazonDynamoDB client, DynamoDbInventoryOptions options) : IInventoryStore, IStockOperationStore
+public sealed class DynamoDbInventoryStore(IAmazonDynamoDB client, DynamoDbInventoryOptions options) : IInventoryStore, IStockOperationStore, IStockAvailabilityStore
 {
+    public async Task<long> GetAvailableAsync(InventoryTenantId tenantId, InventoryProductId productId, CancellationToken cancellationToken)
+    {
+        var response = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(P(tenantId)), [":prefix"] = S($"STOCK#{E(productId.Value)}#") } }, cancellationToken);
+        return response.Items.Sum(item => long.Parse(item["OnHand"].N, CultureInfo.InvariantCulture) - long.Parse(item["Reserved"].N, CultureInfo.InvariantCulture));
+    }
     public async Task<Warehouse?> GetWarehouseAsync(TrustedInventoryMutationContext context, WarehouseId id, CancellationToken ct)
     { var x = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"WAREHOUSE#{E(id.Value)}") }, ct); return x.Item.Count == 0 ? null : ReadWarehouse(x.Item); }
     public async Task<StockItem?> GetStockItemAsync(TrustedInventoryMutationContext context, InventoryProductId productId, WarehouseId warehouseId, CancellationToken ct)

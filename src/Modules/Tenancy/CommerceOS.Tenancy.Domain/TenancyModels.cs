@@ -73,7 +73,7 @@ public enum MerchantRole
 
 public sealed record BusinessProfile(string DisplayName, string TimeZoneIana);
 
-public sealed record Tenant(TenantId Id, TenantStatus Status, BusinessProfile Profile, long Revision);
+public sealed record Tenant(TenantId Id, TenantStatus Status, BusinessProfile Profile, long Revision, string? StorefrontSlug = null);
 
 public sealed record Membership(
     MembershipId Id,
