@@ -73,13 +73,17 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0233 Expand executable architecture/harness guardrails and unified checks | F14 | P1 | REQ-HARD-002..003, REQ-FND-004 | TASK-0232 | Blocked |
 | TASK-0234 Perform milestone architecture audit and selective-extraction assessment | F14 | P2 | REQ-HARD-002 | TASK-0233 | Blocked |
 | TASK-0240 Implement explicit Customer/CRM profiles without guest auto-linking | F15 | P3 | REQ-CRM-001 | TASK-0200 | Blocked |
-| TASK-0241 Refine then implement Pricing/Promotion capability beyond MVP checkout | F15 | P3 | REQ-PRI-001 | TASK-0234 | **Needs design** |
+| TASK-0241 Resolve first Pricing/Promotion product and domain semantics | F15 | P3 | REQ-PRI-001 | N/A | **Needs design** |
+| TASK-0242 Design Pricing authority contracts, persistence and checkout integration | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Blocked |
+| TASK-0243 Implement scheduled Product promotional-price slice | F15 | P3 | REQ-PRI-001 | TASK-0242, TASK-0131, TASK-0153, TASK-0154, TASK-0195 | Blocked |
 
 ## Ready frontier
 
 - `TASK-0125`, `TASK-0141`, `TASK-0172`, `TASK-0182`, `TASK-0183`, and `TASK-0221` are complete.
 - `TASK-0142`, `TASK-0143`, and `TASK-0144` are complete. The PDI source policy must remain current at operation time.
 - `TASK-0190` is complete: Accounting cost pools are `Tenant + Product`; Warehouse is not a valuation dimension.
-- `TASK-0191` through `TASK-0195` are complete. Accounting now owns chart, valuation, immutable journals, source claims and ledger queries.
-- `TASK-0200` and `TASK-0211` are Ready.
-- All remaining tasks are blocked by concrete dependencies, not by arbitrary phase gating.
+- `TASK-0191` through `TASK-0202` are complete. Accounting and Reporting baselines are now implemented through their current planned slices.
+- `TASK-0211` and `TASK-0212` are complete.
+- `TASK-0241` is intentionally `Needs design`; it is a product/domain gate and no longer depends on TASK-0234.
+- `TASK-0242` is blocked by completion of TASK-0241 and TASK-0234. `TASK-0243` is blocked by TASK-0242.
+- Other remaining tasks retain the readiness recorded in their task rows; this Pricing split does not reclassify unrelated work.
