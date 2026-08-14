@@ -118,7 +118,17 @@ flowchart TD
   T0231 --> T0232["TASK-0232 Security/tenant campaign"]
   T0232 --> T0233["TASK-0233 Harness/architecture expansion"]
   T0233 --> T0234["TASK-0234 Architecture audit/extraction assessment"]
+  T0200 --> T0240["TASK-0240 Explicit Customer/CRM profiles"]
+  T0241["TASK-0241 Pricing product/domain semantics"] --> T0242["TASK-0242 Pricing technical design"]
+  T0234 --> T0242
+  T0242 --> T0243["TASK-0243 Scheduled Product promotional price"]
+  T0131 --> T0243
+  T0153 --> T0243
+  T0154 --> T0243
+  T0195 --> T0243
 ```
+
+TASK-0241 intentionally has no technical dependency: product/domain policy must not be decided by architecture topology. TASK-0242 waits for both the resolved product semantics and the milestone architecture audit. TASK-0243 is implementation-only and cannot start until TASK-0242 has removed material technical-design ambiguity.
 
 ## Blocker table
 
@@ -128,7 +138,11 @@ flowchart TD
 | OQ-002 Accounting weighted-average cost-pool dimension | TASK-0191–0195 and refund COGS reversal | Resolved by PD-021: trusted Tenant + Product valuation pool; Warehouse is not a valuation dimension |
 | OQ-003 Refund approval role/capability mapping | TASK-0211–0214 | Resolved by PD-023: Owner/Admin/Staff request; Owner/Admin approve/reject; Viewer neither |
 | External source policy changes over time | TASK-0141+ | implementation-time current policy/robots/terms review; disable source if unsafe |
+| Pricing first-slice lifecycle/time/base-price/public-display/history semantics | TASK-0242–0243 | Resolve explicitly in TASK-0241 and record a Product Decision/domain reconciliation; do not let Technical Architecture or Builder infer product policy |
+| Post-MVP Pricing technical contract/persistence/integration design | TASK-0243 | Complete TASK-0242 after TASK-0241 and TASK-0234; record ADR if a material architecture choice is introduced |
 
 ## Parallelism guidance
 
 After TASK-0100 closes foundation uncertainty, independent work may proceed where dependencies permit. Examples: Subscription catalog bootstrap and Tenancy module work can progress in parallel when their shared contract is stable; Catalog and provider simulation can also progress independently after required foundation boundaries exist. Infrastructure-sensitive parallel tasks must use distinct LocalStack task-instance ports/resource prefixes.
+
+Product/domain design such as TASK-0241 may proceed independently of later technical architecture audit work because it selects business meaning, not deployment topology. Pricing implementation must still respect the explicit TASK-0241 -> TASK-0242 -> TASK-0243 gates.
