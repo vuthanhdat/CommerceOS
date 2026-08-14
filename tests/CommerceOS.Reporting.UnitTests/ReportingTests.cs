@@ -6,6 +6,14 @@ namespace CommerceOS.Reporting.UnitTests;
 public sealed class ReportingTests
 {
     [Fact]
+    public async Task RefundProgressIsExplicitlyNonAuthoritativeAndAllowsPartialEffects()
+    {
+        var store = new RefundStore(); var projection = new RefundProgressProjection(store);
+        await projection.ObserveStockReturnedAsync("tenant", "refund", DateTimeOffset.UtcNow, default);
+        var progress = await store.GetAsync("tenant", "refund", default);
+        Assert.False(progress!.IsFullyObserved); Assert.True(progress.StockReturned); Assert.False(progress.PaymentRefunded);
+    }
+    [Fact]
     public async Task ProjectionDedupesFactsAndExcludesUnknownPaymentAttempts()
     {
         var store = new Store(); var consumer = new ReportingProjectionConsumer(store); var confirmed = Envelope("confirmed", "OrderConfirmed", new DateTimeOffset(2026, 3, 8, 17, 30, 0, TimeSpan.Zero));
@@ -33,5 +41,11 @@ public sealed class ReportingTests
         public Task<IReadOnlyList<ProductQuantity>> ListProductsAsync(TrustedReportingContext c, DateOnly from, DateOnly through, CancellationToken ct) => Task.FromResult<IReadOnlyList<ProductQuantity>>(products.Values.ToArray());
         public Task<ReportingOutcome> BeginRebuildAsync(TrustedReportingContext c, string n, CancellationToken ct) => Task.FromResult(ReportingOutcome.Applied);
         public Task<ReportingOutcome> CompleteRebuildAsync(TrustedReportingContext c, string n, DateTimeOffset at, CancellationToken ct) => Task.FromResult(ReportingOutcome.Applied);
+    }
+    private sealed class RefundStore : IRefundProgressStore
+    {
+        private RefundProgress? value;
+        public Task<RefundProgress?> GetAsync(string tenant, string approval, CancellationToken ct) => Task.FromResult(value?.RefundApprovalId == approval ? value : null);
+        public Task<ReportingOutcome> SaveAsync(string tenant, RefundProgress progress, CancellationToken ct) { value = progress; return Task.FromResult(ReportingOutcome.Applied); }
     }
 }

@@ -62,13 +62,13 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0210 Resolve exact merchant refund-approval role/capability mapping | F12 | P0 | REQ-REF-001 | N/A | Done |
 | TASK-0211 Implement Sales refund request and terminal approve/reject review (Done) | F12 | P0 | REQ-REF-001 | TASK-0210, TASK-0160 | Completed 2026-08-14 |
 | TASK-0212 Implement RefundApproved reliable choreography/fan-out (Done) | F12 | P0 | REQ-REF-002..004, REQ-HARD-001 | TASK-0211, TASK-0102 | Completed 2026-08-14 |
-| TASK-0213 Implement Inventory return and Payments refund/reconciliation effects | F12 | P0 | REQ-REF-002..003 | TASK-0212, TASK-0162, TASK-0165 | Blocked |
-| TASK-0214 Implement refund Accounting corrections and progress projection | F12 | P0 | REQ-REF-004 | TASK-0213, TASK-0195 | Blocked |
+| TASK-0213 Implement Inventory return and Payments refund/reconciliation effects (Done) | F12 | P0 | REQ-REF-002..003 | TASK-0212, TASK-0162, TASK-0165 | Completed 2026-08-14 |
+| TASK-0214 Implement refund Accounting corrections and progress projection (Done) | F12 | P0 | REQ-REF-004 | TASK-0213, TASK-0195 | Completed 2026-08-14 |
 | TASK-0220 Establish Audit append/query module (Done) | F13 | P1 | REQ-AUD-001 | TASK-0110 | Completed 2026-08-14 |
 | TASK-0221 Integrate privileged/security action Audit delivery (Done) | F13 | P1 | REQ-AUD-001, REQ-HARD-001 | TASK-0220, TASK-0114 | Completed 2026-08-14 |
-| TASK-0222 Implement per-recipient Notification state and critical-event consumers | F13 | P2 | REQ-NOT-001 | TASK-0200, TASK-0214 | Blocked |
-| TASK-0230 Standardize structured logs, correlation and operational metrics | F14 | P1 | REQ-OBS-001 | TASK-0172, TASK-0222 | Blocked |
-| TASK-0231 Build DLQ/recovery/redrive/operator diagnostic tooling | F14 | P1 | REQ-HARD-001, REQ-OBS-001 | TASK-0230 | Blocked |
+| TASK-0222 Implement per-recipient Notification state and critical-event consumers (Done) | F13 | P2 | REQ-NOT-001 | TASK-0200, TASK-0214 | Completed 2026-08-14 |
+| TASK-0230 Standardize structured logs, correlation and operational metrics (Done) | F14 | P1 | REQ-OBS-001 | TASK-0172, TASK-0222 | Completed 2026-08-14 |
+| TASK-0231 Build DLQ/recovery/redrive/operator diagnostic tooling (Done) | F14 | P1 | REQ-HARD-001, REQ-OBS-001 | TASK-0230 | Completed 2026-08-14 |
 | TASK-0232 Run tenant-isolation, authorization and failure-oriented hardening campaign | F14 | P1 | REQ-SEC-001..003, REQ-HARD-003 | TASK-0231 | Blocked |
 | TASK-0233 Expand executable architecture/harness guardrails and unified checks | F14 | P1 | REQ-HARD-002..003, REQ-FND-004 | TASK-0232 | Blocked |
 | TASK-0234 Perform milestone architecture audit and selective-extraction assessment | F14 | P2 | REQ-HARD-002 | TASK-0233 | Blocked |

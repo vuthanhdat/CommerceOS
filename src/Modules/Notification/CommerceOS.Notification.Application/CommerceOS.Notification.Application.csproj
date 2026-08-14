@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.Notification.Domain/CommerceOS.Notification.Domain.csproj" /></ItemGroup></Project>

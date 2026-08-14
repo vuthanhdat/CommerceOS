@@ -18,3 +18,10 @@ public sealed record ConfirmedGoodsReceiptLine(string ProductId, string Warehous
 public sealed record ConfirmedGoodsReceiptFact(string EventId, string TenantId, string ReceiptId, IReadOnlyList<ConfirmedGoodsReceiptLine> Lines, string CorrelationId, DateTimeOffset OccurredAt);
 public enum GoodsReceiptInventoryOutcome { Applied, AlreadyApplied, NeedsAttention, Invalid }
 public interface IConfirmedGoodsReceiptConsumer { Task<GoodsReceiptInventoryOutcome> ApplyAsync(ConfirmedGoodsReceiptFact fact, CancellationToken cancellationToken); }
+
+/// <summary>Sales-owned approval fact. Original issue references are explicit so Inventory never reads Sales state.</summary>
+public sealed record ApprovedRefundReturnLine(string ProductId, string WarehouseId, long Quantity, string OriginalIssueReference);
+public sealed record RefundApprovedInventoryFact(string EventId, string TenantId, string RefundApprovalId, string OrderId, IReadOnlyList<ApprovedRefundReturnLine> Lines, string CorrelationId, DateTimeOffset OccurredAt);
+public sealed record StockReturnedFact(string EventId, string TenantId, string ReturnId, string RefundApprovalId, string OrderId, string ProductId, long Quantity, string OriginalIssueReference, string CorrelationId, DateTimeOffset OccurredAt);
+public enum RefundReturnOutcome { Applied, AlreadyApplied, NeedsAttention, Invalid }
+public interface IRefundApprovedInventoryConsumer { Task<RefundReturnOutcome> ApplyAsync(RefundApprovedInventoryFact fact, CancellationToken cancellationToken); }

@@ -15,6 +15,7 @@ public interface IAccountingStore
     Task<AccountingOutcome> SaveAccountAsync(TrustedAccountingContext context, Account before, Account after, CancellationToken ct);
     Task<AccountingOutcome> PostAsync(TrustedAccountingContext context, Journal journal, IReadOnlyList<ValuationState> valuations, CancellationToken ct);
     Task<Journal?> GetJournalAsync(TrustedAccountingContext context, string journalId, CancellationToken ct);
+    Task<Journal?> GetJournalBySourceAsync(TrustedAccountingContext context, string sourceIdentity, CancellationToken ct);
     Task<AccountingPage> ListJournalsAsync(TrustedAccountingContext context, DateOnly? from, DateOnly? through, string? cursor, int pageSize, CancellationToken ct);
     Task<ValuationState?> GetValuationAsync(TrustedAccountingContext context, string productId, CancellationToken ct);
 }

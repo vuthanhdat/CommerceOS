@@ -68,13 +68,25 @@ public sealed class AccountingTests
         Assert.Equal(AccountingOutcome.NeedsAttention, await consumer.ApplyAsync(new StockAdjustedAccountingFact(Envelope("adjustment-1", "StockAdjusted"), "adjust", "product", 1, null, new(2026, 8, 16)), default));
         Assert.All(store.Journals, journal => Assert.Equal(journal.Lines.Where(x => x.Side is JournalSide.Debit).Sum(x => x.AmountVnd), journal.Lines.Where(x => x.Side is JournalSide.Credit).Sum(x => x.AmountVnd)));
     }
+    [Fact]
+    public async Task RefundFactsPostAppendOnlyCorrectionsAndReuseAccountingOwnedIssueCost()
+    {
+        var store = new MemoryStore(); await new AccountingChartService(store).BootstrapAsync(Context, default); var consumer = new AccountingFactConsumer(store);
+        await consumer.ApplyAsync(new GoodsReceiptAccountingFact(Envelope("receipt", "GoodsReceiptRecorded"), "receipt", [new("product", 2, 20)], new(2026, 8, 14)), default);
+        await consumer.ApplyAsync(new StockIssuedAccountingFact(Envelope("issue", "StockIssued"), "issue", "product", 1, new(2026, 8, 14)), default);
+        await consumer.ApplyAsync(new OrderFulfilledAccountingFact(Envelope("sale", "OrderFulfilled"), "order", 10, new(2026, 8, 14)), default);
+        Assert.Equal(AccountingOutcome.Applied, await consumer.ApplyAsync(new RefundApprovedAccountingFact(Envelope("approved", "RefundApproved"), "refund", "sale", 10, new(2026, 8, 15)), default));
+        Assert.Equal(AccountingOutcome.Applied, await consumer.ApplyAsync(new StockReturnedAccountingFact(Envelope("returned", "StockReturned"), "return", "refund", "issue", "product", 1, new(2026, 8, 15)), default));
+        Assert.Equal(AccountingOutcome.Applied, await consumer.ApplyAsync(new PaymentRefundedAccountingFact(Envelope("paid", "PaymentRefunded"), "refund", "payment", 10, new(2026, 8, 15)), default));
+        Assert.Equal(6, store.Journals.Count); Assert.All(store.Journals, x => Assert.Equal(x.Lines.Where(y => y.Side is JournalSide.Debit).Sum(y => y.AmountVnd), x.Lines.Where(y => y.Side is JournalSide.Credit).Sum(y => y.AmountVnd)));
+    }
 
     private static AccountingFactEnvelope Envelope(string id, string type) => new(id, type, 1, "tenant-a", "aggregate", DateTimeOffset.UtcNow, "correlation-1", null);
 
     private sealed class MemoryStore : IAccountingStore
     {
         private readonly Dictionary<string, Account> accounts = []; private readonly Dictionary<string, Journal> sources = []; private readonly Dictionary<string, Journal> journals = []; private readonly Dictionary<string, ValuationState> valuations = [];
-        public IReadOnlyCollection<Journal> Journals => journals.Values;
+        public Dictionary<string, Journal>.ValueCollection Journals => journals.Values;
         public Account[] AccountsFor(AccountingTenantId tenant) => accounts.Values.Where(x => x.TenantId == tenant).ToArray();
         private static string Key(AccountingTenantId tenant, string id) => $"{tenant.Value}:{id}";
         public Task<AccountingOutcome> BootstrapChartAsync(TrustedAccountingContext c, IReadOnlyList<Account> a, CancellationToken ct) { var added = false; foreach (var x in a) if (accounts.TryAdd(Key(c.TenantId, x.Id.Value), x)) added = true; return Task.FromResult(added ? AccountingOutcome.Applied : AccountingOutcome.AlreadyApplied); }
@@ -83,6 +95,7 @@ public sealed class AccountingTests
         public Task<AccountingOutcome> SaveAccountAsync(TrustedAccountingContext c, Account before, Account after, CancellationToken ct) { accounts[Key(c.TenantId, after.Id.Value)] = after; return Task.FromResult(AccountingOutcome.Applied); }
         public Task<AccountingOutcome> PostAsync(TrustedAccountingContext c, Journal journal, IReadOnlyList<ValuationState> values, CancellationToken ct) { if (sources.ContainsKey(Key(c.TenantId, journal.SourceIdentity))) return Task.FromResult(AccountingOutcome.AlreadyApplied); sources[Key(c.TenantId, journal.SourceIdentity)] = journal; journals[Key(c.TenantId, journal.Id)] = journal; foreach (var value in values) valuations[Key(c.TenantId, value.ProductId)] = value; return Task.FromResult(AccountingOutcome.Applied); }
         public Task<Journal?> GetJournalAsync(TrustedAccountingContext c, string id, CancellationToken ct) => Task.FromResult(journals.GetValueOrDefault(Key(c.TenantId, id)));
+        public Task<Journal?> GetJournalBySourceAsync(TrustedAccountingContext c, string source, CancellationToken ct) => Task.FromResult(sources.GetValueOrDefault(Key(c.TenantId, source)));
         public Task<AccountingPage> ListJournalsAsync(TrustedAccountingContext c, DateOnly? from, DateOnly? through, string? cursor, int size, CancellationToken ct) => Task.FromResult(new AccountingPage(journals.Values.Where(x => x.TenantId == c.TenantId && (!from.HasValue || x.EffectiveDate >= from) && (!through.HasValue || x.EffectiveDate <= through)).ToArray(), null));
         public Task<ValuationState?> GetValuationAsync(TrustedAccountingContext c, string product, CancellationToken ct) => Task.FromResult(valuations.GetValueOrDefault(Key(c.TenantId, product)));
     }

@@ -12,6 +12,9 @@ public sealed record GoodsReceiptAccountingFact(AccountingFactEnvelope Envelope,
 public sealed record SupplierInvoiceAccountingFact(AccountingFactEnvelope Envelope, string InvoiceId, long ReceiptAcceptedAmountVnd, long InvoiceAmountVnd, bool VarianceApproved, DateOnly EffectiveDate);
 public sealed record SupplierPaymentAccountingFact(AccountingFactEnvelope Envelope, string PaymentId, long AmountVnd, DateOnly EffectiveDate);
 public sealed record StockAdjustedAccountingFact(AccountingFactEnvelope Envelope, string AdjustmentId, string ProductId, long QuantityDelta, long? ApprovedIncreaseTotalCostVnd, DateOnly EffectiveDate);
+public sealed record RefundApprovedAccountingFact(AccountingFactEnvelope Envelope, string RefundApprovalId, string OriginalRevenueSourceIdentity, long AmountVnd, DateOnly EffectiveDate);
+public sealed record StockReturnedAccountingFact(AccountingFactEnvelope Envelope, string ReturnId, string RefundApprovalId, string OriginalIssueSourceIdentity, string ProductId, long Quantity, DateOnly EffectiveDate);
+public sealed record PaymentRefundedAccountingFact(AccountingFactEnvelope Envelope, string RefundApprovalId, string PaymentId, long AmountVnd, DateOnly EffectiveDate);
 
 public sealed class AccountingFactConsumer(IAccountingStore store, TimeProvider? clock = null)
 {
@@ -52,8 +55,28 @@ public sealed class AccountingFactConsumer(IAccountingStore store, TimeProvider?
         }
         catch (AccountingRuleException) { return AccountingOutcome.NeedsAttention; }
     }
+    public async Task<AccountingOutcome> ApplyAsync(RefundApprovedAccountingFact fact, CancellationToken ct)
+    {
+        if (!Valid(fact.Envelope) || string.IsNullOrWhiteSpace(fact.RefundApprovalId) || string.IsNullOrWhiteSpace(fact.OriginalRevenueSourceIdentity) || fact.AmountVnd <= 0) return AccountingOutcome.Invalid;
+        var context = Context(fact.Envelope); var original = await store.GetJournalBySourceAsync(context, fact.OriginalRevenueSourceIdentity, ct);
+        if (original is null || original.Lines.All(x => x.AccountId != Id(AccountRole.SalesRevenue))) return AccountingOutcome.NeedsAttention;
+        return await PostAsync(context, fact.Envelope, fact.EffectiveDate, [JournalLine.Debit(Id(AccountRole.SalesRevenue), fact.AmountVnd), JournalLine.Credit(Id(AccountRole.CustomerDeposits), fact.AmountVnd)], [], ct, original.Id);
+    }
+    public async Task<AccountingOutcome> ApplyAsync(StockReturnedAccountingFact fact, CancellationToken ct)
+    {
+        if (!Valid(fact.Envelope) || string.IsNullOrWhiteSpace(fact.ReturnId) || string.IsNullOrWhiteSpace(fact.RefundApprovalId) || string.IsNullOrWhiteSpace(fact.OriginalIssueSourceIdentity) || string.IsNullOrWhiteSpace(fact.ProductId) || fact.Quantity <= 0) return AccountingOutcome.Invalid;
+        var context = Context(fact.Envelope); var original = await store.GetJournalBySourceAsync(context, fact.OriginalIssueSourceIdentity, ct);
+        if (original is null) return AccountingOutcome.NeedsAttention;
+        var cogsLine = original.Lines.SingleOrDefault(x => x.AccountId == Id(AccountRole.CostOfGoodsSold) && x.Side is JournalSide.Debit);
+        var cost = cogsLine?.AmountVnd ?? 0;
+        if (cost <= 0) return AccountingOutcome.NeedsAttention;
+        var valuation = await store.GetValuationAsync(context, fact.ProductId, ct) ?? new(context.TenantId, fact.ProductId, 0, 0, 0);
+        return await PostAsync(context, fact.Envelope, fact.EffectiveDate, [JournalLine.Debit(Id(AccountRole.Inventory), cost), JournalLine.Credit(Id(AccountRole.CostOfGoodsSold), cost)], [valuation.Receive(fact.Quantity, cost)], ct, original.Id);
+    }
+    public Task<AccountingOutcome> ApplyAsync(PaymentRefundedAccountingFact fact, CancellationToken ct)
+        => !Valid(fact.Envelope) || string.IsNullOrWhiteSpace(fact.RefundApprovalId) || string.IsNullOrWhiteSpace(fact.PaymentId) || fact.AmountVnd <= 0 ? Task.FromResult(AccountingOutcome.Invalid) : PostAsync(Context(fact.Envelope), fact.Envelope, fact.EffectiveDate, [JournalLine.Debit(Id(AccountRole.CustomerDeposits), fact.AmountVnd), JournalLine.Credit(Id(AccountRole.Cash), fact.AmountVnd)], [], ct);
     private Task<AccountingOutcome> PostSimpleAsync(AccountingFactEnvelope e, DateOnly date, long amount, AccountRole debit, AccountRole credit, CancellationToken ct) => !Valid(e) || amount <= 0 ? Task.FromResult(AccountingOutcome.Invalid) : PostAsync(Context(e), e, date, [JournalLine.Debit(Id(debit), amount), JournalLine.Credit(Id(credit), amount)], [], ct);
-    private Task<AccountingOutcome> PostAsync(TrustedAccountingContext c, AccountingFactEnvelope e, DateOnly date, IReadOnlyList<JournalLine> lines, IReadOnlyList<ValuationState> valuations, CancellationToken ct) => store.PostAsync(c, Journal.Create($"journal:{e.EventId}", c.TenantId, date, _clock.GetUtcNow(), e.EventId, e.CorrelationId, lines), valuations, ct);
+    private Task<AccountingOutcome> PostAsync(TrustedAccountingContext c, AccountingFactEnvelope e, DateOnly date, IReadOnlyList<JournalLine> lines, IReadOnlyList<ValuationState> valuations, CancellationToken ct, string? reversesJournalId = null) => store.PostAsync(c, Journal.Create($"journal:{e.EventId}", c.TenantId, date, _clock.GetUtcNow(), e.EventId, e.CorrelationId, lines, reversesJournalId), valuations, ct);
     private static AccountId Id(AccountRole role) => new($"control:{role}");
     private static TrustedAccountingContext Context(AccountingFactEnvelope e) => new(new(e.TenantId), e.CorrelationId);
     private static bool Valid(AccountingFactEnvelope e) => !string.IsNullOrWhiteSpace(e.EventId) && !string.IsNullOrWhiteSpace(e.EventType) && e.EventVersion == 1 && !string.IsNullOrWhiteSpace(e.TenantId) && !string.IsNullOrWhiteSpace(e.AggregateId) && !string.IsNullOrWhiteSpace(e.CorrelationId);

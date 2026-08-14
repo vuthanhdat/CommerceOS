@@ -396,6 +396,60 @@ def smoke_localstack(config: LocalStackConfig) -> int:
     return 0
 
 
+def recovery_inspect(config: LocalStackConfig) -> int:
+    """List only this task-instance's queues and expose DLQ wiring; never alters business records."""
+    if not localstack_ready(config):
+        print("LocalStack is not ready", file=sys.stderr)
+        return 1
+    aws = shutil.which("aws.exe" if os.name == "nt" else "aws")
+    if aws is None:
+        print("AWS CLI is required for queue recovery inspection.", file=sys.stderr)
+        return 1
+    result = subprocess.run([aws, "sqs", "list-queues", "--queue-name-prefix", config.resource_prefix, "--endpoint-url", config.endpoint, "--region", "us-east-1", "--output", "json"], check=False, capture_output=True, text=True, env=lifecycle_environment(config))
+    if result.returncode != 0:
+        print(result.stderr.strip(), file=sys.stderr)
+        return result.returncode or 1
+    urls = json.loads(result.stdout).get("QueueUrls", [])
+    queues: list[dict[str, object]] = []
+    for url in urls:
+        attributes = subprocess.run([aws, "sqs", "get-queue-attributes", "--queue-url", url, "--attribute-names", "All", "--endpoint-url", config.endpoint, "--region", "us-east-1", "--output", "json"], check=False, capture_output=True, text=True, env=lifecycle_environment(config))
+        if attributes.returncode != 0:
+            return attributes.returncode or 1
+        value = json.loads(attributes.stdout).get("Attributes", {})
+        queues.append({"queue_url": url, "visible_messages": value.get("ApproximateNumberOfMessages", "0"), "inflight_messages": value.get("ApproximateNumberOfMessagesNotVisible", "0"), "redrive_policy": value.get("RedrivePolicy"), "redrive_allow_policy": value.get("RedriveAllowPolicy")})
+    print(json.dumps({"instance": f"{config.instance:04d}", "resource_prefix": config.resource_prefix, "queues": queues}))
+    return 0
+
+
+def recovery_redrive(config: LocalStackConfig, source_queue_url: str, destination_queue_url: str, max_messages: int) -> int:
+    """Use the provider redrive capability; identity is preserved and consumers remain idempotent."""
+    if not source_queue_url or not destination_queue_url or max_messages < 1 or max_messages > 1000:
+        print("A source queue, destination queue and --max-messages between 1 and 1000 are required.", file=sys.stderr)
+        return 2
+    if config.resource_prefix not in source_queue_url or config.resource_prefix not in destination_queue_url:
+        print("Recovery queues must belong to the selected task instance.", file=sys.stderr)
+        return 2
+    aws = shutil.which("aws.exe" if os.name == "nt" else "aws")
+    if aws is None:
+        print("AWS CLI is required for queue redrive.", file=sys.stderr)
+        return 1
+    def queue_arn(url: str) -> str | None:
+        lookup = subprocess.run([aws, "sqs", "get-queue-attributes", "--queue-url", url, "--attribute-names", "QueueArn", "--endpoint-url", config.endpoint, "--region", "us-east-1", "--output", "json"], check=False, capture_output=True, text=True, env=lifecycle_environment(config))
+        if lookup.returncode != 0:
+            return None
+        return json.loads(lookup.stdout).get("Attributes", {}).get("QueueArn")
+    source_arn, destination_arn = queue_arn(source_queue_url), queue_arn(destination_queue_url)
+    if not source_arn or not destination_arn:
+        print("Unable to resolve queue ARNs for the selected LocalStack instance.", file=sys.stderr)
+        return 1
+    result = subprocess.run([aws, "sqs", "start-message-move-task", "--source-arn", source_arn, "--destination-arn", destination_arn, "--max-number-of-messages-per-second", str(max_messages), "--endpoint-url", config.endpoint, "--region", "us-east-1", "--output", "json"], check=False, capture_output=True, text=True, env=lifecycle_environment(config))
+    if result.returncode != 0:
+        print(result.stderr.strip(), file=sys.stderr)
+        return result.returncode or 1
+    print(result.stdout.strip())
+    return 0
+
+
 def run_api(port: int) -> int:
     environment = os.environ.copy()
     environment["ASPNETCORE_URLS"] = f"http://127.0.0.1:{port}"
@@ -410,7 +464,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("ports", "config", "api", "start", "readiness", "synth", "bootstrap", "deploy", "inspect", "smoke", "reset", "destroy", "redeploy", "lifecycle"),
+        choices=("ports", "config", "api", "start", "readiness", "synth", "bootstrap", "deploy", "inspect", "smoke", "recovery-inspect", "recovery-redrive", "reset", "destroy", "redeploy", "lifecycle"),
     )
     parser.add_argument(
         "--instance",
@@ -420,6 +474,9 @@ def main() -> int:
     )
     parser.add_argument("--profile", default=os.environ.get("COMMERCEOS_PROFILE", "localstack-test"))
     parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument("--source-queue-url")
+    parser.add_argument("--destination-queue-url")
+    parser.add_argument("--max-messages", type=int, default=10)
     args = parser.parse_args()
     allocated = ports(args.instance)
     config = config_from_args(args)
@@ -444,6 +501,10 @@ def main() -> int:
         return inspect_localstack(config)
     if args.command == "smoke":
         return smoke_localstack(config)
+    if args.command == "recovery-inspect":
+        return recovery_inspect(config)
+    if args.command == "recovery-redrive":
+        return recovery_redrive(config, args.source_queue_url or "", args.destination_queue_url or "", args.max_messages)
     if args.command == "reset":
         result = stop_localstack(config)
         if result != 0:

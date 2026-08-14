@@ -58,3 +58,22 @@ public sealed record FinancialJournalView(string JournalId, DateOnly EffectiveDa
 public sealed record TrialBalanceView(string AccountId, long DebitVnd, long CreditVnd);
 public interface IAccountingReportingQuery { Task<FinancialReportPage> GetReadOnlyReportAsync(string trustedTenantId, FinancialReportRequest request, CancellationToken ct); }
 public sealed class FinancialBackOfficeQuery(IAccountingReportingQuery accounting) { public Task<FinancialReportPage> GetAsync(TrustedReportingContext context, FinancialReportRequest request, CancellationToken ct) => accounting.GetReadOnlyReportAsync(context.TenantId.Value, request with { PageSize = Math.Clamp(request.PageSize, 1, 100) }, ct); }
+
+/// <summary>A support projection, intentionally not a cross-domain refund-completed authority.</summary>
+public sealed record RefundProgress(string RefundApprovalId, bool RevenueCorrected, bool StockReturned, bool PaymentRefunded, DateTimeOffset LastObservedAt)
+{
+    public bool IsFullyObserved => RevenueCorrected && StockReturned && PaymentRefunded;
+}
+public interface IRefundProgressStore { Task<RefundProgress?> GetAsync(string trustedTenantId, string refundApprovalId, CancellationToken ct); Task<ReportingOutcome> SaveAsync(string trustedTenantId, RefundProgress progress, CancellationToken ct); }
+public sealed class RefundProgressProjection(IRefundProgressStore store)
+{
+    public Task<ReportingOutcome> ObserveRevenueCorrectionAsync(string tenant, string approval, DateTimeOffset observedAt, CancellationToken ct) => ObserveAsync(tenant, approval, observedAt, x => x with { RevenueCorrected = true }, ct);
+    public Task<ReportingOutcome> ObserveStockReturnedAsync(string tenant, string approval, DateTimeOffset observedAt, CancellationToken ct) => ObserveAsync(tenant, approval, observedAt, x => x with { StockReturned = true }, ct);
+    public Task<ReportingOutcome> ObservePaymentRefundedAsync(string tenant, string approval, DateTimeOffset observedAt, CancellationToken ct) => ObserveAsync(tenant, approval, observedAt, x => x with { PaymentRefunded = true }, ct);
+    private async Task<ReportingOutcome> ObserveAsync(string tenant, string approval, DateTimeOffset at, Func<RefundProgress, RefundProgress> update, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(tenant) || string.IsNullOrWhiteSpace(approval)) return ReportingOutcome.Invalid;
+        var current = await store.GetAsync(tenant, approval, ct) ?? new RefundProgress(approval, false, false, false, at);
+        return await store.SaveAsync(tenant, update(current) with { LastObservedAt = at }, ct);
+    }
+}

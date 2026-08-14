@@ -73,6 +73,11 @@ public sealed class DynamoDbAccountingStore(IAmazonDynamoDB client, DynamoDbAcco
     }
     public async Task<Journal?> GetJournalAsync(TrustedAccountingContext context, string journalId, CancellationToken ct)
     { var item = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"JOURNAL#{E(journalId)}") }, ct); return item.Item.Count == 0 ? null : ReadJournal(item.Item); }
+    public async Task<Journal?> GetJournalBySourceAsync(TrustedAccountingContext context, string sourceIdentity, CancellationToken ct)
+    {
+        var source = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"SOURCE#{E(sourceIdentity)}") }, ct);
+        return source.Item.Count == 0 ? null : await GetJournalAsync(context, source.Item["JournalId"].S, ct);
+    }
     public async Task<AccountingPage> ListJournalsAsync(TrustedAccountingContext context, DateOnly? from, DateOnly? through, string? cursor, int pageSize, CancellationToken ct)
     {
         var start = string.IsNullOrWhiteSpace(cursor) ? null : new Dictionary<string, AttributeValue> { ["PK"] = S(P(context.TenantId)), ["SK"] = S(cursor) };
