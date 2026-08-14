@@ -10,32 +10,39 @@ REQ-CRM-001, REQ-PRI-001.
 Later explicit Customer profile/contact preferences and a deliberately narrow first Pricing/Promotion slice introduced through separate product/domain design, technical design and implementation gates.
 
 ## Out of scope
-Automatic guest-to-customer matching, rewriting historical Order snapshots, manual authoritative guest discounts in current MVP, speculative promotion engine, coupons, stacking/priority rules, customer-specific pricing and broad rule-engine abstractions.
+Automatic guest-to-customer matching, rewriting historical Order snapshots, manual authoritative guest discounts, speculative promotion engine, coupons, stacking/priority rules, customer-specific pricing and broad rule-engine abstractions.
 
-## Pricing first-slice direction
-The Product Owner approved the starting direction on 2026-08-14:
+## Pricing first-slice product/domain baseline — resolved
 
-- first slice is a scheduled Product promotional price;
-- the promotion supplies an explicit final promotional unit price;
-- one promotion targets one Product and applies to all storefront shoppers;
-- no stacking or overlapping accepted promotion periods for one Product;
-- Owner/Admin manage promotions; Staff/Viewer do not;
-- Catalog keeps base price and sellability authority;
-- Pricing owns authoritative effective promotional price;
-- Sales keeps immutable accepted pricing provenance;
-- browser/cart discount/total is never authoritative;
-- accepted effective Order amount remains the Accounting/refund commercial amount for this slice.
+TASK-0241 completed on 2026-08-14 and is authoritative through `PD-054` plus `docs/domains/pricing-promotion.md`.
 
-Remaining lifecycle/time/base-price/public-display/history semantics are resolved by TASK-0241 before technical design.
+The approved slice is:
+
+- one scheduled Promotion targets one Tenant-owned Product and all public storefront shoppers;
+- accepted schedule terms are immutable and contain an explicit final promotional VND unit price;
+- no persisted merchant-editable Draft; changes require cancel + new Promotion;
+- periods are finite `[EffectiveFrom, EffectiveUntil)`, no backdating, no overlap for one Tenant + Product;
+- Owner/Admin schedule/cancel; Staff/Viewer cannot mutate Pricing;
+- Catalog remains base-price and sellability authority;
+- Pricing effective unit price while otherwise active is `min(current Catalog base price, scheduled promotional unit price)`;
+- promotions therefore never increase shopper price and may become temporarily non-beneficial after a Catalog base-price decrease;
+- public promotion presentation exists only while the Promotion actually lowers a sellable Product price;
+- browser/cart price, discount, timestamp and total are never authoritative;
+- checkout retains PD-011 explicit reconfirmation for any authoritative effective-price change;
+- Sales keeps immutable accepted base/effective pricing and applied Promotion provenance;
+- Accounting/refund use the accepted effective Sales amount, with no new contra-revenue model;
+- no Pricing-specific subscription entitlement or plan-name gate is introduced for this slice.
+
+Coupons, percentage/fixed-reduction formulas, manual order discounts, Category/cart/order-wide promotions, customer/segment pricing, price lists, BOGO/quantity tiers, variants, flash-sale orchestration and stacking/priority remain future product decisions.
 
 ## Task sequence
 
 - `TASK-0240` — implement explicit Customer/CRM profiles after core reporting/data boundaries are stable.
-- `TASK-0241` — **product/domain design only**. Resolve and record the first Pricing/Promotion slice semantics. No application code. This task no longer depends on the architecture audit because product policy must not be decided by technical topology.
-- `TASK-0242` — **technical design only**. After TASK-0241 and TASK-0234, define Pricing contracts, persistence/access patterns, concurrency enforcement, checkout/Sales integration, LocalStack mapping and any required ADR. No application code.
-- `TASK-0243` — **implementation only**. Implement the approved scheduled Product promotional-price slice exactly as specified by TASK-0241/TASK-0242.
+- `TASK-0241` — **Done 2026-08-14**. Product/domain design gate closed by PD-054 and `pricing-promotion.md`; no application code was changed.
+- `TASK-0242` — **technical design only**. Product policy is closed; this task remains blocked only by TASK-0234 so it can inspect the post-hardening implemented architecture before selecting contracts, persistence/access patterns, concurrency enforcement, checkout/Sales integration, LocalStack mapping and any required ADR.
+- `TASK-0243` — **implementation only**. Implement the approved scheduled Product promotional-price slice exactly as specified by PD-054/TASK-0242.
 
-The split is intentional: a Builder must never be asked to invent promotion lifecycle/stacking/time/accounting semantics while implementing Pricing code.
+The split is intentional: a Builder must never be asked to invent promotion lifecycle/time/accounting/authorization semantics while implementing Pricing code.
 
 ## Definition of Done
-Later capabilities have explicit owning-context semantics and integrate through contracts rather than hidden flags in Sales/Catalog. The first Pricing slice is considered implementation-ready only when TASK-0241 has closed product/domain ambiguity and TASK-0242 has closed material technical-design ambiguity.
+Later capabilities have explicit owning-context semantics and integrate through contracts rather than hidden flags in Sales/Catalog. For Pricing, product/domain ambiguity is now closed; the first slice becomes implementation-ready only after TASK-0242 also closes material technical-design ambiguity.
