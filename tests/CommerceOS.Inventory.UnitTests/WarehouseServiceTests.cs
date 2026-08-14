@@ -38,5 +38,8 @@ public sealed class WarehouseServiceTests
         public Task<InventoryOutcome> CreateOrReactivateWarehouseAsync(TrustedInventoryMutationContext c, Warehouse? previous, Warehouse updatedWarehouse, int maxWarehouses, CancellationToken ct) { lock (_sync) { if (_active >= maxWarehouses) return Task.FromResult(InventoryOutcome.LimitReached); _warehouses[(c.TenantId, updatedWarehouse.Id)] = updatedWarehouse; _active++; return Task.FromResult(InventoryOutcome.Applied); } }
         public Task<InventoryOutcome> DisableWarehouseAsync(TrustedInventoryMutationContext c, Warehouse previous, CancellationToken ct) { lock (_sync) { _warehouses[(c.TenantId, previous.Id)] = previous; _active--; return Task.FromResult(InventoryOutcome.Applied); } }
         public Task<StockItem?> GetStockItemAsync(TrustedInventoryMutationContext c, InventoryProductId productId, WarehouseId warehouseId, CancellationToken ct) => Task.FromResult<StockItem?>(null);
+        public Task<IReadOnlyList<Warehouse>> ListWarehousesAsync(TrustedInventoryMutationContext c, CancellationToken ct) => Task.FromResult<IReadOnlyList<Warehouse>>(_warehouses.Values.Where(x => x.TenantId == c.TenantId).ToArray());
+        public Task<InventoryStockPage> ListStockAsync(TrustedInventoryMutationContext c, string? warehouseId, string? productId, string? cursor, int pageSize, CancellationToken ct) => Task.FromResult(new InventoryStockPage([], null));
+        public Task<IReadOnlyList<StockMovement>> ListMovementsAsync(TrustedInventoryMutationContext c, string? warehouseId, string? productId, CancellationToken ct) => Task.FromResult<IReadOnlyList<StockMovement>>([]);
     }
 }

@@ -33,15 +33,15 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
             Key = Key(TenantPartition(scope.TenantId), "TENANT")
         }, cancellationToken);
 
-        return response.Item.Count == 0 ? null : ReadTenant(response.Item);
+        return response.Item is null || response.Item.Count == 0 ? null : ReadTenant(response.Item);
     }
 
     public async Task<Tenant?> GetByStorefrontSlugAsync(string normalizedSlug, CancellationToken cancellationToken)
     {
         var address = await _client.GetItemAsync(new GetItemRequest { TableName = _options.TableName, ConsistentRead = true, Key = Key($"PUBLIC#STORE#{Encode(normalizedSlug)}", "TENANT") }, cancellationToken);
-        if (address.Item.Count == 0) return null;
+        if (address.Item is null || address.Item.Count == 0) return null;
         var tenant = await _client.GetItemAsync(new GetItemRequest { TableName = _options.TableName, ConsistentRead = true, Key = Key(TenantPartition(new TenantId(address.Item["TenantId"].S)), "TENANT") }, cancellationToken);
-        return tenant.Item.Count == 0 ? null : ReadTenant(tenant.Item);
+        return tenant.Item is null || tenant.Item.Count == 0 ? null : ReadTenant(tenant.Item);
     }
 
     public async Task<Membership?> GetMembershipAsync(
@@ -56,7 +56,7 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
             Key = Key(TenantPartition(scope.TenantId), $"MEMBERSHIP#{Encode(membershipId.Value)}")
         }, cancellationToken);
 
-        return response.Item.Count == 0 ? null : ReadMembership(response.Item);
+        return response.Item is null || response.Item.Count == 0 ? null : ReadMembership(response.Item);
     }
 
     public async Task<Membership?> GetMembershipForSubjectAsync(
@@ -71,7 +71,7 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
             Key = Key(TenantPartition(scope.TenantId), $"AUTHORITY#SUBJECT#{Encode(subjectId.Value)}")
         }, cancellationToken);
 
-        if (authority.Item.Count == 0 || !authority.Item.TryGetValue("MembershipId", out var membershipId))
+        if (authority.Item is null || authority.Item.Count == 0 || !authority.Item.TryGetValue("MembershipId", out var membershipId))
         {
             return null;
         }
@@ -230,6 +230,8 @@ public sealed class DynamoDbTenancyStore : ITenancyStore, IPlatformTenantAdminis
 
         return response.Item is null || response.Item.Count == 0 ? null : ReadTenant(response.Item);
     }
+    public async Task<IReadOnlyList<Tenant>> ListForPlatformSupportAsync(string? search, int pageSize, CancellationToken cancellationToken)
+    { var response = await _client.ScanAsync(new ScanRequest { TableName = _options.TableName, FilterExpression = "SK = :tenant", ExpressionAttributeValues = new Dictionary<string, AttributeValue> { [":tenant"] = String("TENANT") }, Limit = Math.Clamp(pageSize, 1, 100) }, cancellationToken); return response.Items.Select(ReadTenant).Where(x => string.IsNullOrWhiteSpace(search) || x.Id.Value.Contains(search, StringComparison.OrdinalIgnoreCase) || x.Profile.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)).OrderBy(x => x.Profile.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray(); }
 
     public async Task<TenantLifecycleResult> TransitionAsync(
         TenantLifecycleCommand command,

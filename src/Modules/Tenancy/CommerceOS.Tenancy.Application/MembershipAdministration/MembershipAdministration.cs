@@ -29,6 +29,8 @@ public sealed record InvitationAcceptanceContext(SubjectId SubjectId, string Ver
 
 public interface IMembershipAdministrationStore
 {
+    Task<IReadOnlyList<Membership>> ListMembershipsAsync(TenantId tenantId, CancellationToken ct);
+    Task<IReadOnlyList<MerchantInvitation>> ListInvitationsAsync(TenantId tenantId, CancellationToken ct);
     Task<Membership?> GetMembershipAsync(TenantId tenantId, MembershipId id, CancellationToken ct);
     Task<Membership?> GetMembershipForSubjectAsync(TenantId tenantId, SubjectId subjectId, CancellationToken ct);
     Task<MerchantInvitation?> GetInvitationAsync(TenantId tenantId, string id, CancellationToken ct);
@@ -64,6 +66,8 @@ public sealed class MembershipAdministrationService
         var limit = activation ? await ActiveMembershipLimitAsync(actor.TenantId, actor.CorrelationId, cancellationToken) : int.MaxValue;
         return await _store.ApplyMembershipChangeAsync(current, current with { Status = status, Role = role, Revision = current.Revision + 1 }, limit, cancellationToken);
     }
+    public Task<IReadOnlyList<Membership>> ListMembershipsAsync(TrustedTenantReadContext context, CancellationToken cancellationToken) => _store.ListMembershipsAsync(context.TenantId, cancellationToken);
+    public Task<IReadOnlyList<MerchantInvitation>> ListInvitationsAsync(TrustedTenantReadContext context, CancellationToken cancellationToken) => _store.ListInvitationsAsync(context.TenantId, cancellationToken);
 
     public async Task<InvitationIssueResult> IssueInvitationAsync(TrustedTenantMutationContext actor, string recipientEmail, MerchantRole role, CancellationToken cancellationToken)
     {

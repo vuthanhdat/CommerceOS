@@ -1,0 +1,1 @@
+{"name":"@commerceos/platform-admin","version":"0.1.0","private":true,"type":"module","scripts":{"dev":"vite --port 14174","build":"tsc --noEmit && vite build","test":"vitest run"},"dependencies":{"@commerceos/frontend-foundation":"0.1.0","react":"19.2.8","react-dom":"19.2.8"}}

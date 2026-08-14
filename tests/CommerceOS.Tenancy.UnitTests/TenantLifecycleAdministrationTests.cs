@@ -104,6 +104,7 @@ public sealed class TenantLifecycleAdministrationTests
 
         public Task<Tenant?> GetForPlatformSupportAsync(TenantId tenantId, CancellationToken cancellationToken) =>
             Task.FromResult(Tenant?.Id == tenantId ? Tenant : null);
+        public Task<IReadOnlyList<Tenant>> ListForPlatformSupportAsync(string? search, int pageSize, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Tenant>>(Tenant is null ? [] : [Tenant]);
 
         public Task<TenantLifecycleResult> TransitionAsync(
             TenantLifecycleCommand command,

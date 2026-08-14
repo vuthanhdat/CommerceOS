@@ -9,10 +9,14 @@ public interface ICatalogReferenceStore
     Task<Brand?> GetBrandAsync(TrustedCatalogMutationContext context, BrandId id, CancellationToken cancellationToken);
     Task<CatalogReferenceOutcome> SaveCategoryAsync(TrustedCatalogMutationContext context, Category category, long? expectedRevision, CancellationToken cancellationToken);
     Task<CatalogReferenceOutcome> SaveBrandAsync(TrustedCatalogMutationContext context, Brand brand, long? expectedRevision, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Category>> ListCategoriesAsync(TrustedCatalogMutationContext context, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Brand>> ListBrandsAsync(TrustedCatalogMutationContext context, CancellationToken cancellationToken);
 }
 
 public sealed class CatalogReferenceService(ICatalogReferenceStore store)
 {
+    public Task<IReadOnlyList<Category>> ListCategoriesAsync(TrustedCatalogMutationContext context, CancellationToken cancellationToken) => store.ListCategoriesAsync(context, cancellationToken);
+    public Task<IReadOnlyList<Brand>> ListBrandsAsync(TrustedCatalogMutationContext context, CancellationToken cancellationToken) => store.ListBrandsAsync(context, cancellationToken);
     public Task<CatalogReferenceOutcome> CreateCategoryAsync(TrustedCatalogMutationContext context, Category category, CancellationToken cancellationToken) =>
         category.TenantId != context.TenantId ? Task.FromResult(CatalogReferenceOutcome.ReferenceInvalid) : store.SaveCategoryAsync(context, category, null, cancellationToken);
     public Task<CatalogReferenceOutcome> CreateBrandAsync(TrustedCatalogMutationContext context, Brand brand, CancellationToken cancellationToken) =>

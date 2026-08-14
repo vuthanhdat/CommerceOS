@@ -9,11 +9,13 @@ public sealed record ImportCandidate(string Id, PdiTenantId TenantId, string Sou
 public interface IImportCandidateStore
 {
     Task<ImportCandidate?> GetAsync(TrustedPdiTenantContext context, string candidateId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ImportCandidate>> ListAsync(TrustedPdiTenantContext context, ImportCandidateStatus? status, string? search, CancellationToken cancellationToken);
     Task<PdiOutcome> SaveIfRevisionAsync(TrustedPdiTenantContext context, ImportCandidate candidate, long? expectedRevision, CancellationToken cancellationToken);
 }
 public sealed class ImportCandidateReviewService(IImportCandidateStore candidates, IApprovedImportCandidateApplier catalog)
 {
     public Task<ImportCandidate?> GetAsync(TrustedPdiTenantContext context, string candidateId, CancellationToken ct) => candidates.GetAsync(context, candidateId, ct);
+    public Task<IReadOnlyList<ImportCandidate>> ListAsync(TrustedPdiTenantContext context, ImportCandidateStatus? status, string? search, CancellationToken ct) => candidates.ListAsync(context, status, search, ct);
     public async Task<PdiOutcome> CreateReadyAsync(TrustedPdiTenantContext context, ImportCandidate candidate, CancellationToken ct)
     {
         if (candidate.TenantId != context.TenantId || candidate.Status is not ImportCandidateStatus.Ready) return PdiOutcome.NotEligible;

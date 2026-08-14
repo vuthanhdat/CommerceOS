@@ -40,6 +40,8 @@ public sealed class MembershipAdministrationTests
     private sealed class FixedClock : TimeProvider { public override DateTimeOffset GetUtcNow() => new(2026, 8, 14, 0, 0, 0, TimeSpan.Zero); }
     private sealed class Store(int activeCount) : IMembershipAdministrationStore
     {
+        public Task<IReadOnlyList<Membership>> ListMembershipsAsync(TenantId tenantId, CancellationToken ct) => Task.FromResult<IReadOnlyList<Membership>>([]);
+        public Task<IReadOnlyList<MerchantInvitation>> ListInvitationsAsync(TenantId tenantId, CancellationToken ct) => Task.FromResult<IReadOnlyList<MerchantInvitation>>([]);
         private int _activeCount = activeCount; public List<Membership> Members { get; } = []; private readonly Dictionary<string, MerchantInvitation> _invitations = [];
         public Task<Membership?> GetMembershipAsync(TenantId tenantId, MembershipId id, CancellationToken ct) => Task.FromResult(Members.SingleOrDefault(x => x.TenantId == tenantId && x.Id == id));
         public Task<Membership?> GetMembershipForSubjectAsync(TenantId tenantId, SubjectId subjectId, CancellationToken ct) => Task.FromResult(Members.SingleOrDefault(x => x.TenantId == tenantId && x.SubjectId == subjectId));

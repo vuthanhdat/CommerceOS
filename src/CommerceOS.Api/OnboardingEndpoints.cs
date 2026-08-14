@@ -9,6 +9,8 @@ using CommerceOS.SubscriptionBilling.Contracts;
 using CommerceOS.SubscriptionBilling.Infrastructure.Persistence;
 using CommerceOS.SubscriptionBilling.Infrastructure.Provider;
 using CommerceOS.Tenancy.Application.Onboarding;
+using CommerceOS.Tenancy.Application.Authority;
+using CommerceOS.Tenancy.Application.Persistence;
 using CommerceOS.Tenancy.Domain;
 using CommerceOS.Tenancy.Infrastructure.Persistence;
 
@@ -62,6 +64,8 @@ public static class OnboardingEndpoints
         services.AddSingleton(new DynamoDbTenancyOptions(tenancyTable));
         services.AddSingleton(new DynamoDbSubscriptionBillingOptions(subscriptionTable));
         services.AddSingleton<ITenantOnboardingStore, DynamoDbTenantOnboardingStore>();
+        services.AddSingleton<ITenancyStore, DynamoDbTenancyStore>();
+        services.AddSingleton<ITenantAuthorityResolver, TenantAuthorityResolver>();
         services.AddSingleton<ISubscriptionCatalogStore, DynamoDbSubscriptionCatalogStore>();
         services.AddSingleton<ITrialSubscriptionStore, DynamoDbTrialSubscriptionStore>();
         services.AddSingleton<ISubscriptionCatalogQuery, CatalogQueryService>();

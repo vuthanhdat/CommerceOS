@@ -16,11 +16,39 @@ public sealed record PromotionCancellation(PromotionId PromotionId, PricingTenan
 
 public interface IPromotionStore
 {
+    Task<IReadOnlyList<Promotion>> ListAsync(PricingTenantId tenantId, CancellationToken cancellationToken);
     Task<PromotionSchedule> GetScheduleAsync(PricingTenantId tenantId, string productId, CancellationToken cancellationToken);
     Task<Promotion?> GetAsync(PricingTenantId tenantId, PromotionId promotionId, CancellationToken cancellationToken);
     Task<DateTimeOffset?> GetCancellationAsync(PricingTenantId tenantId, PromotionId promotionId, CancellationToken cancellationToken);
     Task<PromotionCommandOutcome> ScheduleAsync(TrustedPricingMutationContext context, Promotion promotion, PromotionSchedule before, PromotionSchedule after, CancellationToken cancellationToken);
     Task<PromotionCommandOutcome> CancelAsync(TrustedPricingMutationContext context, Promotion promotion, PromotionSchedule before, PromotionSchedule after, PromotionCancellation cancellation, CancellationToken cancellationToken);
+}
+
+public sealed record PromotionMerchantView(Promotion Promotion, DateTimeOffset? CancelledAt, string TemporalStatus, long? CurrentBasePriceVnd, bool CurrentlyBeneficial);
+public sealed class PromotionMerchantQuery(IPromotionStore store, IPublicCatalogQuery catalog, TimeProvider? clock = null)
+{
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    public async Task<IReadOnlyList<PromotionMerchantView>> ListAsync(string trustedTenantId, CancellationToken ct)
+    {
+        var tenant = new PricingTenantId(trustedTenantId); var now = _clock.GetUtcNow();
+        var promotions = await store.ListAsync(tenant, ct);
+        var views = new List<PromotionMerchantView>(promotions.Count);
+        foreach (var promotion in promotions)
+        {
+            var cancelledAt = await store.GetCancellationAsync(tenant, promotion.Id, ct);
+            var product = await catalog.GetSellableAsync(tenant.Value, promotion.ProductId, ct);
+            var state = cancelledAt is not null ? "Cancelled" : promotion.EffectiveUntil <= now ? "Expired" : promotion.EffectiveFrom > now ? "Upcoming" : "Active";
+            views.Add(new(promotion, cancelledAt, state, product?.UnitPriceVnd, product is not null && promotion.IsActiveAt(now, cancelledAt) && promotion.PromotionalUnitPriceVnd < product.UnitPriceVnd));
+        }
+        return views.OrderByDescending(view => view.Promotion.EffectiveFrom).ToArray();
+    }
+    public async Task<PromotionMerchantView?> GetAsync(string trustedTenantId, string promotionId, CancellationToken ct)
+    {
+        var tenant = new PricingTenantId(trustedTenantId); var promotion = await store.GetAsync(tenant, new(promotionId), ct); if (promotion is null) return null;
+        var now = _clock.GetUtcNow(); var cancelledAt = await store.GetCancellationAsync(tenant, promotion.Id, ct); var product = await catalog.GetSellableAsync(tenant.Value, promotion.ProductId, ct);
+        var state = cancelledAt is not null ? "Cancelled" : promotion.EffectiveUntil <= now ? "Expired" : promotion.EffectiveFrom > now ? "Upcoming" : "Active";
+        return new(promotion, cancelledAt, state, product?.UnitPriceVnd, product is not null && promotion.IsActiveAt(now, cancelledAt) && promotion.PromotionalUnitPriceVnd < product.UnitPriceVnd);
+    }
 }
 
 public sealed class PromotionService(IPromotionStore store, IPublicCatalogQuery catalog, TimeProvider? clock = null)

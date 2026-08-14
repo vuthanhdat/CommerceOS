@@ -13,6 +13,18 @@ public interface ICatalogStore
     Task<CatalogOutcome> SaveWithClaimsAsync(TrustedCatalogMutationContext context, Product before, Product after, CancellationToken ct);
 }
 
+public sealed record CatalogProductPage(IReadOnlyList<Product> Items, string? NextCursor);
+public interface IMerchantCatalogReadStore
+{
+    Task<CatalogProductPage> ListAsync(TrustedCatalogMutationContext context, string? search, ProductStatus? status, CategoryId? categoryId, BrandId? brandId, string? cursor, int pageSize, CancellationToken cancellationToken);
+}
+
+public sealed class MerchantCatalogQueryService(IMerchantCatalogReadStore store)
+{
+    public Task<CatalogProductPage> ListAsync(TrustedCatalogMutationContext context, string? search, ProductStatus? status, CategoryId? categoryId, BrandId? brandId, string? cursor, int pageSize, CancellationToken cancellationToken) =>
+        store.ListAsync(context, search, status, categoryId, brandId, cursor, Math.Clamp(pageSize, 1, 50), cancellationToken);
+}
+
 public sealed class ProductService(ICatalogStore store)
 {
     public Task<CatalogOutcome> CreateDraftAsync(TrustedCatalogMutationContext context, Product product, CancellationToken cancellationToken)
@@ -29,6 +41,12 @@ public sealed class ProductService(ICatalogStore store)
         catch (ProductRuleException exception) { return Map(exception.Rule); }
     }
 
+    public Task<CatalogOutcome> AssignReferencesAsync(TrustedCatalogMutationContext context, ProductId id, CategoryId? categoryId, BrandId? brandId, long expectedRevision, CancellationToken ct) =>
+        UpdateAsync(context, id, p => p.AssignReferences(categoryId, brandId, expectedRevision), ct);
+
+    public Task<CatalogOutcome> SetSpecificationsAsync(TrustedCatalogMutationContext context, ProductId id, IReadOnlyList<ProductSpecification> specifications, long expectedRevision, CancellationToken ct) =>
+        UpdateAsync(context, id, p => p.SetSpecifications(specifications, expectedRevision), ct);
+
     public Task<CatalogOutcome> PublishAsync(TrustedCatalogMutationContext context, ProductId id, long revision, CancellationToken ct) => TransitionAsync(context, id, p =>
     {
         var published = p.Publish(revision);
@@ -41,6 +59,12 @@ public sealed class ProductService(ICatalogStore store)
     {
         var before = await store.GetAsync(context, id, ct); if (before is null) return CatalogOutcome.NotFound;
         try { return await store.SaveWithClaimsAsync(context, before, transition(before), ct); }
+        catch (ProductRuleException exception) { return Map(exception.Rule); }
+    }
+    private async Task<CatalogOutcome> UpdateAsync(TrustedCatalogMutationContext context, ProductId id, Func<Product, Product> update, CancellationToken ct)
+    {
+        var before = await store.GetAsync(context, id, ct); if (before is null) return CatalogOutcome.NotFound;
+        try { return await store.SaveWithClaimsAsync(context, before, update(before), ct); }
         catch (ProductRuleException exception) { return Map(exception.Rule); }
     }
     private static CatalogOutcome Map(ProductRule rule) => rule switch { ProductRule.StaleRevision => CatalogOutcome.RevisionConflict, ProductRule.SkuImmutable => CatalogOutcome.InvalidState, _ => CatalogOutcome.InvalidState };

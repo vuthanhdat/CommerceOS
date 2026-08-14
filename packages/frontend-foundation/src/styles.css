@@ -1,0 +1,34 @@
+:root {
+  color: #172033;
+  background: #f5f7fb;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 20rem; }
+button, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #0e7490; outline-offset: 3px; }
+.co-app-shell { min-height: 100dvh; }
+.co-skip-link { position: fixed; top: 0.75rem; left: 0.75rem; z-index: 2; transform: translateY(-200%); padding: 0.65rem 0.85rem; border-radius: 0.5rem; background: #0e7490; color: #fff; font-weight: 700; }
+.co-skip-link:focus { transform: translateY(0); }
+.co-app-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; max-width: 76rem; margin: 0 auto; padding: 1rem 1.5rem; border-bottom: 1px solid #d9e1ed; }
+.co-brand { color: inherit; font-size: 1.1rem; font-weight: 800; text-decoration: none; }
+.co-app-header nav { display: flex; gap: 0.25rem; overflow-x: auto; }
+.co-app-header nav a { padding: 0.45rem 0.6rem; border-radius: 0.45rem; color: #526079; text-decoration: none; white-space: nowrap; }
+.co-app-header nav a[aria-current='page'] { background: #d8f1f3; color: #155e75; font-weight: 700; }
+.co-page-content { max-width: 76rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+.co-alert { max-width: 48rem; padding: 1rem 1.1rem; border: 1px solid #b91c1c; border-radius: 0.65rem; background: #fff1f2; color: #7f1d1d; }
+.co-alert p { margin: 0.25rem 0 0; }
+.co-page-state { max-width: 38rem; padding: 3rem 0; }
+.co-page-state h1 { margin: 0; font-size: clamp(1.7rem, 5vw, 2.5rem); }
+.co-page-state p { color: #526079; line-height: 1.6; }
+.co-status { display: inline-flex; align-items: center; min-height: 1.75rem; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.85rem; font-weight: 700; }
+.co-status-neutral { background: #e8edf5; color: #334155; }.co-status-success { background: #dff7ed; color: #166534; }.co-status-warning { background: #fff4d6; color: #92400e; }.co-status-danger { background: #ffe4e6; color: #9f1239; }
+.co-field { display: grid; gap: 0.4rem; color: #243044; font-weight: 700; }.co-field small { color: #526079; font-weight: 400; }.co-field .co-field-error { color: #b91c1c; font-weight: 700; }
+.co-field input, .co-field select, .co-field textarea { width: 100%; padding: 0.65rem 0.75rem; border: 1px solid #8190a8; border-radius: 0.5rem; background: #fff; color: #172033; }
+.co-button { min-height: 2.6rem; padding: 0.55rem 0.9rem; border: 1px solid transparent; border-radius: 0.5rem; font-weight: 700; cursor: pointer; }.co-button:active { transform: translateY(1px); }.co-button:disabled { cursor: not-allowed; opacity: 0.55; }.co-button-secondary { border-color: #8190a8; background: #fff; color: #243044; }
+.co-dialog-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 1rem; background: rgb(23 32 51 / 0.55); }.co-dialog { width: min(100%, 38rem); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1.25rem; border-radius: 0.75rem; background: #fff; color: #172033; box-shadow: 0 1rem 3rem rgb(23 32 51 / 0.25); }.co-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }.co-dialog h2 { margin: 0; }
+@media (max-width: 44rem) { .co-app-header { align-items: flex-start; flex-direction: column; padding-inline: 1rem; }.co-page-content { padding-inline: 1rem; }.co-app-header nav { width: 100%; } }
+@media (prefers-color-scheme: dark) { :root { color: #e5eaf3; background: #101725; }.co-app-header { border-color: #34435c; }.co-brand { color: #f5f7fb; }.co-app-header nav a { color: #b7c2d7; }.co-app-header nav a[aria-current='page'] { background: #164e63; color: #e0f2fe; }.co-page-state p { color: #b7c2d7; }.co-field { color: #e5eaf3; }.co-field small { color: #b7c2d7; }.co-field input, .co-field select, .co-field textarea, .co-button-secondary, .co-dialog { border-color: #586983; background: #1a2436; color: #f5f7fb; }.co-alert { background: #3a1720; color: #fecdd3; }.co-status-neutral { background: #334155; color: #e2e8f0; }.co-status-success { background: #14532d; color: #dcfce7; }.co-status-warning { background: #78350f; color: #fef3c7; }.co-status-danger { background: #881337; color: #ffe4e6; }.co-dialog-backdrop { background: rgb(3 7 18 / 0.72); } }

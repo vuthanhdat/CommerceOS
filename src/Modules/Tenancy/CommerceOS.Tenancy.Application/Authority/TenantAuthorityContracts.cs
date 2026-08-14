@@ -112,6 +112,8 @@ public sealed class TrustedTenantReadContext
         MembershipId membershipId,
         MerchantRole role,
         TenantStatus tenantStatus,
+        BusinessProfile businessProfile,
+        string? storefrontSlug,
         long tenantRevision,
         long membershipRevision,
         string correlationId)
@@ -121,6 +123,8 @@ public sealed class TrustedTenantReadContext
         MembershipId = membershipId;
         Role = role;
         TenantStatus = tenantStatus;
+        BusinessProfile = businessProfile;
+        StorefrontSlug = storefrontSlug;
         TenantRevision = tenantRevision;
         MembershipRevision = membershipRevision;
         CorrelationId = correlationId;
@@ -135,6 +139,10 @@ public sealed class TrustedTenantReadContext
     public MerchantRole Role { get; }
 
     public TenantStatus TenantStatus { get; }
+
+    public BusinessProfile BusinessProfile { get; }
+
+    public string? StorefrontSlug { get; }
 
     public long TenantRevision { get; }
 

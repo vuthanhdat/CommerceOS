@@ -12,6 +12,7 @@ public interface IAccountingStore
     Task<AccountingOutcome> BootstrapChartAsync(TrustedAccountingContext context, IReadOnlyList<Account> accounts, CancellationToken ct);
     Task<AccountingOutcome> CreateAccountAsync(TrustedAccountingContext context, Account account, CancellationToken ct);
     Task<Account?> GetAccountAsync(TrustedAccountingContext context, AccountId accountId, CancellationToken ct);
+    Task<IReadOnlyList<Account>> ListAccountsAsync(TrustedAccountingContext context, CancellationToken ct);
     Task<AccountingOutcome> SaveAccountAsync(TrustedAccountingContext context, Account before, Account after, CancellationToken ct);
     Task<AccountingOutcome> PostAsync(TrustedAccountingContext context, Journal journal, IReadOnlyList<ValuationState> valuations, CancellationToken ct);
     Task<Journal?> GetJournalAsync(TrustedAccountingContext context, string journalId, CancellationToken ct);
@@ -34,6 +35,7 @@ public static class AccountingChart
 
 public sealed class AccountingChartService(IAccountingStore store)
 {
+    public Task<IReadOnlyList<Account>> ListAsync(TrustedAccountingContext context, CancellationToken cancellationToken) => store.ListAccountsAsync(context, cancellationToken);
     public Task<AccountingOutcome> BootstrapAsync(TrustedAccountingContext context, CancellationToken cancellationToken) => store.BootstrapChartAsync(context, AccountingChart.For(context.TenantId), cancellationToken);
     public Task<AccountingOutcome> AddNonControlAsync(TrustedAccountingContext context, Account account, CancellationToken cancellationToken)
         => account.TenantId != context.TenantId || account.Role is not AccountRole.NonControl || string.IsNullOrWhiteSpace(account.Code) ? Task.FromResult(AccountingOutcome.Invalid) : store.CreateAccountAsync(context, account, cancellationToken);

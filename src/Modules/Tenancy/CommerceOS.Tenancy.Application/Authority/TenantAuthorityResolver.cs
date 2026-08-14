@@ -38,6 +38,8 @@ public sealed class TenantAuthorityResolver : ITenantAuthorityResolver
                 membership.Id,
                 membership.Role,
                 tenant.Status,
+                tenant.Profile,
+                tenant.StorefrontSlug,
                 tenant.Revision,
                 membership.Revision,
                 correlationId),

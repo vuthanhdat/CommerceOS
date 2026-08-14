@@ -6,6 +6,35 @@
     <ProjectReference Include="../Modules/Tenancy/CommerceOS.Tenancy.Infrastructure/CommerceOS.Tenancy.Infrastructure.csproj" />
     <ProjectReference Include="../Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Application/CommerceOS.SubscriptionBilling.Application.csproj" />
     <ProjectReference Include="../Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Infrastructure/CommerceOS.SubscriptionBilling.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Storefront/CommerceOS.Storefront.Application/CommerceOS.Storefront.Application.csproj" />
+    <ProjectReference Include="../Modules/Catalog/CommerceOS.Catalog.Contracts/CommerceOS.Catalog.Contracts.csproj" />
+    <ProjectReference Include="../Modules/Catalog/CommerceOS.Catalog.Application/CommerceOS.Catalog.Application.csproj" />
+    <ProjectReference Include="../Modules/Catalog/CommerceOS.Catalog.Infrastructure/CommerceOS.Catalog.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Inventory/CommerceOS.Inventory.Application/CommerceOS.Inventory.Application.csproj" />
+    <ProjectReference Include="../Modules/Inventory/CommerceOS.Inventory.Contracts/CommerceOS.Inventory.Contracts.csproj" />
+    <ProjectReference Include="../Modules/Inventory/CommerceOS.Inventory.Infrastructure/CommerceOS.Inventory.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Pricing/CommerceOS.Pricing.Application/CommerceOS.Pricing.Application.csproj" />
+    <ProjectReference Include="../Modules/Pricing/CommerceOS.Pricing.Contracts/CommerceOS.Pricing.Contracts.csproj" />
+    <ProjectReference Include="../Modules/Pricing/CommerceOS.Pricing.Infrastructure/CommerceOS.Pricing.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Sales/CommerceOS.Sales.Application/CommerceOS.Sales.Application.csproj" />
+    <ProjectReference Include="../Modules/Sales/CommerceOS.Sales.Contracts/CommerceOS.Sales.Contracts.csproj" />
+    <ProjectReference Include="../Modules/Sales/CommerceOS.Sales.Infrastructure/CommerceOS.Sales.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/FilesMedia/CommerceOS.FilesMedia.Contracts/CommerceOS.FilesMedia.Contracts.csproj" />
+    <ProjectReference Include="../Modules/FilesMedia/CommerceOS.FilesMedia.Infrastructure/CommerceOS.FilesMedia.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/ProductDataIngestion/CommerceOS.ProductDataIngestion.Application/CommerceOS.ProductDataIngestion.Application.csproj" />
+    <ProjectReference Include="../Modules/ProductDataIngestion/CommerceOS.ProductDataIngestion.Infrastructure/CommerceOS.ProductDataIngestion.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Customer/CommerceOS.Customer.Application/CommerceOS.Customer.Application.csproj" />
+    <ProjectReference Include="../Modules/Customer/CommerceOS.Customer.Infrastructure/CommerceOS.Customer.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Procurement/CommerceOS.Procurement.Application/CommerceOS.Procurement.Application.csproj" />
+    <ProjectReference Include="../Modules/Procurement/CommerceOS.Procurement.Infrastructure/CommerceOS.Procurement.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Accounting/CommerceOS.Accounting.Application/CommerceOS.Accounting.Application.csproj" />
+    <ProjectReference Include="../Modules/Accounting/CommerceOS.Accounting.Infrastructure/CommerceOS.Accounting.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Reporting/CommerceOS.Reporting.Application/CommerceOS.Reporting.Application.csproj" />
+    <ProjectReference Include="../Modules/Reporting/CommerceOS.Reporting.Infrastructure/CommerceOS.Reporting.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Notification/CommerceOS.Notification.Application/CommerceOS.Notification.Application.csproj" />
+    <ProjectReference Include="../Modules/Notification/CommerceOS.Notification.Infrastructure/CommerceOS.Notification.Infrastructure.csproj" />
+    <ProjectReference Include="../Modules/Audit/CommerceOS.Audit.Application/CommerceOS.Audit.Application.csproj" />
+    <ProjectReference Include="../Modules/Audit/CommerceOS.Audit.Infrastructure/CommerceOS.Audit.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="AWSSDK.DynamoDBv2" />

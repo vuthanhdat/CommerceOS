@@ -4,7 +4,7 @@ import { App } from './App'
 
 describe('Storefront app', () => {
   it('identifies the customer-facing surface', () => {
-    expect(renderToStaticMarkup(<App />)).toContain('Giá và tổng tiền')
+    expect(renderToStaticMarkup(<App />)).toContain('Không tìm thấy nội dung')
   })
 })
 

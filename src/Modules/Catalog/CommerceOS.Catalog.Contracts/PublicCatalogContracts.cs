@@ -10,7 +10,15 @@ public sealed record PublicCatalogProduct(
     string Currency,
     long? EffectiveUnitPriceVnd = null,
     string? AppliedPromotionId = null,
-    DateTimeOffset? PromotionEffectiveUntil = null);
+    DateTimeOffset? PromotionEffectiveUntil = null,
+    string? CategoryName = null,
+    string? BrandName = null,
+    IReadOnlyList<PublicCatalogSpecification>? Specifications = null,
+    IReadOnlyList<PublicCatalogMedia>? Media = null);
+
+/// <summary>Safe presentation fields from the Catalog-owned product record.</summary>
+public sealed record PublicCatalogSpecification(string Name, string Value, string? Unit, int DisplayOrder);
+public sealed record PublicCatalogMedia(string AssetId, string AltText, int DisplayOrder);
 
 public sealed record PublicCatalogPage(IReadOnlyList<PublicCatalogProduct> Items, string? NextCursor);
 

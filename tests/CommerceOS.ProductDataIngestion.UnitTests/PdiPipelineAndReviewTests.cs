@@ -74,6 +74,7 @@ public sealed class PdiPipelineAndReviewTests
     {
         private readonly Dictionary<string, ImportCandidate> values = [];
         public Task<ImportCandidate?> GetAsync(TrustedPdiTenantContext c, string id, CancellationToken ct) => Task.FromResult(values.TryGetValue(id, out var x) && x.TenantId == c.TenantId ? x : null);
+        public Task<IReadOnlyList<ImportCandidate>> ListAsync(TrustedPdiTenantContext c, ImportCandidateStatus? status, string? search, CancellationToken ct) => Task.FromResult<IReadOnlyList<ImportCandidate>>(values.Values.Where(x => x.TenantId == c.TenantId && (status is null || x.Status == status)).ToArray());
         public Task<PdiOutcome> SaveIfRevisionAsync(TrustedPdiTenantContext c, ImportCandidate x, long? expected, CancellationToken ct)
         { if (x.TenantId != c.TenantId || (expected is null ? values.ContainsKey(x.Id) : !values.TryGetValue(x.Id, out var old) || old.Revision != expected)) return Task.FromResult(PdiOutcome.RevisionConflict); values[x.Id] = x; return Task.FromResult(PdiOutcome.Applied); }
     }
@@ -89,6 +90,7 @@ public sealed class PdiPipelineAndReviewTests
     {
         public bool Eligible { get; set; } = eligible;
         public Task<DataSource?> GetSourceAsync(DataSourceId id, CancellationToken ct) => Task.FromResult<DataSource?>(new(id, "Source", Eligible ? SourceStatus.Enabled : SourceStatus.Paused, PolicyReviewStatus.Current, "v1", 1, 1));
+        public Task<IReadOnlyList<DataSource>> ListSourcesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<DataSource>>([]);
         public Task<TenantSourceEnrollment?> GetEnrollmentAsync(TrustedPdiTenantContext c, DataSourceId id, CancellationToken ct) => Task.FromResult<TenantSourceEnrollment?>(new(c.TenantId, id, true, 1));
         public Task<PdiOutcome> SaveSourceAsync(DataSource x, long? e, CancellationToken ct) => Task.FromResult(PdiOutcome.Applied);
         public Task<PdiOutcome> SaveEnrollmentAsync(TrustedPdiTenantContext c, TenantSourceEnrollment x, long? e, CancellationToken ct) => Task.FromResult(PdiOutcome.Applied);

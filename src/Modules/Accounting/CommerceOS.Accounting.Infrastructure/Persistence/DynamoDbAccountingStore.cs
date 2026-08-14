@@ -49,6 +49,8 @@ public sealed class DynamoDbAccountingStore(IAmazonDynamoDB client, DynamoDbAcco
     }
     public async Task<Account?> GetAccountAsync(TrustedAccountingContext context, AccountId accountId, CancellationToken ct)
     { var item = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"ACCOUNT#{E(accountId.Value)}") }, ct); return item.Item.Count == 0 ? null : ReadAccount(item.Item); }
+    public async Task<IReadOnlyList<Account>> ListAccountsAsync(TrustedAccountingContext context, CancellationToken ct)
+    { var response = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(P(context.TenantId)), [":prefix"] = S("ACCOUNT#") } }, ct); return response.Items.Select(ReadAccount).OrderBy(x => x.Code, StringComparer.Ordinal).ToArray(); }
     public async Task<AccountingOutcome> SaveAccountAsync(TrustedAccountingContext context, Account before, Account after, CancellationToken ct)
     {
         if (before.TenantId != context.TenantId || after.TenantId != context.TenantId || before.Id != after.Id || before.Code != after.Code) return AccountingOutcome.Invalid;

@@ -1,0 +1,2 @@
+@import '@commerceos/frontend-foundation/styles.css';
+.page { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; }.table-wrap { overflow-x: auto; margin-top: 1rem; }.table { width: 100%; min-width: 42rem; border-collapse: collapse; }.table th,.table td { padding: .75rem; text-align:left; border-bottom:1px solid #d9e1ed; }.actions { display:flex; gap:.5rem; flex-wrap:wrap; }.notice { padding:.75rem; background:#fffbeb; border-radius:.5rem; }.section { margin-top:1rem; padding:1rem; border:1px solid #d9e1ed; border-radius:.75rem; }

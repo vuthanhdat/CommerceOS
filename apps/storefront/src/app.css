@@ -1,22 +1,7 @@
-:root {
-  color: #13211b;
-  background: #f2f6f1;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-synthesis: none;
-}
-
-body {
-  margin: 0;
-}
-
-.shell {
-  max-width: 44rem;
-  margin: 0 auto;
-  padding: 8rem 2rem;
-}
-
+@import '@commerceos/frontend-foundation/styles.css';
 .eyebrow {
-  color: #277055;
+  margin: 0 0 0.45rem;
+  color: #0f766e;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -24,14 +9,10 @@ body {
 }
 
 h1 {
-  margin: 0.5rem 0 1rem;
-  font-size: clamp(2.5rem, 8vw, 5rem);
-  line-height: 0.95;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.1;
 }
 
-p {
-  max-width: 38rem;
-  font-size: 1.1rem;
-  line-height: 1.65;
-}
+.storefront-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }.lead { max-width: 45rem; color: #526079; font-size: 1.1rem; line-height: 1.65; }.co-button-primary { border-color: #0f766e; background: #0f766e; color: #fff; }.search-form,.checkout-form { display: grid; gap: 1rem; max-width: 38rem; margin: 1.5rem 0; }.product-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; margin: 1.5rem 0; }.product-card,.product-detail,.cart-panel,.reconfirmation { display: grid; gap: 0.75rem; padding: 1.25rem; border: 1px solid #d9e1ed; border-radius: 0.75rem; background: #fff; }.product-card h2,.product-card p,.product-detail h1,.product-detail p,.cart-panel p,.reconfirmation p { margin: 0; }.product-card small { color: #526079; }.product-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem; }.product-image-placeholder { min-height: 8rem; display: grid; place-items: center; padding: .75rem; border-radius: .5rem; background: #dff5f2; color: #115e59; text-align: center; }.product-specifications { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .5rem 1rem; margin: 0; }.product-specifications div { display: grid; gap: .15rem; }.product-specifications dt { font-weight: 700; }.product-specifications dd { margin: 0; }.cart-panel { max-width: 45rem; }.cart-line { display: grid; grid-template-columns: 1fr minmax(8rem, 10rem) auto auto; align-items: center; gap: 0.75rem; }.cart-line span { min-width: 0; }.cart-line strong { white-space: nowrap; }.cart-actions { display: flex; flex-wrap: wrap; gap: .75rem; }.confirmation { max-width: 42rem; margin: 0 auto; padding: 5rem 1.5rem; } @media (max-width: 44rem) { .storefront-heading { display: grid; }.cart-line { grid-template-columns: 1fr auto; }.cart-line .co-field,.cart-line .co-button { grid-column: 1 / -1; justify-self: start; } } @media (prefers-color-scheme: dark) { .eyebrow { color: #5eead4; }.lead,.product-card small { color: #b7c2d7; }.product-card,.product-detail,.cart-panel,.reconfirmation { border-color: #34435c; background: #1a2436; }.product-image-placeholder { background: #153c3b; color: #a7f3d0; } }
 

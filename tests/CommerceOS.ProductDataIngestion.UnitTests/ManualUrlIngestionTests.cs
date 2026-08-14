@@ -17,6 +17,7 @@ public sealed class ManualUrlIngestionTests
     {
         private readonly HashSet<string> work = [];
         public Task<DataSource?> GetSourceAsync(DataSourceId id, CancellationToken ct) => Task.FromResult<DataSource?>(id.Value == "open-food-facts" ? new(id, "Open Food Facts", SourceStatus.Enabled, PolicyReviewStatus.Current, "policy-2026-08-14", 10, 1) : null);
+        public Task<IReadOnlyList<DataSource>> ListSourcesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<DataSource>>([]);
         public Task<TenantSourceEnrollment?> GetEnrollmentAsync(TrustedPdiTenantContext c, DataSourceId id, CancellationToken ct) => Task.FromResult<TenantSourceEnrollment?>(null);
         public Task<PdiOutcome> SaveSourceAsync(DataSource s, long? revision, CancellationToken ct) => Task.FromResult(PdiOutcome.Applied);
         public Task<PdiOutcome> SaveEnrollmentAsync(TrustedPdiTenantContext c, TenantSourceEnrollment e, long? revision, CancellationToken ct) => Task.FromResult(PdiOutcome.Applied);

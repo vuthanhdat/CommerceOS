@@ -22,6 +22,20 @@ public sealed class DynamoDbPdiIngestionStore(IAmazonDynamoDB client, DynamoDbPd
         var item = await client.GetItemAsync(new GetItemRequest { TableName = options.TableName, ConsistentRead = true, Key = Key($"TENANT#{E(context.TenantId.Value)}", $"IMPORT-CANDIDATE#{E(candidateId)}") }, cancellationToken);
         return item.Item.Count == 0 ? null : Candidate(context.TenantId, item.Item);
     }
+    public async Task<IReadOnlyList<ImportCandidate>> ListAsync(TrustedPdiTenantContext context, ImportCandidateStatus? status, string? search, CancellationToken cancellationToken)
+    {
+        var response = await client.QueryAsync(new QueryRequest
+        {
+            TableName = options.TableName,
+            KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)",
+            ExpressionAttributeValues = new() { [":pk"] = S($"TENANT#{E(context.TenantId.Value)}"), [":prefix"] = S("IMPORT-CANDIDATE#") }
+        }, cancellationToken);
+        return response.Items.Select(item => Candidate(context.TenantId, item))
+            .Where(candidate => status is null || candidate.Status == status)
+            .Where(candidate => string.IsNullOrWhiteSpace(search) || candidate.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) || candidate.SourceProductId.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(candidate => candidate.Revision)
+            .ToArray();
+    }
     public async Task<PdiOutcome> SaveIfRevisionAsync(TrustedPdiTenantContext context, ImportCandidate candidate, long? expectedRevision, CancellationToken cancellationToken)
     {
         if (candidate.TenantId != context.TenantId) return PdiOutcome.NotEligible;

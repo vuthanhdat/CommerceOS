@@ -5,17 +5,22 @@ namespace CommerceOS.Inventory.Application;
 
 public sealed record TrustedInventoryMutationContext(InventoryTenantId TenantId, string CorrelationId);
 public enum InventoryOutcome { Applied, AlreadyApplied, NotFound, RevisionConflict, LimitReached, InvalidState }
+public sealed record InventoryStockPage(IReadOnlyList<StockItem> Items, string? NextCursor);
 public interface IInventoryStore
 {
     Task<Warehouse?> GetWarehouseAsync(TrustedInventoryMutationContext context, WarehouseId id, CancellationToken ct);
     Task<InventoryOutcome> CreateOrReactivateWarehouseAsync(TrustedInventoryMutationContext context, Warehouse? previous, Warehouse updatedWarehouse, int maxWarehouses, CancellationToken cancellationToken);
     Task<InventoryOutcome> DisableWarehouseAsync(TrustedInventoryMutationContext context, Warehouse previous, CancellationToken ct);
     Task<StockItem?> GetStockItemAsync(TrustedInventoryMutationContext context, InventoryProductId productId, WarehouseId warehouseId, CancellationToken ct);
+    Task<IReadOnlyList<Warehouse>> ListWarehousesAsync(TrustedInventoryMutationContext context, CancellationToken ct);
+    Task<InventoryStockPage> ListStockAsync(TrustedInventoryMutationContext context, string? warehouseId, string? productId, string? cursor, int pageSize, CancellationToken ct);
+    Task<IReadOnlyList<StockMovement>> ListMovementsAsync(TrustedInventoryMutationContext context, string? warehouseId, string? productId, CancellationToken ct);
 }
 
 public sealed class WarehouseService(IInventoryStore store, IEntitlementEvaluator entitlements, TimeProvider? clock = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    public Task<IReadOnlyList<Warehouse>> ListAsync(TrustedInventoryMutationContext context, CancellationToken ct) => store.ListWarehousesAsync(context, ct);
     public async Task<InventoryOutcome> CreateAsync(TrustedInventoryMutationContext context, Warehouse warehouse, CancellationToken ct)
     {
         if (warehouse.TenantId != context.TenantId) throw new ArgumentException("Warehouse tenant must match trusted context.", nameof(warehouse));

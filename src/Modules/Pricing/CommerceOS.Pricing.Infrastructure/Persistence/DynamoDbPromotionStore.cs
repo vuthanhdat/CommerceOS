@@ -12,6 +12,8 @@ public sealed record DynamoDbPricingOptions(string TableName);
 /// <summary>Owner-local schedule index plus conditional transaction protect arbitrary interval overlap checks.</summary>
 public sealed class DynamoDbPromotionStore(IAmazonDynamoDB client, DynamoDbPricingOptions options) : IPromotionStore
 {
+    public async Task<IReadOnlyList<Promotion>> ListAsync(PricingTenantId tenantId, CancellationToken cancellationToken)
+    { var response = await client.QueryAsync(new QueryRequest { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(Partition(tenantId)), [":prefix"] = S("PROMOTION#") } }, cancellationToken); return response.Items.Select(ReadPromotion).ToArray(); }
     public async Task<PromotionSchedule> GetScheduleAsync(PricingTenantId tenantId, string productId, CancellationToken cancellationToken)
     {
         var response = await client.GetItemAsync(new GetItemRequest { TableName = options.TableName, ConsistentRead = true, Key = Key(tenantId, ScheduleKey(productId)) }, cancellationToken);

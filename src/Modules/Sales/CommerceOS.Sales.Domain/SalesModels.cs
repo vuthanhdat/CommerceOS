@@ -23,6 +23,7 @@ public sealed record GuestSnapshot(string Name, string Email, string? Phone, str
 public sealed record OrderProcess(string Id, string WorkflowExecutionIdentity, bool StartPending);
 public sealed record SalesOrder(SalesOrderId Id, SalesTenantId TenantId, IReadOnlyList<SalesOrderLine> Lines, long TotalVnd, GuestSnapshot Guest, SalesOrderStatus Status, long Revision, OrderProcess Process, IReadOnlySet<string> AcceptedSources)
 {
+    public DateTimeOffset PlacedAt { get; init; }
     public static SalesOrder Place(SalesOrderId id, SalesTenantId tenantId, IReadOnlyList<SalesOrderLine> lines, long totalVnd, GuestSnapshot guest, OrderProcess process)
     {
         if (lines.Count is 0 or > 50 || lines.Any(x => string.IsNullOrWhiteSpace(x.ProductId) || x.Quantity <= 0 || x.UnitPriceVnd < 0) || totalVnd != lines.Sum(x => x.LineTotalVnd)) throw new SalesRuleException("ORDER_INVALID");

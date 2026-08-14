@@ -76,11 +76,11 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0241 Resolve first Pricing/Promotion product and domain semantics (Done) | F15 | P3 | REQ-PRI-001 | N/A | Completed 2026-08-14 |
 | TASK-0242 Design Pricing authority contracts, persistence and checkout integration (Done) | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Completed 2026-08-14 |
 | TASK-0243 Implement scheduled Product promotional-price slice (Done) | F15 | P3 | REQ-PRI-001 | TASK-0242, TASK-0131, TASK-0153, TASK-0154, TASK-0195 | Completed 2026-08-14 |
-| TASK-0244 Establish shared UI foundation and delivery conventions | F16 | P0 | REQ-HARD-002, REQ-SEC-001, REQ-OBS-001 | TASK-0234 | **Ready** |
-| TASK-0245 Implement authenticated merchant session and current-Tenant delivery boundary | F16 | P0 | REQ-SEC-001..002, REQ-TEN-002..003 | TASK-0244, TASK-0111, TASK-0112 | Blocked — TASK-0244 |
-| TASK-0246 Expose public Storefront read, Pricing and checkout HTTP delivery | F16 | P0 | REQ-STO-001..002, REQ-CAT-005, REQ-CHK-002, REQ-SAL-001, REQ-PRI-001 | TASK-0151, TASK-0153, TASK-0154, TASK-0161, TASK-0243 | **Ready** |
-| TASK-0247 Build Storefront browse, cart, checkout and confirmation UI | F16 | P0 | REQ-STO-002, REQ-CHK-001..002, REQ-SAL-001, REQ-PRI-001 | TASK-0244, TASK-0246 | Blocked — TASK-0244, TASK-0246 |
-| TASK-0248 Add merchant Catalog read models and HTTP delivery | F16 | P0 | REQ-CAT-001..005, REQ-MED-001, REQ-SEC-001..002 | TASK-0245, TASK-0131, TASK-0132, TASK-0133 | Blocked — TASK-0245 |
+| TASK-0244 Establish shared UI foundation and delivery conventions (In Progress) | F16 | P0 | REQ-HARD-002, REQ-SEC-001, REQ-OBS-001 | TASK-0234 | Focused verification complete; full harness format baseline pending |
+| TASK-0245 Implement authenticated merchant session and current-Tenant delivery boundary (In Progress) | F16 | P0 | REQ-SEC-001..002, REQ-TEN-002..003 | TASK-0244, TASK-0111, TASK-0112 | Focused trusted-context verification pending |
+| TASK-0246 Expose public Storefront read, Pricing and checkout HTTP delivery (In Progress) | F16 | P0 | REQ-STO-001..002, REQ-CAT-005, REQ-CHK-002, REQ-SAL-001, REQ-PRI-001 | TASK-0151, TASK-0153, TASK-0154, TASK-0161, TASK-0243 | LocalStack delivery verification pending |
+| TASK-0247 Build Storefront browse, cart, checkout and confirmation UI (In Progress) | F16 | P0 | REQ-STO-002, REQ-CHK-001..002, REQ-SAL-001, REQ-PRI-001 | TASK-0244, TASK-0246 | Seeded LocalStack browser E2E pending |
+| TASK-0248 Add merchant Catalog read models and HTTP delivery (In Progress) | F16 | P0 | REQ-CAT-001..005, REQ-MED-001, REQ-SEC-001..002 | TASK-0245, TASK-0131, TASK-0132, TASK-0133 | Trusted-context integration verification pending |
 | TASK-0249 Build Catalog, Product and reference Backoffice UI | F16 | P0 | REQ-CAT-001..005, REQ-MED-001 | TASK-0244, TASK-0245, TASK-0248 | Blocked |
 | TASK-0250 Complete Product Data Ingestion delivery gaps and build Product Import UI | F16 | P1 | REQ-PDI-001..007, REQ-CAT-006 | TASK-0244, TASK-0245, TASK-0143, TASK-0144 | Blocked — TASK-0244, TASK-0245 |
 | TASK-0251 Add Sales order/refund read models and HTTP delivery | F16 | P0 | REQ-SAL-001..003, REQ-REF-001..004 | TASK-0245, TASK-0160, TASK-0166, TASK-0214 | Blocked — TASK-0245 |

@@ -68,6 +68,7 @@ public sealed record TenantLifecycleAuditIntent(
 /// <summary>Module-owned platform-only persistence surface; it is not a merchant repository bypass.</summary>
 public interface IPlatformTenantAdministrationStore
 {
+    Task<IReadOnlyList<Tenant>> ListForPlatformSupportAsync(string? search, int pageSize, CancellationToken cancellationToken);
     Task<TenantLifecycleResult> TransitionAsync(
         TenantLifecycleCommand command,
         TenantLifecycleAuditIntent auditIntent,
@@ -120,4 +121,5 @@ public sealed class TenantPlatformSupportQueryService
         ArgumentNullException.ThrowIfNull(context);
         return _store.GetForPlatformSupportAsync(tenantId, cancellationToken);
     }
+    public Task<IReadOnlyList<Tenant>> ListTenantsAsync(TrustedPlatformSupportReadContext context, string? search, int pageSize, CancellationToken cancellationToken) => _store.ListForPlatformSupportAsync(search, Math.Clamp(pageSize, 1, 100), cancellationToken);
 }

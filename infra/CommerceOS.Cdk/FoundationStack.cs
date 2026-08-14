@@ -172,8 +172,8 @@ public sealed class FoundationStack : Stack
             QueueName = $"{profile.ResourcePrefix}-refund-payments",
             VisibilityTimeout = Duration.Seconds(60),
             DeadLetterQueue = new DeadLetterQueue { Queue = refundPaymentsDeadLetterQueue, MaxReceiveCount = 5 },
-                RemovalPolicy = profile.RemovalPolicy
-            });
+            RemovalPolicy = profile.RemovalPolicy
+        });
         var notificationDeadLetterQueue = new Queue(this, "NotificationDeadLetterQueue", new QueueProps { QueueName = $"{profile.ResourcePrefix}-notifications-dlq", RetentionPeriod = Duration.Days(14), RemovalPolicy = profile.RemovalPolicy });
         var notificationQueue = new Queue(this, "NotificationQueue", new QueueProps { QueueName = $"{profile.ResourcePrefix}-notifications", VisibilityTimeout = Duration.Seconds(60), DeadLetterQueue = new DeadLetterQueue { Queue = notificationDeadLetterQueue, MaxReceiveCount = 5 }, RemovalPolicy = profile.RemovalPolicy });
         _ = new Rule(this, "RefundApprovedFanOut", new RuleProps

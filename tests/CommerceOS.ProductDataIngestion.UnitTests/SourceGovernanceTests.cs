@@ -30,6 +30,7 @@ public sealed class SourceGovernanceTests
     {
         private TenantSourceEnrollment? enrollment;
         public Task<DataSource?> GetSourceAsync(DataSourceId id, CancellationToken ct) => Task.FromResult<DataSource?>(source.Id == id ? source : null);
+        public Task<IReadOnlyList<DataSource>> ListSourcesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<DataSource>>([source]);
         public Task<TenantSourceEnrollment?> GetEnrollmentAsync(TrustedPdiTenantContext context, DataSourceId id, CancellationToken ct) => Task.FromResult(enrollment?.TenantId == context.TenantId && enrollment.SourceId == id ? enrollment : null);
         public Task<PdiOutcome> SaveSourceAsync(DataSource value, long? expectedRevision, CancellationToken ct) => Task.FromResult(PdiOutcome.Applied);
         public Task<PdiOutcome> SaveEnrollmentAsync(TrustedPdiTenantContext context, TenantSourceEnrollment value, long? expectedRevision, CancellationToken ct) { enrollment = value; return Task.FromResult(PdiOutcome.Applied); }

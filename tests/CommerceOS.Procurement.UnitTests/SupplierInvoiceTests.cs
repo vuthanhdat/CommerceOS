@@ -21,6 +21,8 @@ public sealed class SupplierInvoiceTests
     private sealed class Store(PurchaseOrder po) : ISupplierInvoiceStore
     {
         public bool FullReceipt; public SupplierInvoice? Invoice; private readonly HashSet<string> payments = [];
+        public Task<IReadOnlyList<SupplierInvoice>> ListInvoicesAsync(TrustedProcurementMutationContext c, CancellationToken ct) => Task.FromResult<IReadOnlyList<SupplierInvoice>>(Invoice is null ? [] : [Invoice]);
+        public Task<IReadOnlyList<SupplierPayment>> ListPaymentsAsync(TrustedProcurementMutationContext c, string? invoiceId, CancellationToken ct) => Task.FromResult<IReadOnlyList<SupplierPayment>>([]);
         public Task<PurchaseOrder?> GetPurchaseOrderAsync(TrustedProcurementMutationContext c, PurchaseOrderId id, CancellationToken ct) => Task.FromResult<PurchaseOrder?>(id == po.Id ? po : null);
         public Task<bool> IsFullyReceivedAsync(TrustedProcurementMutationContext c, PurchaseOrderId id, CancellationToken ct) => Task.FromResult(FullReceipt);
         public Task<SupplierInvoice?> GetInvoiceForPurchaseOrderAsync(TrustedProcurementMutationContext c, PurchaseOrderId id, CancellationToken ct) => Task.FromResult(Invoice?.PurchaseOrderId == id ? Invoice : null);

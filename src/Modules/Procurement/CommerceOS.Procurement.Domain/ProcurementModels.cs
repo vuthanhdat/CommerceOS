@@ -13,7 +13,11 @@ public sealed record PurchaseOrderLine(string ProductId, string ProductNameSnaps
 }
 public sealed record PurchaseOrder(PurchaseOrderId Id, ProcurementTenantId TenantId, SupplierId SupplierId, IReadOnlyList<PurchaseOrderLine> Lines, PurchaseOrderStatus Status, long Revision)
 {
+    public static PurchaseOrder Draft(PurchaseOrderId id, ProcurementTenantId tenantId, SupplierId supplierId, IReadOnlyList<PurchaseOrderLine> lines) => string.IsNullOrWhiteSpace(id.Value) || string.IsNullOrWhiteSpace(tenantId.Value) || string.IsNullOrWhiteSpace(supplierId.Value) ? throw new ArgumentException("Purchase order identity is required.") : new(id, tenantId, supplierId, lines.ToArray(), PurchaseOrderStatus.Draft, 1);
+    public PurchaseOrder Update(SupplierId supplierId, IReadOnlyList<PurchaseOrderLine> lines, long expectedRevision)
+    { if (Status is not PurchaseOrderStatus.Draft) throw new InvalidOperationException("PO_IMMUTABLE"); if (Revision != expectedRevision) throw new InvalidOperationException("PO_REVISION_STALE"); return this with { SupplierId = supplierId, Lines = lines.ToArray(), Revision = Revision + 1 }; }
     public PurchaseOrder Submit(long expectedRevision) { if (Revision != expectedRevision) throw new InvalidOperationException("PO_REVISION_STALE"); if (Status is not PurchaseOrderStatus.Draft || Lines.Count == 0) throw new InvalidOperationException("PO_NOT_SUBMITTABLE"); return this with { Status = PurchaseOrderStatus.Submitted, Revision = Revision + 1 }; }
+    public PurchaseOrder Cancel(long expectedRevision) { if (Revision != expectedRevision) throw new InvalidOperationException("PO_REVISION_STALE"); if (Status is not PurchaseOrderStatus.Draft) throw new InvalidOperationException("PO_CANCELLATION_NOT_ALLOWED"); return this with { Status = PurchaseOrderStatus.Cancelled, Revision = Revision + 1 }; }
 }
 public enum GoodsReceiptStatus { Draft, Confirmed, Corrected }
 /// <summary>Warehouse is captured with the receipt fact so Inventory never has to infer location from Procurement storage.</summary>

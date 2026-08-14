@@ -24,6 +24,7 @@ public sealed class RefundReviewServiceTests
     private sealed class Refunds : IRefundStore
     {
         private RefundRequest? value; public Task<RefundRequest?> GetRefundAsync(TrustedSalesContext c, string id, CancellationToken ct) => Task.FromResult(value?.Id == id && value.TenantId == c.TenantId ? value : null); public Task<SalesStoreOutcome> CreateRefundAsync(TrustedSalesContext c, RefundRequest r, CancellationToken ct) { if (value is not null) return Task.FromResult(SalesStoreOutcome.Replayed); value = r; return Task.FromResult(SalesStoreOutcome.Applied); }
+        public Task<IReadOnlyList<RefundRequest>> ListRefundsAsync(TrustedSalesContext c, CancellationToken ct) => Task.FromResult<IReadOnlyList<RefundRequest>>(value is not null && value.TenantId == c.TenantId ? [value] : []);
         public Task<SalesStoreOutcome> DecideRefundAsync(TrustedSalesContext c, RefundRequest before, RefundRequest after, CancellationToken ct) { value = after; return Task.FromResult(SalesStoreOutcome.Applied); }
     }
     private sealed class FixedTime : TimeProvider { public override DateTimeOffset GetUtcNow() => new(2026, 8, 14, 0, 0, 0, TimeSpan.Zero); }

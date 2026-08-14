@@ -6,6 +6,8 @@ public sealed record TrustedProcurementApprovalContext(ProcurementTenantId Tenan
 public enum SupplierInvoiceOutcome { Applied, AlreadyApplied, NotFound, ReceiptIncomplete, InvoiceConflict, VarianceApprovalRequired, Forbidden, Invalid }
 public interface ISupplierInvoiceStore
 {
+    Task<IReadOnlyList<SupplierInvoice>> ListInvoicesAsync(TrustedProcurementMutationContext context, CancellationToken ct);
+    Task<IReadOnlyList<SupplierPayment>> ListPaymentsAsync(TrustedProcurementMutationContext context, string? invoiceId, CancellationToken ct);
     Task<PurchaseOrder?> GetPurchaseOrderAsync(TrustedProcurementMutationContext context, PurchaseOrderId id, CancellationToken ct);
     Task<bool> IsFullyReceivedAsync(TrustedProcurementMutationContext context, PurchaseOrderId id, CancellationToken ct);
     Task<SupplierInvoice?> GetInvoiceForPurchaseOrderAsync(TrustedProcurementMutationContext context, PurchaseOrderId id, CancellationToken ct);
@@ -17,6 +19,8 @@ public interface ISupplierInvoiceStore
 
 public sealed class SupplierInvoiceService(ISupplierInvoiceStore store)
 {
+    public Task<IReadOnlyList<SupplierInvoice>> ListAsync(TrustedProcurementMutationContext context, CancellationToken ct) => store.ListInvoicesAsync(context, ct);
+    public Task<IReadOnlyList<SupplierPayment>> ListPaymentsAsync(TrustedProcurementMutationContext context, string? invoiceId, CancellationToken ct) => store.ListPaymentsAsync(context, invoiceId, ct);
     public async Task<SupplierInvoiceOutcome> RecordInvoiceAsync(TrustedProcurementMutationContext context, SupplierInvoice invoice, CancellationToken ct)
     {
         if (invoice.TenantId != context.TenantId || string.IsNullOrWhiteSpace(invoice.SupplierReference) || invoice.AmountVnd < 0) return SupplierInvoiceOutcome.Invalid;

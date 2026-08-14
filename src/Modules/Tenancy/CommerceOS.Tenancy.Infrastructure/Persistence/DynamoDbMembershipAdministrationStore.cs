@@ -10,6 +10,8 @@ namespace CommerceOS.Tenancy.Infrastructure.Persistence;
 /// <summary>Tenancy-local transactional implementation of member/invitation guards. Credential digests only are persisted.</summary>
 public sealed class DynamoDbMembershipAdministrationStore(IAmazonDynamoDB client, DynamoDbTenancyOptions options) : IMembershipAdministrationStore
 {
+    public async Task<IReadOnlyList<Membership>> ListMembershipsAsync(TenantId tenantId, CancellationToken ct) { var x = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(P(tenantId)), [":prefix"] = S("MEMBERSHIP#") } }, ct); return x.Items.Select(ReadMember).ToArray(); }
+    public async Task<IReadOnlyList<MerchantInvitation>> ListInvitationsAsync(TenantId tenantId, CancellationToken ct) { var x = await client.QueryAsync(new() { TableName = options.TableName, KeyConditionExpression = "PK = :pk AND begins_with(SK, :prefix)", ExpressionAttributeValues = new() { [":pk"] = S(P(tenantId)), [":prefix"] = S("INVITATION#") } }, ct); return x.Items.Select(ReadInvitation).ToArray(); }
     public async Task<Membership?> GetMembershipAsync(TenantId tenantId, MembershipId id, CancellationToken ct) => await GetMember(tenantId, id, ct);
     public async Task<Membership?> GetMembershipForSubjectAsync(TenantId tenantId, SubjectId subjectId, CancellationToken ct)
     {

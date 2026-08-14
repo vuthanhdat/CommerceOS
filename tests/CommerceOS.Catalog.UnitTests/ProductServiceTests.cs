@@ -1,4 +1,5 @@
 using CommerceOS.Catalog.Application;
+using CommerceOS.Catalog.Contracts;
 using CommerceOS.Catalog.Domain;
 
 namespace CommerceOS.Catalog.UnitTests;
@@ -44,6 +45,27 @@ public sealed class ProductServiceTests
         Assert.Null(await store.GetAsync(new(new("tenant-b"), "c"), product.Id, default));
     }
 
+    [Fact]
+    public async Task PublicProjectionKeepsOnlyPublishedFieldsAndCatalogOwnedLabels()
+    {
+        var tenant = new CatalogTenantId("tenant-a");
+        var product = Product.Draft(new("product-a"), tenant, "Tea", "TEA", new Money(12000, "VND"))
+            .AssignReferences(new("category-a"), new("brand-a"), 1)
+            .Change("Tea", "TEA", "tea", new Money(12000, "VND"), 2)
+            .SetSpecifications([new("Weight", "250", "g", 1)], 3)
+            .SetMedia([new("asset-a", "Gói trà", 1)], 4)
+            .Publish(5);
+        var query = new PublicCatalogQueryService(new PublicProjectionStore(product), new PublicReferenceProjectionStore());
+
+        var result = await query.GetBySlugAsync(tenant.Value, product.Slug!, default);
+
+        Assert.NotNull(result);
+        Assert.Equal("Tea category", result.CategoryName);
+        Assert.Equal("Tea brand", result.BrandName);
+        Assert.Collection(result.Specifications!, item => Assert.Equal("Weight", item.Name));
+        Assert.Collection(result.Media!, item => Assert.Equal("Gói trà", item.AltText));
+    }
+
     private static TrustedCatalogMutationContext Context() => new(new("tenant-a"), "correlation");
     private sealed class InMemoryStore : ICatalogStore
     {
@@ -52,5 +74,17 @@ public sealed class ProductServiceTests
         public Task<CatalogOutcome> CreateAsync(TrustedCatalogMutationContext c, Product p, CancellationToken ct) { if (_items.ContainsKey((c.TenantId, p.Id))) return Task.FromResult(CatalogOutcome.RevisionConflict); if (!Claim(c.TenantId, "SKU", p.Sku, p.Id) || !Claim(c.TenantId, "SLUG", p.Slug, p.Id)) return Task.FromResult(CatalogOutcome.SkuConflict); _items.Add((c.TenantId, p.Id), p); return Task.FromResult(CatalogOutcome.Applied); }
         public Task<CatalogOutcome> SaveWithClaimsAsync(TrustedCatalogMutationContext c, Product before, Product after, CancellationToken ct) { if (!_items.TryGetValue((c.TenantId, before.Id), out var current) || current.Revision != before.Revision) return Task.FromResult(CatalogOutcome.RevisionConflict); if (!Claim(c.TenantId, "SKU", after.Sku, after.Id) || !Claim(c.TenantId, "SLUG", after.Slug, after.Id)) return Task.FromResult(CatalogOutcome.SkuConflict); if (!string.Equals(before.Slug, after.Slug, StringComparison.OrdinalIgnoreCase) && before.Slug is not null) _claims.Remove((c.TenantId, $"SLUG:{Product.Normalize(before.Slug)}")); _items[(c.TenantId, before.Id)] = after; return Task.FromResult(CatalogOutcome.Applied); }
         private bool Claim(CatalogTenantId tenant, string type, string? value, ProductId product) { if (value is null) return true; var key = (tenant, $"{type}:{Product.Normalize(value)}"); return !_claims.TryGetValue(key, out var owner) || owner == product ? (_claims[key] = product) == product : false; }
+    }
+
+    private sealed class PublicProjectionStore(Product product) : IPublicCatalogProjectionStore
+    {
+        public Task<IReadOnlyList<Product>> ListPublishedAsync(CatalogTenantId tenantId, string? cursor, int pageSize, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Product>>([product]);
+        public Task<Product?> GetPublishedBySlugAsync(CatalogTenantId tenantId, string slug, CancellationToken cancellationToken) => Task.FromResult<Product?>(product.Slug == slug ? product : null);
+        public Task<Product?> GetPublishedAsync(CatalogTenantId tenantId, ProductId productId, CancellationToken cancellationToken) => Task.FromResult<Product?>(product.Id == productId ? product : null);
+    }
+
+    private sealed class PublicReferenceProjectionStore : IPublicCatalogReferenceProjectionStore
+    {
+        public Task<CatalogReferenceLabels> GetLabelsAsync(CatalogTenantId tenantId, CategoryId? categoryId, BrandId? brandId, CancellationToken cancellationToken) => Task.FromResult(new CatalogReferenceLabels("Tea category", "Tea brand"));
     }
 }

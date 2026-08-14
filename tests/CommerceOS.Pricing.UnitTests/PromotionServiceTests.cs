@@ -58,6 +58,7 @@ public sealed class PromotionServiceTests
     private sealed class MemoryStore : IPromotionStore
     {
         private readonly object _gate = new(); private readonly Dictionary<(PricingTenantId, PromotionId), Promotion> _promotions = []; private readonly Dictionary<(PricingTenantId, string), PromotionSchedule> _schedules = []; private readonly Dictionary<(PricingTenantId, PromotionId), DateTimeOffset> _cancellations = [];
+        public Task<IReadOnlyList<Promotion>> ListAsync(PricingTenantId tenant, CancellationToken ct) { lock (_gate) return Task.FromResult<IReadOnlyList<Promotion>>(_promotions.Where(x => x.Key.Item1 == tenant).Select(x => x.Value).ToArray()); }
         public Task<PromotionSchedule> GetScheduleAsync(PricingTenantId tenant, string product, CancellationToken ct) { lock (_gate) return Task.FromResult(_schedules.GetValueOrDefault((tenant, product), PromotionSchedule.Empty(tenant, product))); }
         public Task<Promotion?> GetAsync(PricingTenantId tenant, PromotionId id, CancellationToken ct) { lock (_gate) return Task.FromResult(_promotions.GetValueOrDefault((tenant, id))); }
         public Task<DateTimeOffset?> GetCancellationAsync(PricingTenantId tenant, PromotionId id, CancellationToken ct) { lock (_gate) return Task.FromResult(_cancellations.TryGetValue((tenant, id), out var cancelled) ? (DateTimeOffset?)cancelled : null); }
