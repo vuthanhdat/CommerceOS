@@ -103,6 +103,16 @@ public sealed class FoundationStackTests
             });
     }
 
+    [Theory]
+    [InlineData("catalog")]
+    [InlineData("inventory")]
+    public void FoundationStackCreatesEachReadyModuleOwnedTable(string moduleName)
+    {
+        var app = new App();
+        var template = Template.FromStack(new FoundationStack(app, "test-foundation", EnvironmentProfile.Create("localstack-test", "0042")));
+        template.HasResourceProperties("AWS::DynamoDB::Table", new Dictionary<string, object> { ["TableName"] = $"commerceos-test-0042-{moduleName}", ["BillingMode"] = "PAY_PER_REQUEST" });
+    }
+
     [Fact]
     public void FoundationStackProvidesAStreamAndOnePurposeBuiltOnboardingRecoveryQueue()
     {

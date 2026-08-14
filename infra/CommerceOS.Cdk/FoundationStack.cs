@@ -60,6 +60,9 @@ public sealed class FoundationStack : Stack
                 RemovalPolicy = profile.RemovalPolicy
             });
 
+        _ = ModuleTable("CatalogTable", "catalog", profile);
+        _ = ModuleTable("InventoryTable", "inventory", profile);
+
         var onboardingDeadLetterQueue = new Queue(
             this,
             "OnboardingTrialRecoveryDeadLetterQueue",
@@ -89,4 +92,17 @@ public sealed class FoundationStack : Stack
         _ = tenancyTable.TableStreamArn;
         _ = onboardingRecoveryQueue.QueueArn;
     }
+
+    private Table ModuleTable(string constructId, string moduleName, EnvironmentProfile profile) => new(
+        this,
+        constructId,
+        new TableProps
+        {
+            TableName = $"{profile.ResourcePrefix}-{moduleName}",
+            PartitionKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "PK", Type = AttributeType.STRING },
+            SortKey = new Amazon.CDK.AWS.DynamoDB.Attribute { Name = "SK", Type = AttributeType.STRING },
+            BillingMode = BillingMode.PAY_PER_REQUEST,
+            Encryption = TableEncryption.AWS_MANAGED,
+            RemovalPolicy = profile.RemovalPolicy
+        });
 }

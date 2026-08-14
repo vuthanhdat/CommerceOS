@@ -1,6 +1,6 @@
 # CommerceOS Canonical Backlog
 
-_Last updated: 2026-08-13_
+_Last updated: 2026-08-14_
 
 Only the first safe dependency frontier is marked Ready. `Backlog` status means not started; readiness explains whether it can safely begin.
 
@@ -12,17 +12,17 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0103 Expand architecture/configuration guardrails (Done) | F01 | P0 | REQ-HARD-002, REQ-FND-003 | TASK-0100 | Completed 2026-08-13 |
 | TASK-0110 Establish Tenancy module and owned persistence (Done) | F02 | P0 | REQ-SEC-001, REQ-TEN-001..005 | TASK-0101, TASK-0103 | Completed 2026-08-13 |
 | TASK-0111 Implement trusted Tenant discovery/read/mutation authority (Done) | F02 | P0 | REQ-SEC-001..002, REQ-TEN-002 | TASK-0110 | Completed 2026-08-13 |
-| TASK-0112 Implement Membership, roles, limits and Invitation lifecycle | F02 | P0 | REQ-TEN-003..004, REQ-SUB-003 | TASK-0110, TASK-0121 | **Ready** |
+| TASK-0112 Implement Membership, roles, limits and Invitation lifecycle (Done) | F02 | P0 | REQ-TEN-003..004, REQ-SUB-003 | TASK-0110, TASK-0121 | Completed 2026-08-14 |
 | TASK-0113 Implement merchant onboarding and Trial bootstrap recovery (Done) | F02 | P0 | REQ-TEN-001, REQ-SUB-001 | TASK-0110, TASK-0120 | Completed 2026-08-14 |
 | TASK-0114 Implement platform Tenant suspend/reactivate/support path | F02 | P1 | REQ-SEC-003, REQ-TEN-005, REQ-AUD-001 | TASK-0111 | **Done** |
 | TASK-0120 Bootstrap immutable Trial and paid PlanVersion catalog (Done) | F03 | P0 | REQ-SUB-001..002 | TASK-0101 | Completed 2026-08-13 |
 | TASK-0121 Implement current EntitlementSet evaluation authority (Done) | F03 | P0 | REQ-SUB-002..004 | TASK-0120 | Completed 2026-08-14 |
-| TASK-0122 Enforce Membership/Warehouse hard limits at owner boundaries | F03 | P0 | REQ-SUB-003 | TASK-0121, TASK-0110, TASK-0161 | Blocked |
+| TASK-0122 Enforce Membership/Warehouse hard limits at owner boundaries (Done) | F03 | P0 | REQ-SUB-003 | TASK-0121, TASK-0110, TASK-0161 | Completed 2026-08-14 |
 | TASK-0123 Build SaaS billing provider seam and PlatformCharge evidence | F03 | P1 | REQ-SUB-008 | TASK-0120 | **Done** |
 | TASK-0124 Implement paid activation, upgrade, downgrade, renewal/cancel/grace | F03 | P1 | REQ-SUB-005..008 | TASK-0121, TASK-0123 | **Done** |
 | TASK-0125 Implement order-volume UsageMeter warning and support queries | F03 | P2 | REQ-SUB-004 | TASK-0121, TASK-0160 | Blocked |
-| TASK-0130 Establish Catalog module and Tenant-owned persistence | F04 | P0 | REQ-CAT-001..006 | TASK-0111, TASK-0121 | Blocked |
-| TASK-0131 Implement Product lifecycle, SKU, Money and slug rules | F04 | P0 | REQ-CAT-001..003, REQ-CAT-005 | TASK-0130 | Blocked |
+| TASK-0130 Establish Catalog module and Tenant-owned persistence (Done) | F04 | P0 | REQ-CAT-001..006 | TASK-0111, TASK-0121 | Completed 2026-08-14 |
+| TASK-0131 Implement Product lifecycle, SKU, Money and slug rules (Done) | F04 | P0 | REQ-CAT-001..003, REQ-CAT-005 | TASK-0130 | Completed 2026-08-14 |
 | TASK-0132 Implement Category, Brand and Product specifications | F04 | P1 | REQ-CAT-004..005 | TASK-0131 | Blocked |
 | TASK-0133 Implement Files/Media upload boundary and Product media association | F04 | P1 | REQ-MED-001 | TASK-0130 | Blocked |
 | TASK-0134 Implement external source mapping and explicit ImportCandidate apply | F04 | P1 | REQ-CAT-006, REQ-PDI-006 | TASK-0131 | Blocked |
@@ -37,7 +37,7 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0153 Implement authoritative checkout validation and repricing/reconfirm | F06 | P0 | REQ-CHK-002, REQ-CAT-003 | TASK-0152, TASK-0161 | Blocked |
 | TASK-0154 Implement idempotent guest order placement and immutable snapshot | F06 | P0 | REQ-SAL-001 | TASK-0153 | Blocked |
 | TASK-0160 Establish Sales module/order lifecycle persistence | F07 | P0 | REQ-SAL-001..003 | TASK-0154 | Blocked |
-| TASK-0161 Establish Inventory Warehouse/StockItem persistence and limits | F07 | P0 | REQ-INV-001..002 | TASK-0131, TASK-0121 | Blocked |
+| TASK-0161 Establish Inventory Warehouse/StockItem persistence and limits (Done) | F07 | P0 | REQ-INV-001..002 | TASK-0131, TASK-0121 | Completed 2026-08-14 |
 | TASK-0162 Implement reserve/release/issue/receive/adjust stock operations | F07 | P0 | REQ-INV-001, REQ-INV-003 | TASK-0161 | Blocked |
 | TASK-0163 Establish Payments obligation/attempt persistence and contracts | F07 | P0 | REQ-PAY-001, REQ-PAY-004 | TASK-0160 | Blocked |
 | TASK-0164 Build merchant-order Mock Payment Provider deterministic scenarios | F07 | P0 | REQ-PAY-002..003 | TASK-0101 | Blocked |
@@ -77,6 +77,6 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 
 ## Ready frontier
 
-- F01, TASK-0110, TASK-0111, TASK-0113, TASK-0114, TASK-0120, TASK-0121, TASK-0123 and TASK-0124 are complete. `TASK-0112` (Membership and Invitation lifecycle) is now the next Ready frontier because both declared dependencies are complete.
+- F01, TASK-0110..0114, TASK-0120..0124, TASK-0130..0131, and TASK-0161 are complete. The completed owner-boundary guards unblock their dependent resource-growth work.
 - `TASK-0150`, `TASK-0190`, and `TASK-0210` are explicit decision/refinement tasks and are not implementation-ready.
 - All other tasks are blocked by concrete dependencies, not by arbitrary phase gating.

@@ -10,6 +10,12 @@
     <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Contracts/CommerceOS.SubscriptionBilling.Contracts.csproj" />
     <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Application/CommerceOS.SubscriptionBilling.Application.csproj" />
     <Project Path="src/Modules/SubscriptionBilling/CommerceOS.SubscriptionBilling.Infrastructure/CommerceOS.SubscriptionBilling.Infrastructure.csproj" />
+    <Project Path="src/Modules/Catalog/CommerceOS.Catalog.Domain/CommerceOS.Catalog.Domain.csproj" />
+    <Project Path="src/Modules/Catalog/CommerceOS.Catalog.Application/CommerceOS.Catalog.Application.csproj" />
+    <Project Path="src/Modules/Catalog/CommerceOS.Catalog.Infrastructure/CommerceOS.Catalog.Infrastructure.csproj" />
+    <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Domain/CommerceOS.Inventory.Domain.csproj" />
+    <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Application/CommerceOS.Inventory.Application.csproj" />
+    <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Infrastructure/CommerceOS.Inventory.Infrastructure.csproj" />
     <Project Path="src/CommerceOS.Api/CommerceOS.Api.csproj" />
   </Folder>
   <Folder Name="/infra/">
@@ -24,6 +30,8 @@
     <Project Path="tests/CommerceOS.Cdk.Tests/CommerceOS.Cdk.Tests.csproj" />
     <Project Path="tests/CommerceOS.Tenancy.UnitTests/CommerceOS.Tenancy.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.SubscriptionBilling.UnitTests/CommerceOS.SubscriptionBilling.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Catalog.UnitTests/CommerceOS.Catalog.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Inventory.UnitTests/CommerceOS.Inventory.UnitTests.csproj" />
   </Folder>
 </Solution>
 

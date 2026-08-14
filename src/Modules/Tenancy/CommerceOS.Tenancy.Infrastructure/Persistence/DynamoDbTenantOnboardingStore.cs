@@ -54,8 +54,7 @@ public sealed class DynamoDbTenantOnboardingStore : ITenantOnboardingStore
                     Put(MembershipItem(operation.InitialOwner, tenantPartition), "attribute_not_exists(PK)"),
                     Put(AuthorityItem(operation.InitialOwner, tenantPartition), "attribute_not_exists(PK)"),
                     Put(DiscoveryItem(operation.InitialOwner, discoveryPartition), "attribute_not_exists(PK)"),
-                    Put(OwnerGuardItem(operation, tenantPartition), "attribute_not_exists(PK)"),
-                    Put(MembershipCountGuardItem(operation, tenantPartition), "attribute_not_exists(PK)"),
+                    Put(MembershipGuardItem(operation, tenantPartition), "attribute_not_exists(PK)"),
                     Put(WorkItem(workItem, operationKey), "attribute_not_exists(PK)")
                 ]
             }, cancellationToken);
@@ -235,18 +234,12 @@ public sealed class DynamoDbTenantOnboardingStore : ITenantOnboardingStore
         ["MembershipRevision"] = Number(membership.Revision)
     };
 
-    private static Dictionary<string, AttributeValue> OwnerGuardItem(OnboardingOperation operation, string partition) => new()
+    private static Dictionary<string, AttributeValue> MembershipGuardItem(OnboardingOperation operation, string partition) => new()
     {
         [PartitionKey] = String(partition),
-        [SortKey] = String("OWNER-GUARD"),
-        ["OwnerMembershipId"] = String(operation.InitialOwner.Id.Value)
-    };
-
-    private static Dictionary<string, AttributeValue> MembershipCountGuardItem(OnboardingOperation operation, string partition) => new()
-    {
-        [PartitionKey] = String(partition),
-        [SortKey] = String("MEMBERSHIP-COUNT-GUARD"),
-        ["ActiveMembershipCount"] = Number(1)
+        [SortKey] = String("ACTIVE-MEMBERSHIP-GUARD"),
+        ["ActiveCount"] = Number(1),
+        ["ActiveOwnerCount"] = Number(1)
     };
 
     private static Dictionary<string, AttributeValue> WorkItem(TrialBootstrapWorkItem workItem, string operationKey) => new()
