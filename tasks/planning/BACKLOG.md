@@ -73,8 +73,8 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0233 Expand executable architecture/harness guardrails and unified checks | F14 | P1 | REQ-HARD-002..003, REQ-FND-004 | TASK-0232 | Blocked |
 | TASK-0234 Perform milestone architecture audit and selective-extraction assessment | F14 | P2 | REQ-HARD-002 | TASK-0233 | Blocked |
 | TASK-0240 Implement explicit Customer/CRM profiles without guest auto-linking | F15 | P3 | REQ-CRM-001 | TASK-0200 | Blocked |
-| TASK-0241 Resolve first Pricing/Promotion product and domain semantics | F15 | P3 | REQ-PRI-001 | N/A | **Needs design** |
-| TASK-0242 Design Pricing authority contracts, persistence and checkout integration | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Blocked |
+| TASK-0241 Resolve first Pricing/Promotion product and domain semantics (Done) | F15 | P3 | REQ-PRI-001 | N/A | Completed 2026-08-14 |
+| TASK-0242 Design Pricing authority contracts, persistence and checkout integration | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Blocked — TASK-0234 only |
 | TASK-0243 Implement scheduled Product promotional-price slice | F15 | P3 | REQ-PRI-001 | TASK-0242, TASK-0131, TASK-0153, TASK-0154, TASK-0195 | Blocked |
 
 ## Ready frontier
@@ -84,6 +84,6 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 - `TASK-0190` is complete: Accounting cost pools are `Tenant + Product`; Warehouse is not a valuation dimension.
 - `TASK-0191` through `TASK-0202` are complete. Accounting and Reporting baselines are now implemented through their current planned slices.
 - `TASK-0211` and `TASK-0212` are complete.
-- `TASK-0241` is intentionally `Needs design`; it is a product/domain gate and no longer depends on TASK-0234.
-- `TASK-0242` is blocked by completion of TASK-0241 and TASK-0234. `TASK-0243` is blocked by TASK-0242.
-- Other remaining tasks retain the readiness recorded in their task rows; this Pricing split does not reclassify unrelated work.
+- `TASK-0241` is complete: PD-054 and `docs/domains/pricing-promotion.md` close the first-slice Pricing product/domain ambiguity.
+- `TASK-0242` no longer has a product-policy blocker; it remains blocked only by `TASK-0234`. `TASK-0243` remains blocked by TASK-0242.
+- Other remaining tasks retain the readiness recorded in their task rows; completing the Pricing design gate does not reclassify unrelated work.
