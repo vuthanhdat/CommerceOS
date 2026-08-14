@@ -121,14 +121,14 @@ flowchart TD
   T0200 --> T0240["TASK-0240 Explicit Customer/CRM profiles"]
   T0241["TASK-0241 Pricing product/domain semantics — Done"] --> T0242["TASK-0242 Pricing technical design"]
   T0234 --> T0242
-  T0242 --> T0243["TASK-0243 Scheduled Product promotional price"]
+  T0242 --> T0243["TASK-0243 Scheduled Product promotional price — Done"]
   T0131 --> T0243
   T0153 --> T0243
   T0154 --> T0243
   T0195 --> T0243
 ```
 
-TASK-0241 is complete and intentionally had no technical dependency: product/domain policy was not decided by architecture topology. PD-054 plus `docs/domains/pricing-promotion.md` now define the first Pricing slice. TASK-0242 waits only for the milestone architecture audit TASK-0234 before choosing technical contracts/persistence/integration. TASK-0243 is implementation-only and cannot start until TASK-0242 has removed material technical-design ambiguity.
+TASK-0241, TASK-0242 and TASK-0243 are complete. PD-054 plus `docs/domains/pricing-promotion.md` define the first Pricing slice; TASK-0242 records its technical design and TASK-0243 implements it without expanding the approved promotion semantics.
 
 ## Blocker table
 
@@ -139,10 +139,10 @@ TASK-0241 is complete and intentionally had no technical dependency: product/dom
 | OQ-003 Refund approval role/capability mapping | TASK-0211–0214 | Resolved by PD-023: Owner/Admin/Staff request; Owner/Admin approve/reject; Viewer neither |
 | External source policy changes over time | TASK-0141+ | implementation-time current policy/robots/terms review; disable source if unsafe |
 | Pricing first-slice lifecycle/time/base-price/public-display/history semantics | TASK-0242–0243 | **Resolved by PD-054 and `docs/domains/pricing-promotion.md` in TASK-0241**; Technical Architecture/Builder must preserve this policy rather than reinterpret it |
-| Post-MVP Pricing technical contract/persistence/integration design | TASK-0243 | TASK-0242 remains blocked by TASK-0234; after the audit, define contracts/concurrency/LocalStack integration and record ADR if a material architecture choice is introduced |
+| Future Pricing capabilities beyond the first slice | future work | Require an explicit product decision; TASK-0243 does not introduce coupons, stacking, segment, price-list or discount-accounting semantics |
 
 ## Parallelism guidance
 
 After TASK-0100 closes foundation uncertainty, independent work may proceed where dependencies permit. Examples: Subscription catalog bootstrap and Tenancy module work can progress in parallel when their shared contract is stable; Catalog and provider simulation can also progress independently after required foundation boundaries exist. Infrastructure-sensitive parallel tasks must use distinct LocalStack task-instance ports/resource prefixes.
 
-TASK-0241 product/domain design is complete. Pricing technical design should not begin until TASK-0234 is complete, because TASK-0242 must inspect the current hardened architecture before selecting mechanisms. Pricing implementation must still respect the explicit TASK-0241 -> TASK-0242 -> TASK-0243 gates.
+TASK-0241 -> TASK-0242 -> TASK-0243 is complete. Future Pricing work must preserve the module boundary and request a new product decision before adding new promotion semantics.

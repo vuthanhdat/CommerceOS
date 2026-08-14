@@ -69,13 +69,13 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0222 Implement per-recipient Notification state and critical-event consumers (Done) | F13 | P2 | REQ-NOT-001 | TASK-0200, TASK-0214 | Completed 2026-08-14 |
 | TASK-0230 Standardize structured logs, correlation and operational metrics (Done) | F14 | P1 | REQ-OBS-001 | TASK-0172, TASK-0222 | Completed 2026-08-14 |
 | TASK-0231 Build DLQ/recovery/redrive/operator diagnostic tooling (Done) | F14 | P1 | REQ-HARD-001, REQ-OBS-001 | TASK-0230 | Completed 2026-08-14 |
-| TASK-0232 Run tenant-isolation, authorization and failure-oriented hardening campaign | F14 | P1 | REQ-SEC-001..003, REQ-HARD-003 | TASK-0231 | Blocked |
-| TASK-0233 Expand executable architecture/harness guardrails and unified checks | F14 | P1 | REQ-HARD-002..003, REQ-FND-004 | TASK-0232 | Blocked |
-| TASK-0234 Perform milestone architecture audit and selective-extraction assessment | F14 | P2 | REQ-HARD-002 | TASK-0233 | Blocked |
-| TASK-0240 Implement explicit Customer/CRM profiles without guest auto-linking | F15 | P3 | REQ-CRM-001 | TASK-0200 | Blocked |
+| TASK-0232 Run tenant-isolation, authorization and failure-oriented hardening campaign (Done) | F14 | P1 | REQ-SEC-001..003, REQ-HARD-003 | TASK-0231 | Completed 2026-08-14 |
+| TASK-0233 Expand executable architecture/harness guardrails and unified checks (Done) | F14 | P1 | REQ-HARD-002..003, REQ-FND-004 | TASK-0232 | Completed 2026-08-14 |
+| TASK-0234 Perform milestone architecture audit and selective-extraction assessment (Done) | F14 | P2 | REQ-HARD-002 | TASK-0233 | Completed 2026-08-14 |
+| TASK-0240 Implement explicit Customer/CRM profiles without guest auto-linking (Done) | F15 | P3 | REQ-CRM-001 | TASK-0200 | Completed 2026-08-14 |
 | TASK-0241 Resolve first Pricing/Promotion product and domain semantics (Done) | F15 | P3 | REQ-PRI-001 | N/A | Completed 2026-08-14 |
-| TASK-0242 Design Pricing authority contracts, persistence and checkout integration | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Blocked — TASK-0234 only |
-| TASK-0243 Implement scheduled Product promotional-price slice | F15 | P3 | REQ-PRI-001 | TASK-0242, TASK-0131, TASK-0153, TASK-0154, TASK-0195 | Blocked |
+| TASK-0242 Design Pricing authority contracts, persistence and checkout integration (Done) | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Completed 2026-08-14 |
+| TASK-0243 Implement scheduled Product promotional-price slice (Done) | F15 | P3 | REQ-PRI-001 | TASK-0242, TASK-0131, TASK-0153, TASK-0154, TASK-0195 | Completed 2026-08-14 |
 
 ## Ready frontier
 
@@ -85,5 +85,5 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 - `TASK-0191` through `TASK-0202` are complete. Accounting and Reporting baselines are now implemented through their current planned slices.
 - `TASK-0211` and `TASK-0212` are complete.
 - `TASK-0241` is complete: PD-054 and `docs/domains/pricing-promotion.md` close the first-slice Pricing product/domain ambiguity.
-- `TASK-0242` no longer has a product-policy blocker; it remains blocked only by `TASK-0234`. `TASK-0243` remains blocked by TASK-0242.
+- `TASK-0242` and `TASK-0243` are complete. The first Pricing slice is implemented with a dedicated module/table, authoritative storefront checkout decision and immutable Sales pricing provenance.
 - Other remaining tasks retain the readiness recorded in their task rows; completing the Pricing design gate does not reclassify unrelated work.

@@ -1,6 +1,9 @@
 namespace CommerceOS.Sales.Contracts;
 
-public sealed record ValidatedCheckoutLine(string ProductId, string Sku, string Name, long Quantity, long UnitPriceVnd, string Currency);
+public sealed record ValidatedCheckoutLine(string ProductId, string Sku, string Name, long Quantity, long UnitPriceVnd, string Currency, long? BaseUnitPriceVnd = null, string? PromotionId = null, long? AppliedPromotionalUnitPriceVnd = null, DateTimeOffset? PriceEvaluatedAt = null)
+{
+    public long AcceptedBaseUnitPriceVnd => BaseUnitPriceVnd ?? UnitPriceVnd;
+}
 public sealed record GuestCheckoutData(string Name, string Email, string? Phone, string? Address);
 public sealed record PlaceAcceptedOrder(string TrustedTenantId, string IdempotencyKey, IReadOnlyList<ValidatedCheckoutLine> Lines, long TotalVnd, GuestCheckoutData Guest, string CorrelationId);
 public enum OrderPlacementOutcome { Accepted, Replayed, Conflict, Invalid }

@@ -77,6 +77,8 @@ public sealed class FoundationStack : Stack
         _ = ModuleTable("AccountingTable", "accounting", profile);
         _ = ModuleTable("ReportingTable", "reporting", profile);
         _ = ModuleTable("NotificationTable", "notification", profile);
+        _ = ModuleTable("CustomerTable", "customer", profile);
+        _ = ModuleTable("PricingTable", "pricing", profile);
         // CDK's AutoDeleteObjects provider targets nodejs24.x, which the pinned
         // LocalStack image does not currently accept. Test flows clean objects explicitly.
         _ = new Bucket(this, "FilesMediaBucket", new BucketProps { BucketName = $"{profile.ResourcePrefix}-files-media", Encryption = BucketEncryption.S3_MANAGED, BlockPublicAccess = BlockPublicAccess.BLOCK_ALL, RemovalPolicy = profile.RemovalPolicy, AutoDeleteObjects = false });

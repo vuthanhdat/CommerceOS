@@ -1,5 +1,6 @@
 using CommerceOS.Catalog.Contracts;
 using CommerceOS.Inventory.Contracts;
+using CommerceOS.Pricing.Contracts;
 using CommerceOS.Sales.Contracts;
 using CommerceOS.Tenancy.Contracts;
 
@@ -10,18 +11,23 @@ public sealed record CheckoutIntent(string StorefrontSlug, IReadOnlyList<CartLin
 public enum CheckoutValidationOutcome { Validated, ReconfirmationRequired, Invalid }
 public sealed record CheckoutValidationResult(CheckoutValidationOutcome Outcome, string? Code, IReadOnlyList<ValidatedCheckoutLine> Lines, long TotalVnd, string? TenantId);
 
-public sealed class StorefrontCheckoutService(IPublicTenantResolver tenants, IPublicCatalogQuery catalog, IInventoryAvailabilityQuery inventory, ISalesOrderPlacement sales)
+public sealed class StorefrontCheckoutService(IPublicTenantResolver tenants, IPublicCatalogQuery catalog, IInventoryAvailabilityQuery inventory, ISalesOrderPlacement sales, IEffectivePriceQuery pricing)
 {
     public async Task<PublicCatalogPage?> ListProductsAsync(string storefrontSlug, string? search, string? cursor, int pageSize, string correlationId, CancellationToken ct)
     {
         var tenant = await tenants.ResolveActiveAsync(storefrontSlug, correlationId, ct);
-        return tenant is null ? null : await catalog.ListAsync(tenant.TenantId, search, cursor, Math.Clamp(pageSize, 1, 50), ct);
+        if (tenant is null) return null;
+        var page = await catalog.ListAsync(tenant.TenantId, search, cursor, Math.Clamp(pageSize, 1, 50), ct);
+        var products = await Task.WhenAll(page.Items.Select(x => ApplyPublicPriceAsync(tenant.TenantId, x, correlationId, ct)));
+        return new PublicCatalogPage(products, page.NextCursor);
     }
 
     public async Task<PublicCatalogProduct?> GetProductAsync(string storefrontSlug, string slug, string correlationId, CancellationToken ct)
     {
         var tenant = await tenants.ResolveActiveAsync(storefrontSlug, correlationId, ct);
-        return tenant is null ? null : await catalog.GetBySlugAsync(tenant.TenantId, slug, ct);
+        if (tenant is null) return null;
+        var product = await catalog.GetBySlugAsync(tenant.TenantId, slug, ct);
+        return product is null ? null : await ApplyPublicPriceAsync(tenant.TenantId, product, correlationId, ct);
     }
 
     public async Task<CheckoutValidationResult> ValidateAsync(CheckoutIntent intent, string correlationId, CancellationToken ct)
@@ -34,8 +40,9 @@ public sealed class StorefrontCheckoutService(IPublicTenantResolver tenants, IPu
         {
             var product = await catalog.GetSellableAsync(tenant.TenantId, line.ProductId, ct);
             var availability = await inventory.GetAvailabilityAsync(tenant.TenantId, line.ProductId, ct);
-            if (product is null || availability.AvailableQuantity < line.Quantity) return Invalid();
-            validated.Add(new ValidatedCheckoutLine(product.ProductId, product.Sku ?? string.Empty, product.Name, line.Quantity, product.UnitPriceVnd, product.Currency));
+            var price = product is null ? null : await pricing.GetEffectivePriceAsync(tenant.TenantId, line.ProductId, DateTimeOffset.UtcNow, correlationId, ct);
+            if (product is null || price is null || availability.AvailableQuantity < line.Quantity) return Invalid();
+            validated.Add(new ValidatedCheckoutLine(product.ProductId, product.Sku ?? string.Empty, product.Name, line.Quantity, price.EffectiveUnitPriceVnd, product.Currency, price.BaseUnitPriceVnd, price.PromotionId, price.AppliedPromotionalUnitPriceVnd, price.EvaluatedAt));
         }
         var total = validated.Sum(x => checked(x.Quantity * x.UnitPriceVnd));
         if (intent.EstimatedTotalVnd != total || intent.Lines.Zip(validated).Any(x => x.First.EstimatedUnitPriceVnd != x.Second.UnitPriceVnd))
@@ -52,4 +59,10 @@ public sealed class StorefrontCheckoutService(IPublicTenantResolver tenants, IPu
     }
 
     private static CheckoutValidationResult Invalid() => new(CheckoutValidationOutcome.Invalid, "CHECKOUT_INVALID", [], 0, null);
+
+    private async Task<PublicCatalogProduct> ApplyPublicPriceAsync(string tenantId, PublicCatalogProduct product, string correlationId, CancellationToken ct)
+    {
+        var price = await pricing.GetEffectivePriceAsync(tenantId, product.ProductId, DateTimeOffset.UtcNow, correlationId, ct);
+        return price is { HasAppliedPromotion: true } ? product with { EffectiveUnitPriceVnd = price.EffectiveUnitPriceVnd, AppliedPromotionId = price.PromotionId, PromotionEffectiveUntil = price.PromotionEffectiveUntil } : product with { EffectiveUnitPriceVnd = product.UnitPriceVnd, AppliedPromotionId = null, PromotionEffectiveUntil = null };
+    }
 }

@@ -7,7 +7,10 @@ public sealed record PublicCatalogProduct(
     string Name,
     string? Sku,
     long UnitPriceVnd,
-    string Currency);
+    string Currency,
+    long? EffectiveUnitPriceVnd = null,
+    string? AppliedPromotionId = null,
+    DateTimeOffset? PromotionEffectiveUntil = null);
 
 public sealed record PublicCatalogPage(IReadOnlyList<PublicCatalogProduct> Items, string? NextCursor);
 

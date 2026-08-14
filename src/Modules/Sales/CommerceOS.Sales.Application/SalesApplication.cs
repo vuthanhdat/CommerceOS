@@ -31,7 +31,7 @@ public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlace
             var context = new TrustedSalesContext(new(command.TrustedTenantId), command.CorrelationId);
             var hash = Hash(command);
             var token = StableToken($"{command.TrustedTenantId}\n{command.IdempotencyKey}");
-            var order = SalesOrder.Place(new($"ord-{token}"), context.TenantId, command.Lines.Select(x => new SalesOrderLine(x.ProductId, x.Sku, x.Name, x.Quantity, x.UnitPriceVnd)).ToArray(), command.TotalVnd, new(command.Guest.Name.Trim(), command.Guest.Email.Trim(), command.Guest.Phone?.Trim(), command.Guest.Address?.Trim()), new($"process-{token}", $"order-{token}", true));
+            var order = SalesOrder.Place(new($"ord-{token}"), context.TenantId, command.Lines.Select(x => new SalesOrderLine(x.ProductId, x.Sku, x.Name, x.Quantity, x.UnitPriceVnd) { BaseUnitPriceVnd = x.AcceptedBaseUnitPriceVnd, PromotionId = x.PromotionId, AppliedPromotionalUnitPriceVnd = x.AppliedPromotionalUnitPriceVnd, PriceEvaluatedAt = x.PriceEvaluatedAt }).ToArray(), command.TotalVnd, new(command.Guest.Name.Trim(), command.Guest.Email.Trim(), command.Guest.Phone?.Trim(), command.Guest.Address?.Trim()), new($"process-{token}", $"order-{token}", true));
             return await store.PlaceAsync(context, order, command.IdempotencyKey, hash, cancellationToken) switch { SalesStoreOutcome.Applied => new(OrderPlacementOutcome.Accepted, order.Id.Value, order.Status.ToString()), SalesStoreOutcome.Replayed => new(OrderPlacementOutcome.Replayed, order.Id.Value, order.Status.ToString()), _ => new(OrderPlacementOutcome.Conflict, null, null) };
         }
         catch (SalesRuleException) { return new(OrderPlacementOutcome.Invalid, null, null); }
@@ -44,7 +44,7 @@ public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlace
     public Task<SalesProgressOutcome> AllocateAsync(string trustedTenantId, string orderId, string sourceIdentity, long expectedRevision, string correlationId, CancellationToken cancellationToken) => TransitionAsync(trustedTenantId, orderId, SalesOrderStatus.Allocated, sourceIdentity, expectedRevision, correlationId, cancellationToken);
     private async Task<SalesProgressOutcome> TransitionAsync(string tenant, string order, SalesOrderStatus target, string source, long revision, string correlation, CancellationToken ct)
     { var result = await ApplyTransitionAsync(new(new(tenant), correlation), new(order), target, source, revision, ct); return result is SalesStoreOutcome.Applied ? SalesProgressOutcome.Applied : SalesProgressOutcome.Conflict; }
-    private static string Hash(PlaceAcceptedOrder command) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{command.TrustedTenantId}|{string.Join(';', command.Lines.Select(x => $"{x.ProductId}:{x.Quantity}:{x.UnitPriceVnd}"))}|{command.TotalVnd}|{command.Guest.Name}|{command.Guest.Email}|{command.Guest.Phone}|{command.Guest.Address}")));
+    private static string Hash(PlaceAcceptedOrder command) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{command.TrustedTenantId}|{string.Join(';', command.Lines.Select(x => $"{x.ProductId}:{x.Quantity}:{x.UnitPriceVnd}:{x.AcceptedBaseUnitPriceVnd}:{x.PromotionId}:{x.AppliedPromotionalUnitPriceVnd}"))}|{command.TotalVnd}|{command.Guest.Name}|{command.Guest.Email}|{command.Guest.Phone}|{command.Guest.Address}")));
     private static string StableToken(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant()[..24];
 }
 

@@ -80,7 +80,7 @@ This index normalizes requirements from the existing `docs/` baseline. It does n
 | REQ-HARD-002 | Architecture rules prohibit Domain/Application infrastructure leakage and cross-module persistence shortcuts, promoted to executable checks when practical. | `docs/development/03-architecture-rules.md` | Approved |
 | REQ-HARD-003 | Infrastructure-sensitive tests use LocalStack where sufficiently supported and explicitly record emulator limitations. | `docs/development/10-testing-and-cloud-verification.md` | Approved |
 | REQ-CRM-001 | Customer/CRM may own explicit Tenant customer profile/contact preferences; guest checkout does not auto-create or rewrite CRM history. | `docs/00-product-definition.md`, commerce baseline | Later scope |
-| REQ-PRI-001 | Pricing/Promotion owns authoritative scheduled Product promotional-price rules: immutable final VND unit price, one Product/all storefront shoppers, non-overlapping `[from, until)` intervals, Owner/Admin mutation, Catalog sellability/base-price authority, checkout reconfirmation and immutable Sales provenance. | `docs/domains/product-decisions.md` (PD-054), `docs/domains/pricing-promotion.md` | Product/domain approved; technical design pending TASK-0242 |
+| REQ-PRI-001 | Pricing/Promotion owns authoritative scheduled Product promotional-price rules: immutable final VND unit price, one Product/all storefront shoppers, non-overlapping `[from, until)` intervals, Owner/Admin mutation, Catalog sellability/base-price authority, checkout reconfirmation and immutable Sales provenance. | `docs/domains/product-decisions.md` (PD-054), `docs/domains/pricing-promotion.md` | Implemented and verified by TASK-0243 |
 
 ## Conflict / supersession register
 

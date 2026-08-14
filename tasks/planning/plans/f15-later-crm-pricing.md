@@ -39,10 +39,10 @@ Coupons, percentage/fixed-reduction formulas, manual order discounts, Category/c
 
 - `TASK-0240` — implement explicit Customer/CRM profiles after core reporting/data boundaries are stable.
 - `TASK-0241` — **Done 2026-08-14**. Product/domain design gate closed by PD-054 and `pricing-promotion.md`; no application code was changed.
-- `TASK-0242` — **technical design only**. Product policy is closed; this task remains blocked only by TASK-0234 so it can inspect the post-hardening implemented architecture before selecting contracts, persistence/access patterns, concurrency enforcement, checkout/Sales integration, LocalStack mapping and any required ADR.
-- `TASK-0243` — **implementation only**. Implement the approved scheduled Product promotional-price slice exactly as specified by PD-054/TASK-0242.
+- `TASK-0242` — **Done 2026-08-14**. Technical contracts, persistence/access patterns, concurrency enforcement, checkout/Sales integration and LocalStack mapping are recorded in `docs/architecture/pricing-first-slice-technical-design.md`.
+- `TASK-0243` — **Done 2026-08-14**. The approved scheduled Product promotional-price slice is implemented exactly as specified by PD-054/TASK-0242.
 
 The split is intentional: a Builder must never be asked to invent promotion lifecycle/time/accounting/authorization semantics while implementing Pricing code.
 
 ## Definition of Done
-Later capabilities have explicit owning-context semantics and integrate through contracts rather than hidden flags in Sales/Catalog. For Pricing, product/domain ambiguity is now closed; the first slice becomes implementation-ready only after TASK-0242 also closes material technical-design ambiguity.
+Later capabilities have explicit owning-context semantics and integrate through contracts rather than hidden flags in Sales/Catalog. The first Pricing slice is complete; future Pricing capabilities require their own product decisions rather than extensions by implication.

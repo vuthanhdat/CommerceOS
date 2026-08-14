@@ -1,5 +1,6 @@
 using CommerceOS.Catalog.Contracts;
 using CommerceOS.Inventory.Contracts;
+using CommerceOS.Pricing.Contracts;
 using CommerceOS.Sales.Contracts;
 using CommerceOS.Storefront.Application;
 using CommerceOS.Tenancy.Contracts;
@@ -23,9 +24,10 @@ public sealed class StorefrontCheckoutTests
         Assert.Equal(CheckoutValidationOutcome.Invalid, (await Service(true, 10, 0).ValidateAsync(Intent(), "c", default)).Outcome);
     }
     private static CheckoutIntent Intent() => new("store-a", [new("product-a", 1, 10)], 10, false, "key", new("Guest", "g@example.test", null, null));
-    private static StorefrontCheckoutService Service(bool active, long price, long available) => new(new Tenant(active), new Catalog(price), new Inventory(available), new Sales());
+    private static StorefrontCheckoutService Service(bool active, long price, long available) => new(new Tenant(active), new Catalog(price), new Inventory(available), new Sales(), new Pricing(price));
     private sealed class Tenant(bool active) : IPublicTenantResolver { public Task<PublicTenantContext?> ResolveActiveAsync(string slug, string c, CancellationToken ct) => Task.FromResult<PublicTenantContext?>(active ? new("tenant-a", slug, c) : null); }
     private sealed class Catalog(long price) : IPublicCatalogQuery { private readonly PublicCatalogProduct _product = new("product-a", "tea", "Tea", "SKU", price, "VND"); public Task<PublicCatalogPage> ListAsync(string tenant, string? search, string? cursor, int size, CancellationToken ct) => Task.FromResult(new PublicCatalogPage([_product], null)); public Task<PublicCatalogProduct?> GetBySlugAsync(string tenant, string slug, CancellationToken ct) => Task.FromResult<PublicCatalogProduct?>(_product); public Task<PublicCatalogProduct?> GetSellableAsync(string tenant, string product, CancellationToken ct) => Task.FromResult<PublicCatalogProduct?>(_product); }
     private sealed class Inventory(long available) : IInventoryAvailabilityQuery { public Task<ProductAvailability> GetAvailabilityAsync(string tenant, string product, CancellationToken ct) => Task.FromResult(new ProductAvailability(product, available)); }
     private sealed class Sales : ISalesOrderPlacement { public Task<OrderPlacementResult> PlaceAsync(PlaceAcceptedOrder command, CancellationToken ct) => Task.FromResult(new OrderPlacementResult(OrderPlacementOutcome.Accepted, "order", "Placed")); }
+    private sealed class Pricing(long price) : IEffectivePriceQuery { public Task<EffectivePriceDecision?> GetEffectivePriceAsync(string tenant, string product, DateTimeOffset at, string correlation, CancellationToken ct) => Task.FromResult<EffectivePriceDecision?>(new(price, price, null, null, at)); }
 }

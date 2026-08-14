@@ -114,6 +114,8 @@ public sealed class FoundationStackTests
     [InlineData("accounting")]
     [InlineData("reporting")]
     [InlineData("notification")]
+    [InlineData("customer")]
+    [InlineData("pricing")]
     public void FoundationStackCreatesEachReadyModuleOwnedTable(string moduleName)
     {
         var app = new App();

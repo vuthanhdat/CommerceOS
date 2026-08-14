@@ -25,6 +25,14 @@ public sealed class SalesOrderServiceTests
         Assert.Equal("Tea", store.Orders.Single().Value.Lines.Single().Name);
         Assert.True(store.Orders.Single().Value.Process.StartPending);
     }
+    [Fact]
+    public async Task AcceptedPricingProvenanceIsStoredWithTheImmutableOrderLine()
+    {
+        var store = new MemoryStore(); var service = new SalesOrderService(store);
+        await service.PlaceAsync(Command() with { Lines = [new("product", "SKU", "Tea", 1, 80, "VND", 100, "promotion-a", 80, new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero))], TotalVnd = 80 }, default);
+        var line = store.Orders.Single().Value.Lines.Single();
+        Assert.Equal(100, line.BaseUnitPriceVnd); Assert.Equal(80, line.UnitPriceVnd); Assert.Equal("promotion-a", line.PromotionId);
+    }
     private static PlaceAcceptedOrder Command() => new("tenant-a", "key", [new("product", "SKU", "Tea", 1, 1, "VND")], 1, new("Guest", "guest@example.test", null, null), "c");
     private sealed class MemoryStore : ISalesOrderStore
     {

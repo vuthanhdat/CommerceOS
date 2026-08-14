@@ -14,6 +14,10 @@ public enum SalesOrderStatus { Placed, Confirmed, Allocated, Fulfilled, Complete
 public sealed record SalesOrderLine(string ProductId, string Sku, string Name, long Quantity, long UnitPriceVnd)
 {
     public long LineTotalVnd => checked(Quantity * UnitPriceVnd);
+    public long BaseUnitPriceVnd { get; init; } = UnitPriceVnd;
+    public string? PromotionId { get; init; }
+    public long? AppliedPromotionalUnitPriceVnd { get; init; }
+    public DateTimeOffset? PriceEvaluatedAt { get; init; }
 }
 public sealed record GuestSnapshot(string Name, string Email, string? Phone, string? Address);
 public sealed record OrderProcess(string Id, string WorkflowExecutionIdentity, bool StartPending);

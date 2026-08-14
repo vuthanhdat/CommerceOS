@@ -75,6 +75,10 @@ class LocalStackConfig:
         return f"{self.resource_prefix}-tenancy"
 
     @property
+    def pricing_table_name(self) -> str:
+        return f"{self.resource_prefix}-pricing"
+
+    @property
     def cdk_environment(self) -> str:
         return self.profile
 
@@ -101,6 +105,7 @@ class LocalStackConfig:
             "synthetic_secret_key": "test",
             "resource_prefix": self.resource_prefix,
             "tenancy_table": self.tenancy_table_name,
+            "pricing_table": self.pricing_table_name,
             "subscription_billing_table": self.subscription_billing_table_name,
             "container_name": self.container_name,
             "restart_policy": "unless-stopped",
@@ -133,6 +138,7 @@ def lifecycle_environment(config: LocalStackConfig) -> dict[str, str]:
             "COMMERCEOS_RESOURCE_PREFIX": config.resource_prefix,
             "COMMERCEOS_LOCALSTACK_ENDPOINT": config.endpoint,
             "COMMERCEOS_TENANCY_TABLE": config.tenancy_table_name,
+            "COMMERCEOS_PRICING_TABLE": config.pricing_table_name,
             "COMMERCEOS_SUBSCRIPTION_BILLING_TABLE": config.subscription_billing_table_name,
         }
     )

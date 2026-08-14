@@ -239,6 +239,21 @@ public sealed class DependencyRulesTests
         }
     }
 
+    [Fact]
+    public void InfrastructureAdaptersDoNotHardCodeLocalStackEndpointsOrCredentials()
+    {
+        var root = FindRepositoryRoot();
+        var sources = Directory.GetFiles(Path.Combine(root, "src", "Modules"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => path.Contains(".Infrastructure", StringComparison.OrdinalIgnoreCase));
+        var forbidden = new[] { "http://localhost", "localhost:4566", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY" };
+
+        foreach (var source in sources)
+        {
+            var text = File.ReadAllText(source);
+            Assert.DoesNotContain(forbidden, marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
