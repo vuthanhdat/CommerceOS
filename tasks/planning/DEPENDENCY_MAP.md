@@ -1,6 +1,6 @@
 # CommerceOS Dependency Map
 
-_Last updated: 2026-08-13_
+_Last updated: 2026-08-14_
 
 ## Feature dependency graph
 

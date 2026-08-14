@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_LOCALSTACK_IMAGE = "localstack/localstack:4.8.1"
-DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,dynamodb,s3,sqs,iam,sts,ssm,stepfunctions"
+DEFAULT_LOCALSTACK_SERVICES = "cloudformation,logs,dynamodb,s3,sqs,events,iam,sts,ssm,stepfunctions"
 DEFAULT_LOCALSTACK_STATE_ROOT = ".commerceos/localstack"
 
 

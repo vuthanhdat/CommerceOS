@@ -24,3 +24,6 @@ TASK-0190 -> TASK-0191 -> TASK-0192 -> {TASK-0193, TASK-0194} -> TASK-0195.
 
 ## Definition of Done
 Every posted journal balances and is immutable; duplicate source facts do not duplicate logical postings; original facts/journals remain traceable through reversals/corrections.
+
+## Progress
+Completed 2026-08-14: `TASK-0191`–`TASK-0195`. Accounting has an owner-local DynamoDB table, deterministic control chart bootstrap, source-idempotent append-only journals, tenant/product moving-average valuation, fact consumers for approved sales/procurement/stock effects, and read-only General Ledger/Trial Balance queries. CDK declares the named Accounting EventBridge route and SQS/DLQ capability for the approved fact set.

@@ -51,12 +51,12 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0182 Integrate GoodsReceipt to Inventory idempotently (Done) | F09 | P1 | REQ-PROC-002, REQ-INV-003, REQ-HARD-001 | TASK-0181, TASK-0162 | Completed 2026-08-14 |
 | TASK-0183 Implement SupplierInvoice, variance approval and SupplierPayment evidence (Done) | F09 | P1 | REQ-PROC-003 | TASK-0181 | Completed 2026-08-14 |
 | TASK-0190 Resolve moving-weighted-average authoritative cost-pool scope | F10 | P0 | REQ-ACC-004 | N/A | Done |
-| TASK-0191 Establish Accounting module and required chart bootstrap | F10 | P0 | REQ-ACC-001, REQ-ACC-004 | TASK-0190, TASK-0113 | Ready |
-| TASK-0192 Implement balanced immutable Journal posting and reversal | F10 | P0 | REQ-ACC-002 | TASK-0191 | Blocked |
-| TASK-0193 Implement sale/deposit/revenue/COGS fact consumers and valuation | F10 | P0 | REQ-ACC-003..004, REQ-HARD-001 | TASK-0192, TASK-0162, TASK-0165 | Blocked |
-| TASK-0194 Implement procurement and stock-adjustment Accounting consumers | F10 | P1 | REQ-ACC-005 | TASK-0192, TASK-0182, TASK-0183 | Blocked |
-| TASK-0195 Implement reliable fact routes plus General Ledger/Trial Balance | F10 | P0 | REQ-ACC-002, REQ-REP-002, REQ-HARD-001 | TASK-0193, TASK-0194, TASK-0102 | Blocked |
-| TASK-0200 Establish Reporting projections from producer-owned facts | F11 | P1 | REQ-REP-001..002 | TASK-0160, TASK-0195 | Blocked |
+| TASK-0191 Establish Accounting module and required chart bootstrap (Done) | F10 | P0 | REQ-ACC-001, REQ-ACC-004 | TASK-0190, TASK-0113 | Completed 2026-08-14 |
+| TASK-0192 Implement balanced immutable Journal posting and reversal (Done) | F10 | P0 | REQ-ACC-002 | TASK-0191 | Completed 2026-08-14 |
+| TASK-0193 Implement sale/deposit/revenue/COGS fact consumers and valuation (Done) | F10 | P0 | REQ-ACC-003..004, REQ-HARD-001 | TASK-0192, TASK-0162, TASK-0165 | Completed 2026-08-14 |
+| TASK-0194 Implement procurement and stock-adjustment Accounting consumers (Done) | F10 | P1 | REQ-ACC-005 | TASK-0192, TASK-0182, TASK-0183 | Completed 2026-08-14 |
+| TASK-0195 Implement reliable fact routes plus General Ledger/Trial Balance (Done) | F10 | P0 | REQ-ACC-002, REQ-REP-002, REQ-HARD-001 | TASK-0193, TASK-0194, TASK-0102 | Completed 2026-08-14 |
+| TASK-0200 Establish Reporting projections from producer-owned facts | F11 | P1 | REQ-REP-001..002 | TASK-0160, TASK-0195 | Ready |
 | TASK-0201 Implement operational KPI projections and Tenant business-date semantics | F11 | P1 | REQ-REP-001 | TASK-0200 | Blocked |
 | TASK-0202 Implement financial/back-office reporting views | F11 | P1 | REQ-REP-002 | TASK-0200, TASK-0195 | Blocked |
 | TASK-0210 Resolve exact merchant refund-approval role/capability mapping | F12 | P0 | REQ-REF-001 | N/A | Done |
@@ -80,5 +80,6 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 - `TASK-0125`, `TASK-0141`, `TASK-0172`, `TASK-0182`, `TASK-0183`, and `TASK-0221` are complete.
 - `TASK-0142`, `TASK-0143`, and `TASK-0144` are complete. The PDI source policy must remain current at operation time.
 - `TASK-0190` is complete: Accounting cost pools are `Tenant + Product`; Warehouse is not a valuation dimension.
-- `TASK-0191` and `TASK-0211` are Ready. Accounting and refund work now have their required domain decisions.
+- `TASK-0191` through `TASK-0195` are complete. Accounting now owns chart, valuation, immutable journals, source claims and ledger queries.
+- `TASK-0200` and `TASK-0211` are Ready.
 - All remaining tasks are blocked by concrete dependencies, not by arbitrary phase gating.

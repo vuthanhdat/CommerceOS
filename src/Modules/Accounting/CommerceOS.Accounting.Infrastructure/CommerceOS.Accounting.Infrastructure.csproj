@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.Accounting.Application/CommerceOS.Accounting.Application.csproj" /></ItemGroup><ItemGroup><PackageReference Include="AWSSDK.DynamoDBv2" /></ItemGroup></Project>

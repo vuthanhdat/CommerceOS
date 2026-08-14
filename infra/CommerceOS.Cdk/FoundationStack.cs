@@ -1,5 +1,7 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.DynamoDB;
+using Amazon.CDK.AWS.Events;
+using SqsEventTarget = Amazon.CDK.AWS.Events.Targets.SqsQueue;
 using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.S3;
@@ -72,6 +74,7 @@ public sealed class FoundationStack : Stack
         _ = ModuleTable("ProductDataIngestionTable", "product-data-ingestion", profile);
         _ = ModuleTable("AuditTable", "audit", profile);
         _ = ModuleTable("MockPaymentProviderTable", "mock-payment-provider", profile);
+        _ = ModuleTable("AccountingTable", "accounting", profile);
         // CDK's AutoDeleteObjects provider targets nodejs24.x, which the pinned
         // LocalStack image does not currently accept. Test flows clean objects explicitly.
         _ = new Bucket(this, "FilesMediaBucket", new BucketProps { BucketName = $"{profile.ResourcePrefix}-files-media", Encryption = BucketEncryption.S3_MANAGED, BlockPublicAccess = BlockPublicAccess.BLOCK_ALL, RemovalPolicy = profile.RemovalPolicy, AutoDeleteObjects = false });
@@ -121,6 +124,26 @@ public sealed class FoundationStack : Stack
             DeadLetterQueue = new DeadLetterQueue { Queue = pdiDeadLetterQueue, MaxReceiveCount = 3 },
             RemovalPolicy = profile.RemovalPolicy
         });
+        var accountingDeadLetterQueue = new Queue(this, "AccountingFactsDeadLetterQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-accounting-facts-dlq",
+            RetentionPeriod = Duration.Days(14),
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        var accountingFactsQueue = new Queue(this, "AccountingFactsQueue", new QueueProps
+        {
+            QueueName = $"{profile.ResourcePrefix}-accounting-facts",
+            VisibilityTimeout = Duration.Seconds(60),
+            DeadLetterQueue = new DeadLetterQueue { Queue = accountingDeadLetterQueue, MaxReceiveCount = 5 },
+            RemovalPolicy = profile.RemovalPolicy
+        });
+        var commerceFacts = new Amazon.CDK.AWS.Events.EventBus(this, "CommerceFactsBus", new Amazon.CDK.AWS.Events.EventBusProps { EventBusName = $"{profile.ResourcePrefix}-commerce-facts" });
+        _ = new Rule(this, "AccountingFactsRoute", new RuleProps
+        {
+            EventBus = commerceFacts,
+            EventPattern = new EventPattern { DetailType = ["PaymentCaptured", "OrderFulfilled", "StockIssued", "GoodsReceiptRecorded", "SupplierInvoiceRecorded", "SupplierPaymentRecorded", "StockAdjusted"] },
+            Targets = [new SqsEventTarget(accountingFactsQueue)]
+        });
 
         var orderWorkflowRole = new Role(this, "OrderWorkflowRole", new RoleProps
         {
@@ -146,6 +169,7 @@ public sealed class FoundationStack : Stack
         _ = tenancyTable.TableStreamArn;
         _ = onboardingRecoveryQueue.QueueArn;
         _ = pdiCrawlQueue.QueueArn;
+        _ = accountingFactsQueue.QueueArn;
     }
 
     private Table ModuleTable(string constructId, string moduleName, EnvironmentProfile profile) => new(
