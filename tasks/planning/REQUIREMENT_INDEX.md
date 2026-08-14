@@ -1,6 +1,6 @@
 # CommerceOS Requirement Index
 
-_Last updated: 2026-08-13_
+_Last updated: 2026-08-14_
 
 ## Source policy
 
@@ -80,7 +80,7 @@ This index normalizes requirements from the existing `docs/` baseline. It does n
 | REQ-HARD-002 | Architecture rules prohibit Domain/Application infrastructure leakage and cross-module persistence shortcuts, promoted to executable checks when practical. | `docs/development/03-architecture-rules.md` | Approved |
 | REQ-HARD-003 | Infrastructure-sensitive tests use LocalStack where sufficiently supported and explicitly record emulator limitations. | `docs/development/10-testing-and-cloud-verification.md` | Approved |
 | REQ-CRM-001 | Customer/CRM may own explicit Tenant customer profile/contact preferences; guest checkout does not auto-create or rewrite CRM history. | `docs/00-product-definition.md`, commerce baseline | Later scope |
-| REQ-PRI-001 | Pricing/Promotion owns future offer/discount rules; MVP guest checkout has no manual authoritative discount. | `docs/00-product-definition.md`, commerce baseline | Later scope |
+| REQ-PRI-001 | Pricing/Promotion owns authoritative scheduled Product promotional-price rules: immutable final VND unit price, one Product/all storefront shoppers, non-overlapping `[from, until)` intervals, Owner/Admin mutation, Catalog sellability/base-price authority, checkout reconfirmation and immutable Sales provenance. | `docs/domains/product-decisions.md` (PD-054), `docs/domains/pricing-promotion.md` | Product/domain approved; technical design pending TASK-0242 |
 
 ## Conflict / supersession register
 
@@ -95,3 +95,4 @@ This index normalizes requirements from the existing `docs/` baseline. It does n
 - OQ-002 — Resolved by PD-021: Accounting cost pool is Tenant + Product; Warehouse is not a valuation dimension.
 - OQ-003 — Resolved by PD-023: Owner/Admin/Staff may request; Owner/Admin approve/reject; Viewer has neither capability.
 - OQ-004 — Category/Brand historical normalized-name reuse semantics are only needed if implementation requires reuse after rename/retirement.
+- Pricing first-slice product questions are closed by PD-054; remaining Pricing questions are technical-design concerns owned by TASK-0242, not `Needs clarification` product blockers.
