@@ -1,6 +1,6 @@
 # Product-Decision → Domain-Baseline Reconciliation
 
-_Date: 2026-08-10_
+_Date: 2026-08-14_
 
 ## 1. Purpose
 
@@ -10,7 +10,7 @@ The decision register remains authoritative for the **decision text, rationale, 
 
 Some individual older decision entries may still contain historical propagation wording such as `Pending Domain Architect reconciliation`; this reconciliation record is the current propagation authority. It does not change the Product Owner's decision text.
 
-This pass changes business/domain documentation only. It introduces no application code, AWS choice, persistence technology/schema, transport, API schema, or deployment decision.
+This pass changes business/domain documentation only. It introduces no application code, persistence technology/schema, transport, API schema, LocalStack resource, or deployment decision.
 
 ## 2. Reconciliation status
 
@@ -20,8 +20,9 @@ This pass changes business/domain documentation only. It introduces no applicati
 | `PD-002`, `PD-003`, `PD-005`–`PD-010`, `PD-037`, `PD-040` | `catalog.md`, `02-business-domains.md` | Reconciled |
 | `PD-011`–`PD-032`, `PD-035`, `PD-038`, `PD-039`, `PD-041`, `PD-042` | `commerce-operations.md`, `02-business-domains.md` | Reconciled; `PD-023` refund approval/return/accounting policy is resolved and propagated |
 | `PD-043`–`PD-053` | `subscription-billing.md`, `tenant-identity.md`, `02-business-domains.md` | Reconciled; `PD-044` initial Starter/Growth/Business catalog and Trial terms are resolved and propagated |
+| `PD-054` | `pricing-promotion.md`, existing Catalog/Checkout/Sales/Accounting ownership baseline | Reconciled; first scheduled Product promotional-price semantics are fully specified for TASK-0242 technical design |
 
-The current product-decision register contains **no unresolved or deferred `PD-*` entry for the approved MVP scope**.
+The product-decision register contains **no unresolved or deferred `PD-*` entry for the currently approved scope**. Later features named as explicit exclusions remain new product work rather than implicit continuations.
 
 ## 3. Final follow-up resolutions
 
@@ -109,6 +110,43 @@ Approved 30-day Trial terms:
 
 `PD-044` is no longer a current human-decision gate. Future pricing experiments use new immutable PlanVersions; a materially different commercial strategy requires a new product decision.
 
+### `PD-054` — First scheduled Product promotional-price policy — Resolved
+
+The first Pricing & Promotion slice is intentionally not a generic discount engine.
+
+Approved domain policy:
+
+```text
+Owner/Admin schedule immutable terms
+        ↓
+Upcoming ──time──► Active ──time──► Expired
+    └──────── cancel ─────────────► terminal history
+```
+
+`Upcoming`, `Active`, and `Expired` are temporal interpretations of one accepted schedule; there is no activation/expiry command requirement.
+
+- one Promotion targets one Tenant + Product and all public-storefront shoppers;
+- accepted terms consist of one final promotional VND unit price plus finite `[EffectiveFrom, EffectiveUntil)` instants;
+- first slice has no persisted merchant-editable Draft; accepted schedule terms are immutable;
+- changing terms means cancel the old Promotion when applicable and schedule a new identity;
+- no backdated schedule; ambiguous/nonexistent Tenant-local wall-clock times are rejected rather than guessed;
+- Owner/Admin may schedule/cancel; Staff/Viewer may not mutate Pricing;
+- no stacking/priority; effective intervals for one Tenant + Product cannot overlap, while adjacent intervals are allowed;
+- scheduling requires a currently Published Product and promotional price `>= 0` and strictly below current Catalog base price;
+- Pricing never overrides Catalog sellability;
+- during an otherwise-active schedule, effective price is `min(current Catalog base price, scheduled promotional unit price)`;
+- a later base-price decrease therefore makes the Promotion temporarily non-beneficial rather than blocking Catalog, cancelling the schedule, or raising shopper price;
+- future Promotions are not public before start; while actually applied, public display may show base price, effective promo price, generic promotion indication, and end instant;
+- PD-011 reconfirmation applies to every current effective-price change;
+- Sales stores accepted base/effective price plus applied Promotion provenance and evaluation time so historical correctness never requires mutable Pricing reads;
+- accepted Promotion history is non-destructive;
+- Accounting/refund use accepted effective Sales amounts with no new contra-revenue model;
+- no Pricing-specific plan entitlement is introduced for this slice.
+
+Explicit exclusions remain coupons, percentage/fixed reduction formulas, manual order discounts, Category/cart/order-wide offers, customer/segment pricing, price lists, quantity tiers/Buy-X-Get-Y, variants, flash-sale orchestration, stacking/priority and gross-discount accounting presentation.
+
+`PD-054` closes TASK-0241 product/domain ambiguity. TASK-0242 must translate these semantics into technical contracts, persistence/concurrency design, code integration and LocalStack mapping without reopening them for implementation convenience.
+
 ## 4. Major baseline changes produced by the decision pass
 
 ### Tenant & Merchant Access
@@ -134,6 +172,17 @@ Approved 30-day Trial terms:
 - Product specifications/public fields are explicit;
 - external-source mapping and ImportCandidate lifecycle are explicit.
 
+### Pricing & Promotion
+
+- Pricing now has an explicit first domain slice rather than only a reserved future boundary;
+- first slice is immutable scheduled Product final-price terms, one Product/all storefront shoppers;
+- interval/timezone/cancellation/history behavior is explicit;
+- effective price cannot exceed current Catalog base price and cannot override Catalog sellability;
+- no overlapping schedule, stacking, coupons/manual discounts or generic rule engine is implied;
+- Owner/Admin mutation authority is explicit;
+- Sales provenance, checkout reconfirmation, net Accounting/refund amount and public presentation consequences are explicit;
+- no new Pricing-specific Subscription entitlement is implied.
+
 ### Sales / Inventory / Payments / Procurement / Accounting
 
 - any checkout price change requires shopper reconfirmation;
@@ -147,7 +196,8 @@ Approved 30-day Trial terms:
 - `RefundApproved` authorizes restockable `StockReturned`, linked revenue/COGS compensating entries, and the Payments refund attempt, while `PaymentRefunded` remains verified provider truth;
 - Inventory cannot go negative and adjustments cannot consume Reserved stock;
 - Procurement submitted/receipt evidence is immutable with explicit correction;
-- Accounting uses cash/deposit-at-capture, revenue-at-fulfillment, moving weighted-average valuation, COGS-at-StockIssued, GRNI procurement accounting, explicit journal date semantics, and append-only refund corrections.
+- Accounting uses cash/deposit-at-capture, revenue-at-fulfillment, moving weighted-average valuation, COGS-at-StockIssued, GRNI procurement accounting, explicit journal date semantics, and append-only refund corrections;
+- scheduled promotion accounting/refund uses the Sales-owned accepted effective amount, not current Pricing/Catalog state.
 
 ### Reporting / Ingestion / Notification / Audit
 
@@ -174,47 +224,43 @@ Approved 30-day Trial terms:
 - definitive renewal failure creates `PastDue` with 7-day grace; Unknown does not;
 - Ended preserves authenticated read/history/export/recovery access and data;
 - SaaS billing uses a dedicated simulated provider seam separate from merchant-order Payments;
-- platform-admin Subscription/Billing is read-only support visibility, not override authority.
+- platform-admin Subscription/Billing is read-only support visibility, not override authority;
+- PD-054 adds no new Pricing-specific PlanVersion entitlement or hidden plan-name gate.
 
 ## 5. Downstream planning state
 
 ### Technical Architect reconciliation required
 
-The completed TASK-0092 technical baseline predates the final product-decision propagation and the follow-up resolutions of `PD-004`, `PD-023`, and `PD-044`. Therefore its architecture decisions/contracts must be rechecked against the updated domain meaning before affected implementation tasks become Ready.
+Technical Architecture must preserve the business semantics recorded in the detailed domain documents and explicitly reconcile any implementation contract against them.
 
-This is **not** permission for the Domain Architect to choose:
+For Pricing, TASK-0242 must define without changing PD-054:
 
-- module/deployment boundaries;
-- persistence schema/access mechanisms;
-- sync/async transport;
-- AWS services;
-- API/event wire schemas;
-- payment/refund/billing-provider implementation details;
-- storage/configuration mechanism for PlanVersions or entitlement matrices.
+- Pricing module/dependency boundaries;
+- command/query contracts;
+- persistence/history representation;
+- concurrency-safe non-overlap enforcement;
+- authoritative time and Tenant-local input conversion boundary;
+- public price projection contract;
+- checkout repricing failure behavior;
+- Sales accepted-price provenance contract;
+- observability and LocalStack-compatible resource mapping;
+- ADR only if a genuinely material architecture/topology choice is introduced.
 
-The Technical Architect should preserve the business semantics recorded in the detailed domain documents and explicitly reconcile earlier alternatives now closed by product policy, including:
+TASK-0242 remains independently blocked by TASK-0234 because the Pricing technical design should inspect the post-hardening implemented architecture before selecting concrete module/persistence/integration mechanisms. PD-054 itself is not blocked by that audit.
 
-- platform-only reasoned Tenant suspension/reactivation and controlled read-only access;
-- `MaxActiveMemberships` authority and hard-growth enforcement;
-- approved Trial EntitlementSet;
-- sellable Starter/Growth/Business PlanVersions/prices;
-- scheduled-ingestion entitlement and order-warning semantics;
-- refund approval boundary, exactly-once cross-domain effects, and provider-evidence separation.
+This is **not** permission for the Domain Architect to choose module/deployment boundaries, persistence schema/access mechanisms, sync/async transport, LocalStack resources, API/event wire schemas, or storage/configuration mechanisms.
 
 ### Backlog Planner reconciliation required
 
-After Technical Architecture reconciliation, Backlog Planning should:
+Backlog Planning should:
 
-- remove obsolete product-decision gates for all currently resolved `PD-*` decisions;
-- refine only the first safe dependency frontier;
-- ensure Tenant suspension/admin tasks use platform-only reasoned actions and preserve read-only/non-destructive semantics;
-- ensure Membership tasks use `MaxActiveMemberships`, counting every Active role;
-- ensure plan-selection, Trial, entitlement, usage, upgrade/downgrade, and billing tasks use the approved `PD-044` matrix rather than placeholders;
-- ensure refund tasks include the dedicated approval experience and do not treat `RefundRequested` as an automatic refund;
-- preserve Sales/Inventory/Payments/Accounting ownership and the `RefundApproved` versus `PaymentRefunded` distinction;
-- represent future Tenant deletion/privacy, non-restock refunds, Enterprise/custom pricing, and materially new commercial semantics as new product work rather than current hidden assumptions.
+- treat TASK-0241 as Done once this reconciliation and requirement/task references are updated;
+- remove the Pricing product-design blocker from TASK-0242 while preserving TASK-0234 as its remaining dependency;
+- keep TASK-0243 blocked until TASK-0242 closes material technical-design ambiguity;
+- ensure later Pricing scope beyond PD-054 becomes new explicit product work rather than expanding TASK-0243;
+- preserve all earlier Tenant/Subscription/Refund/Accounting readiness constraints.
 
-The Domain Architect does not mark implementation tasks Ready.
+The Domain Architect does not mark implementation tasks Ready solely because product semantics are resolved.
 
 ## 6. Domain acceptance check
 
@@ -224,12 +270,12 @@ This reconciliation pass satisfies the Domain Architect contract because:
 - authoritative source facts are separated from projections/evidence;
 - aggregates/state dimensions/invariants needed by approved decisions are recorded;
 - cross-domain effects retain owning-context authority;
-- resolved product decisions are no longer left as Builder guesses in the detailed domain baseline;
-- Tenant suspension/read/retention MVP behavior is explicit without inventing destructive privacy lifecycle;
-- refund approval/return/accounting semantics are explicit without conflating provider refund truth;
-- the initial paid Plan catalog and Trial entitlement matrix are explicit without using plan-name authorization;
-- the current register has no unresolved/deferred human product-decision gate for approved MVP scope;
-- downstream Technical Architect and Backlog Planner reconciliation is stated;
-- no application/AWS/persistence decision was introduced.
+- Tenant suspension/read/retention MVP behavior remains explicit without inventing destructive privacy lifecycle;
+- refund approval/return/accounting semantics remain explicit without conflating provider refund truth;
+- the initial paid Plan catalog and Trial entitlement matrix remain explicit without using plan-name authorization;
+- PD-054 closes first-slice Pricing lifecycle, time, price, role, public-display, history, Accounting/refund and plan-availability ambiguity;
+- Catalog remains base-price/sellability authority, Pricing effective-price authority, and Sales immutable accepted-commercial authority;
+- no application/persistence/LocalStack/deployment decision was introduced;
+- downstream TASK-0242 technical-design responsibility is explicit.
 
-**Stop condition: DOMAIN BASELINE EXTENDED AND RECONCILED.**
+**Stop condition: DOMAIN BASELINE EXTENDED AND RECONCILED THROUGH PD-054.**
