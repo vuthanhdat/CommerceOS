@@ -7,6 +7,16 @@ namespace CommerceOS.Inventory.UnitTests;
 public sealed class WarehouseServiceTests
 {
     [Fact]
+    public void ReserveIssueReleaseAndAdjustmentPreserveQuantityInvariants()
+    {
+        var stock = StockItem.Create(new("tenant-a"), new("product"), new("warehouse"), 5);
+        var reserved = StockMath.Apply(stock, StockMovementType.Reserve, 5);
+        Assert.Equal(0, reserved.Available);
+        Assert.Throws<InventoryRuleException>(() => StockMath.Apply(reserved, StockMovementType.Reserve, 1));
+        var issued = StockMath.Apply(reserved, StockMovementType.Issue, 5);
+        Assert.Equal(0, issued.OnHand); Assert.Equal(0, issued.Reserved);
+    }
+    [Fact]
     public async Task ConcurrentFinalSlotCreatesOnlyOneWarehouse()
     {
         var store = new InMemoryStore(); var service = new WarehouseService(store, new Limit(1)); var context = new TrustedInventoryMutationContext(new("tenant-a"), "c");

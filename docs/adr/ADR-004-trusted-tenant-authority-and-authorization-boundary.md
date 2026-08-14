@@ -141,7 +141,7 @@ TrustedPlatformSupportReadContext
 
 ### Public storefront
 
-Public storefront uses a separate `PublicTenantContext`. Once Storefront Tenant addressing is defined, resolving a public Tenant must also verify current Tenant status. `Suspended` returns storefront/checkout unavailable and cannot be bypassed by cached public Product data.
+Public storefront uses a separate `PublicTenantContext`. PD-052 defines a globally unique Tenant-owned `/{storefrontSlug}` binding; resolving it must verify current Tenant status. `Suspended` returns storefront/checkout unavailable and cannot be bypassed by cached public Product data.
 
 ### Subscription entitlement remains separate
 
@@ -195,7 +195,7 @@ Trade-offs:
 - delivery/application composition must classify protected operations as read or mutation;
 - Tenancy exposes two resolved authority contracts instead of one broad result;
 - protected requests continue to incur current Tenancy reads;
-- Storefront public Tenant addressing remains a separate domain contract before final public route/index keys are hardened.
+- Storefront public Tenant route/index keys must implement PD-052's separate Tenant-owned `/{storefrontSlug}` contract.
 
 ## Security and tenant impact
 

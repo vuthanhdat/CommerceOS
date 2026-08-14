@@ -32,3 +32,26 @@ public sealed record StockItem(InventoryTenantId TenantId, InventoryProductId Pr
         return new(tenantId, productId, warehouseId, onHand, reserved, revision);
     }
 }
+
+public enum StockReservationStatus { Active, Released, Issued }
+public enum StockMovementType { Receive, Reserve, Release, Issue, Return, AdjustmentIncrease, AdjustmentDecrease }
+public sealed record StockReservation(string Id, InventoryTenantId TenantId, string OrderId, InventoryProductId ProductId, WarehouseId WarehouseId, long Quantity, StockReservationStatus Status, long Revision);
+public sealed record StockMovement(string Id, InventoryTenantId TenantId, InventoryProductId ProductId, WarehouseId WarehouseId, StockMovementType Type, long Quantity, string SourceIdentity, string CorrelationId, DateTimeOffset OccurredAt);
+public sealed class InventoryRuleException(string code) : InvalidOperationException(code) { public string Code { get; } = code; }
+public static class StockMath
+{
+    public static StockItem Apply(StockItem stock, StockMovementType type, long quantity)
+    {
+        if (quantity <= 0) throw new InventoryRuleException("QUANTITY_INVALID");
+        var next = type switch
+        {
+            StockMovementType.Receive or StockMovementType.Return or StockMovementType.AdjustmentIncrease => stock with { OnHand = stock.OnHand + quantity, Revision = stock.Revision + 1 },
+            StockMovementType.Reserve when stock.Available >= quantity => stock with { Reserved = stock.Reserved + quantity, Revision = stock.Revision + 1 },
+            StockMovementType.Release => stock with { Reserved = stock.Reserved - quantity, Revision = stock.Revision + 1 },
+            StockMovementType.Issue when stock.Reserved >= quantity => stock with { OnHand = stock.OnHand - quantity, Reserved = stock.Reserved - quantity, Revision = stock.Revision + 1 },
+            StockMovementType.AdjustmentDecrease when stock.Available >= quantity => stock with { OnHand = stock.OnHand - quantity, Revision = stock.Revision + 1 },
+            _ => throw new InventoryRuleException(type is StockMovementType.Reserve ? "INSUFFICIENT_AVAILABLE_STOCK" : "ADJUSTMENT_WOULD_CONSUME_RESERVED_STOCK")
+        };
+        return StockItem.Create(next.TenantId, next.ProductId, next.WarehouseId, next.OnHand, next.Reserved, next.Revision);
+    }
+}

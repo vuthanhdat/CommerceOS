@@ -1,6 +1,7 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.DynamoDB;
 using Amazon.CDK.AWS.Logs;
+using Amazon.CDK.AWS.S3;
 using Amazon.CDK.AWS.SQS;
 using Constructs;
 
@@ -62,6 +63,12 @@ public sealed class FoundationStack : Stack
 
         _ = ModuleTable("CatalogTable", "catalog", profile);
         _ = ModuleTable("InventoryTable", "inventory", profile);
+        _ = ModuleTable("FilesMediaTable", "files-media", profile);
+        _ = ModuleTable("ProcurementTable", "procurement", profile);
+        _ = ModuleTable("ProductDataIngestionTable", "product-data-ingestion", profile);
+        _ = ModuleTable("AuditTable", "audit", profile);
+        _ = ModuleTable("MockPaymentProviderTable", "mock-payment-provider", profile);
+        _ = new Bucket(this, "FilesMediaBucket", new BucketProps { BucketName = $"{profile.ResourcePrefix}-files-media", Encryption = BucketEncryption.S3_MANAGED, BlockPublicAccess = BlockPublicAccess.BLOCK_ALL, RemovalPolicy = profile.RemovalPolicy, AutoDeleteObjects = profile.IsEphemeral });
 
         var onboardingDeadLetterQueue = new Queue(
             this,

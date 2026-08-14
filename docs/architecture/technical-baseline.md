@@ -64,7 +64,7 @@ Resolved final inputs include the accepted Tenant Active/Suspended lifecycle, re
 
 Independent domain gaps still block only affected work:
 
-- Storefront Tenant-address ownership/lifecycle/uniqueness;
+- Storefront Tenant-address implementation, using the approved Tenant-owned `/{storefrontSlug}` binding from PD-052;
 - Accounting moving-weighted-average cost-pool scope;
 - Category/Brand historical normalized-name reuse if implementation requires it;
 - refund approval role-to-capability mapping if not supplied during task refinement;

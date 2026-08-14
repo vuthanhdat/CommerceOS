@@ -2,12 +2,13 @@ using System.Globalization;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using CommerceOS.Catalog.Application;
+using CommerceOS.Catalog.Contracts;
 using CommerceOS.Catalog.Domain;
 
 namespace CommerceOS.Catalog.Infrastructure.Persistence;
 
 public sealed record DynamoDbCatalogOptions(string TableName);
-public sealed class DynamoDbCatalogStore(IAmazonDynamoDB client, DynamoDbCatalogOptions options) : ICatalogStore
+public sealed class DynamoDbCatalogStore(IAmazonDynamoDB client, DynamoDbCatalogOptions options) : ICatalogStore, ICatalogReferenceStore, ICatalogImportStore
 {
     public async Task<Product?> GetAsync(TrustedCatalogMutationContext context, ProductId id, CancellationToken ct)
     {
@@ -33,6 +34,22 @@ public sealed class DynamoDbCatalogStore(IAmazonDynamoDB client, DynamoDbCatalog
         try { await client.TransactWriteItemsAsync(new() { TransactItems = writes }, ct); return CatalogOutcome.Applied; }
         catch (TransactionCanceledException) { return CatalogOutcome.RevisionConflict; }
     }
+    public async Task<Category?> GetCategoryAsync(TrustedCatalogMutationContext context, CategoryId id, CancellationToken cancellationToken) => await GetReferenceAsync<Category>(context, "CATEGORY", id.Value, cancellationToken);
+    public async Task<Brand?> GetBrandAsync(TrustedCatalogMutationContext context, BrandId id, CancellationToken cancellationToken) => await GetReferenceAsync<Brand>(context, "BRAND", id.Value, cancellationToken);
+    public Task<CatalogReferenceOutcome> SaveCategoryAsync(TrustedCatalogMutationContext context, Category category, long? expectedRevision, CancellationToken cancellationToken) => SaveReferenceAsync(context, "CATEGORY", category.Id.Value, category.TenantId, category.Name, category.Status, category.Revision, expectedRevision, cancellationToken);
+    public Task<CatalogReferenceOutcome> SaveBrandAsync(TrustedCatalogMutationContext context, Brand brand, long? expectedRevision, CancellationToken cancellationToken) => SaveReferenceAsync(context, "BRAND", brand.Id.Value, brand.TenantId, brand.Name, brand.Status, brand.Revision, expectedRevision, cancellationToken);
+    public async Task<ImportCandidateApplicationResult?> GetImportApplicationAsync(TrustedCatalogMutationContext context, string candidateId, CancellationToken cancellationToken)
+    { var x = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"IMPORT#{E(candidateId)}") }, cancellationToken); return x.Item.Count == 0 ? null : new(Enum.Parse<ImportCandidateApplicationOutcome>(x.Item["Outcome"].S), long.Parse(x.Item["ProductRevision"].N, CultureInfo.InvariantCulture)); }
+    public async Task<ImportCandidateApplicationOutcome> ApplyImportAsync(TrustedCatalogMutationContext context, Product before, Product after, string candidateId, string sourceId, string sourceProductId, CancellationToken cancellationToken)
+    {
+        var sourceKey = $"SOURCEPRODUCT#{E(sourceId)}#{E(sourceProductId)}";
+        try { await client.TransactWriteItemsAsync(new() { TransactItems = [new() { Put = new() { TableName = options.TableName, Item = Item(after), ConditionExpression = "Revision = :revision", ExpressionAttributeValues = new() { [":revision"] = N(before.Revision) } } }, new() { Put = new() { TableName = options.TableName, Item = new() { ["PK"] = S(P(context.TenantId)), ["SK"] = S(sourceKey), ["ProductId"] = S(after.Id.Value) }, ConditionExpression = "attribute_not_exists(PK)" } }, new() { Put = new() { TableName = options.TableName, Item = new() { ["PK"] = S(P(context.TenantId)), ["SK"] = S($"IMPORT#{E(candidateId)}"), ["Outcome"] = S(ImportCandidateApplicationOutcome.Applied.ToString()), ["ProductRevision"] = N(after.Revision) }, ConditionExpression = "attribute_not_exists(PK)" } }] }, cancellationToken); return ImportCandidateApplicationOutcome.Applied; }
+        catch (TransactionCanceledException) { return ImportCandidateApplicationOutcome.Conflict; }
+    }
+    private async Task<T?> GetReferenceAsync<T>(TrustedCatalogMutationContext context, string kind, string id, CancellationToken cancellationToken) where T : class
+    { var x = await client.GetItemAsync(new() { TableName = options.TableName, ConsistentRead = true, Key = Key(context.TenantId, $"{kind}#{E(id)}") }, cancellationToken); if (x.Item.Count == 0) return null; var item = x.Item; object value = kind == "CATEGORY" ? new Category(new(item["Id"].S), new(item["TenantId"].S), item["Name"].S, Enum.Parse<CatalogReferenceStatus>(item["Status"].S), long.Parse(item["Revision"].N, CultureInfo.InvariantCulture)) : new Brand(new(item["Id"].S), new(item["TenantId"].S), item["Name"].S, Enum.Parse<CatalogReferenceStatus>(item["Status"].S), long.Parse(item["Revision"].N, CultureInfo.InvariantCulture)); return (T)value; }
+    private async Task<CatalogReferenceOutcome> SaveReferenceAsync(TrustedCatalogMutationContext context, string kind, string id, CatalogTenantId tenant, string name, CatalogReferenceStatus status, long revision, long? expectedRevision, CancellationToken cancellationToken)
+    { if (tenant != context.TenantId) return CatalogReferenceOutcome.ReferenceInvalid; var item = new Dictionary<string, AttributeValue> { ["PK"] = S(P(tenant)), ["SK"] = S($"{kind}#{E(id)}"), ["Id"] = S(id), ["TenantId"] = S(tenant.Value), ["Name"] = S(name), ["Status"] = S(status.ToString()), ["Revision"] = N(revision) }; try { await client.PutItemAsync(new() { TableName = options.TableName, Item = item, ConditionExpression = expectedRevision is null ? "attribute_not_exists(PK)" : "Revision = :revision", ExpressionAttributeValues = expectedRevision is null ? null : new() { [":revision"] = N(expectedRevision.Value) } }, cancellationToken); return CatalogReferenceOutcome.Applied; } catch (ConditionalCheckFailedException) { return CatalogReferenceOutcome.RevisionConflict; } }
     private void AddClaim(List<TransactWriteItem> writes, CatalogTenantId tenant, string kind, string? oldValue, string? newValue, string productId)
     {
         if (string.IsNullOrWhiteSpace(newValue) || string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase)) return;

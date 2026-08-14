@@ -23,7 +23,7 @@ Contracts are owned by the module that accepts a command, answers a query, or st
 | Payments capture/refund/reconcile contracts | Payments | order/refund processes | provider interpretation/ambiguity truth |
 | Accounting integration consumers | Accounting | fact delivery | immutable balanced own effects only |
 | integration facts | producing module | named async consumers | producer-owned/versioned under ADR-006/011 |
-| Storefront Tenant addressing | Storefront/domain contract | public delivery | not final until Tenant-address semantics exist |
+| Storefront Tenant addressing | Tenant-owned `/{storefrontSlug}` contract | public delivery | PD-052; globally unique normalized binding, permanent retirement/no reuse |
 | HTTP DTO/problems/pagination | API delivery | clients | transport only, never Domain entities |
 
 No consumer imports another module's Domain/Infrastructure or persistence representation.
@@ -306,13 +306,13 @@ Current approved constraints remain:
 - media references only same-Tenant FilesMedia assets;
 - ImportCandidate application is explicit Catalog command.
 
-Public Product lookup remains blocked only on unresolved Storefront Tenant-address semantics, not on Product slug policy.
+Public Product lookup may implement the approved Storefront Tenant-address semantics; Product slug policy remains independently Tenant-scoped.
 
 ## 11. Public storefront
 
 Public request uses `PublicTenantContext`, never merchant context.
 
-Once Storefront Tenant addressing is defined, public Tenant resolution must establish:
+Storefront Tenant addressing is Tenant-owned `/{storefrontSlug}` binding (PD-052). Public Tenant resolution must establish:
 
 - target Tenant identity from approved public address binding;
 - current Tenant status;

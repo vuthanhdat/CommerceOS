@@ -106,6 +106,11 @@ public sealed class FoundationStackTests
     [Theory]
     [InlineData("catalog")]
     [InlineData("inventory")]
+    [InlineData("files-media")]
+    [InlineData("procurement")]
+    [InlineData("product-data-ingestion")]
+    [InlineData("audit")]
+    [InlineData("mock-payment-provider")]
     public void FoundationStackCreatesEachReadyModuleOwnedTable(string moduleName)
     {
         var app = new App();

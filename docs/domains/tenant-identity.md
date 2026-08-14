@@ -37,6 +37,10 @@ The initial identity must be authenticated with a verified email. No legal/tax i
 
 CommerceOS MVP is VND-only (`PD-002`). Money still carries an explicit currency; the Business Profile does not choose another functional currency in MVP.
 
+### Storefront public address (`PD-052`)
+
+An eligible Tenant owns one required `storefrontSlug` for public storefront resolution. The normalized slug is globally unique and resolves only at `/{storefrontSlug}`. A change retires the old binding permanently; no redirect, reuse, or custom-domain behavior exists in MVP. The public binding is routing data only, never merchant authorization; `Suspended` remains unavailable at both current and cached addresses.
+
 ### Tenant lifecycle (`PD-004`)
 
 MVP has exactly two Tenant states:

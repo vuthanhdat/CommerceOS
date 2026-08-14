@@ -91,7 +91,7 @@ This index normalizes requirements from the existing `docs/` baseline. It does n
 
 ## Explicit open implementation questions
 
-- OQ-001 — Storefront Tenant public-address owner/lifecycle/uniqueness is not yet resolved.
+- OQ-001 — Resolved by PD-052: Tenant-owned globally unique `/{storefrontSlug}` with permanent retirement/no reuse and no MVP custom domains or redirects.
 - OQ-002 — Accounting moving-weighted-average authoritative cost-pool dimension must be resolved before valuation persistence keys are finalized.
 - OQ-003 — Exact refund-approval role/capability mapping must be approved before refund approval API/UI is Ready.
 - OQ-004 — Category/Brand historical normalized-name reuse semantics are only needed if implementation requires reuse after rename/retirement.

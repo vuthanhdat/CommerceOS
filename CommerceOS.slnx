@@ -16,6 +16,23 @@
     <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Domain/CommerceOS.Inventory.Domain.csproj" />
     <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Application/CommerceOS.Inventory.Application.csproj" />
     <Project Path="src/Modules/Inventory/CommerceOS.Inventory.Infrastructure/CommerceOS.Inventory.Infrastructure.csproj" />
+    <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Domain/CommerceOS.FilesMedia.Domain.csproj" />
+    <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Contracts/CommerceOS.FilesMedia.Contracts.csproj" />
+    <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Application/CommerceOS.FilesMedia.Application.csproj" />
+    <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Infrastructure/CommerceOS.FilesMedia.Infrastructure.csproj" />
+    <Project Path="src/Modules/Catalog/CommerceOS.Catalog.Contracts/CommerceOS.Catalog.Contracts.csproj" />
+    <Project Path="src/Modules/Procurement/CommerceOS.Procurement.Domain/CommerceOS.Procurement.Domain.csproj" />
+    <Project Path="src/Modules/Procurement/CommerceOS.Procurement.Application/CommerceOS.Procurement.Application.csproj" />
+    <Project Path="src/Modules/Procurement/CommerceOS.Procurement.Infrastructure/CommerceOS.Procurement.Infrastructure.csproj" />
+    <Project Path="src/Modules/ProductDataIngestion/CommerceOS.ProductDataIngestion.Domain/CommerceOS.ProductDataIngestion.Domain.csproj" />
+    <Project Path="src/Modules/ProductDataIngestion/CommerceOS.ProductDataIngestion.Application/CommerceOS.ProductDataIngestion.Application.csproj" />
+    <Project Path="src/Modules/ProductDataIngestion/CommerceOS.ProductDataIngestion.Infrastructure/CommerceOS.ProductDataIngestion.Infrastructure.csproj" />
+    <Project Path="src/Modules/MockPaymentProvider/CommerceOS.MockPaymentProvider.Domain/CommerceOS.MockPaymentProvider.Domain.csproj" />
+    <Project Path="src/Modules/MockPaymentProvider/CommerceOS.MockPaymentProvider.Application/CommerceOS.MockPaymentProvider.Application.csproj" />
+    <Project Path="src/Modules/MockPaymentProvider/CommerceOS.MockPaymentProvider.Infrastructure/CommerceOS.MockPaymentProvider.Infrastructure.csproj" />
+    <Project Path="src/Modules/Audit/CommerceOS.Audit.Domain/CommerceOS.Audit.Domain.csproj" />
+    <Project Path="src/Modules/Audit/CommerceOS.Audit.Application/CommerceOS.Audit.Application.csproj" />
+    <Project Path="src/Modules/Audit/CommerceOS.Audit.Infrastructure/CommerceOS.Audit.Infrastructure.csproj" />
     <Project Path="src/CommerceOS.Api/CommerceOS.Api.csproj" />
   </Folder>
   <Folder Name="/infra/">
@@ -32,6 +49,10 @@
     <Project Path="tests/CommerceOS.SubscriptionBilling.UnitTests/CommerceOS.SubscriptionBilling.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.Catalog.UnitTests/CommerceOS.Catalog.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.Inventory.UnitTests/CommerceOS.Inventory.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Procurement.UnitTests/CommerceOS.Procurement.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.MockPaymentProvider.UnitTests/CommerceOS.MockPaymentProvider.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.ProductDataIngestion.UnitTests/CommerceOS.ProductDataIngestion.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Audit.UnitTests/CommerceOS.Audit.UnitTests.csproj" />
   </Folder>
 </Solution>
 

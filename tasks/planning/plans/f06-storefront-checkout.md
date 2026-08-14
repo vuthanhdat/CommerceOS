@@ -7,7 +7,7 @@ Expose eligible Tenant Products publicly and turn an untrusted cart into one aut
 REQ-STO-001..002, REQ-CHK-001..002, REQ-SAL-001.
 
 ## Blocking design gap
-OQ-001: Storefront Tenant public-address owner/lifecycle/uniqueness must be resolved before public routing is implemented.
+OQ-001 resolved by PD-052: public routing uses the Tenant-owned globally unique `/{storefrontSlug}` binding; old values are permanently retired and custom domains/redirects remain out of scope.
 
 ## Scope
 PublicTenantContext; current Tenant status check; product list/detail/filter/search; transient cart; checkout revalidation; strict repricing/reconfirmation; guest contact snapshot; idempotent Order placement handoff.

@@ -6,6 +6,14 @@ namespace CommerceOS.Catalog.UnitTests;
 public sealed class ProductServiceTests
 {
     [Fact]
+    public void SpecificationsAreUniqueByNormalizedNameAndKeepDisplayOrder()
+    {
+        var product = Product.Draft(new("product"), new("tenant"), "Tea", null, null);
+        var updated = product.SetSpecifications([new("Size", "Large", null, 2), new("Color", "Green", null, 1)], 1);
+        Assert.Equal(["Color", "Size"], updated.Specifications.Select(x => x.Name));
+        Assert.Throws<ProductRuleException>(() => product.SetSpecifications([new("Size", "L", null, 1), new(" size ", "M", null, 2)], 1));
+    }
+    [Fact]
     public async Task DraftCanOmitSkuButPublishingRequiresSkuAndVndMoney()
     {
         var store = new InMemoryStore(); var service = new ProductService(store); var context = Context(); var product = Product.Draft(new("product-1"), context.TenantId, "Tea", null, null);

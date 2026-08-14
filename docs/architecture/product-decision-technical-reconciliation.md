@@ -142,7 +142,7 @@ This split prevents accidental reuse of a Suspended read context for mutation.
 
 ### Public path
 
-`PublicTenantContext` remains separate. Once Tenant storefront addressing is resolved, public Tenant resolution must check current Tenant status; Suspended denies storefront/checkout.
+`PublicTenantContext` remains separate. PD-052 resolves public Tenant addressing as a globally unique Tenant-owned `/{storefrontSlug}` binding; public Tenant resolution must check current Tenant status, and Suspended denies storefront/checkout.
 
 ## 5. Onboarding remains ADR-009
 
@@ -441,7 +441,7 @@ Current accepted architecture decisions include:
 
 The final three PDs are no longer stop conditions. The following independent gaps remain and must not be guessed by Builders:
 
-1. Storefront Tenant-address ownership/lifecycle/uniqueness. Public Tenant route/index/cache-key contracts are not final.
+1. Public Tenant route/index/cache-key implementation for the approved `/{storefrontSlug}` binding; owner/lifecycle/uniqueness are finalized by PD-052.
 2. Accounting moving-weighted-average cost-pool scope (`Tenant+Product`, `Tenant+Product+Warehouse`, or other domain-approved dimension). Persistence keying remains blocked until clarified.
 3. Category/Brand historical normalized-name reuse after rename/retirement if a task requires it.
 4. Refund approval role-to-capability mapping if a refund-approval task reaches refinement without a domain-authorized mapping.

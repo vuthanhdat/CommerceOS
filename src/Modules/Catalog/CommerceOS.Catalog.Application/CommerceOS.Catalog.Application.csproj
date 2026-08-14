@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.Catalog.Domain/CommerceOS.Catalog.Domain.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.Catalog.Domain/CommerceOS.Catalog.Domain.csproj" /><ProjectReference Include="../CommerceOS.Catalog.Contracts/CommerceOS.Catalog.Contracts.csproj" /><ProjectReference Include="../../FilesMedia/CommerceOS.FilesMedia.Contracts/CommerceOS.FilesMedia.Contracts.csproj" /></ItemGroup></Project>

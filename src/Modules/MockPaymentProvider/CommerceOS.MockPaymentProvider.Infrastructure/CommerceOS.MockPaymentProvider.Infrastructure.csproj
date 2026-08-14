@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.MockPaymentProvider.Application/CommerceOS.MockPaymentProvider.Application.csproj" /></ItemGroup><ItemGroup><PackageReference Include="AWSSDK.DynamoDBv2" /></ItemGroup></Project>

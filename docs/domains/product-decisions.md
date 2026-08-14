@@ -132,6 +132,11 @@ Unless an entry says otherwise, resolved decisions below still require **Domain 
 - **Decision gate:** Resolved on 2026-08-10; affected tasks still require reconciliation before Ready.
 - **Affected tasks:** TASK-0012, TASK-0020–0022, SEO/custom-domain work.
 - **Approved policy constraint:** ProductId remains immutable authority; slug is an address/presentation concern and never cross-tenant authority.
+
+### PD-052 — Storefront Tenant public address
+
+- **Decision:** Each Tenant eligible to expose a storefront has one required Tenant-owned `storefrontSlug`. Its normalized value is globally unique and the public MVP route is `/{storefrontSlug}`. A merchant may change the current slug, but the previous binding is permanently retired and cannot be reused. Historical redirects and custom domains are out of scope. A Suspended Tenant remains unavailable through any current or cached public address.
+- **Rationale:** A global route binding resolves a public request before Product's Tenant-scoped slug is considered, while permanent retirement avoids ambiguous historical addresses without adding redirect infrastructure.
 - **Approved by:** CommerceOS human Product Owner
 - **Approved on:** 2026-08-10
 - **Affected baseline documents updated:** Pending Domain Architect reconciliation.

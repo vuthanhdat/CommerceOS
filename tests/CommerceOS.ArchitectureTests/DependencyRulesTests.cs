@@ -163,13 +163,14 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
-    public void SubscriptionBillingCatalogContractIsRegistered()
+    public void ProducerOwnedContractsAreRegistered()
     {
         var root = FindRepositoryRoot();
         var contractsProjects = FindContractsProjects(root);
 
-        var contract = Assert.Single(contractsProjects);
-        Assert.EndsWith("CommerceOS.SubscriptionBilling.Contracts.csproj", contract, StringComparison.Ordinal);
+        Assert.Contains(contractsProjects, contract => contract.EndsWith("CommerceOS.SubscriptionBilling.Contracts.csproj", StringComparison.Ordinal));
+        Assert.Contains(contractsProjects, contract => contract.EndsWith("CommerceOS.Catalog.Contracts.csproj", StringComparison.Ordinal));
+        Assert.Contains(contractsProjects, contract => contract.EndsWith("CommerceOS.FilesMedia.Contracts.csproj", StringComparison.Ordinal));
     }
 
     [Fact]
