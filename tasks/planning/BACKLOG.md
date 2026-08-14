@@ -76,14 +76,34 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0241 Resolve first Pricing/Promotion product and domain semantics (Done) | F15 | P3 | REQ-PRI-001 | N/A | Completed 2026-08-14 |
 | TASK-0242 Design Pricing authority contracts, persistence and checkout integration (Done) | F15 | P3 | REQ-PRI-001 | TASK-0241, TASK-0234 | Completed 2026-08-14 |
 | TASK-0243 Implement scheduled Product promotional-price slice (Done) | F15 | P3 | REQ-PRI-001 | TASK-0242, TASK-0131, TASK-0153, TASK-0154, TASK-0195 | Completed 2026-08-14 |
+| TASK-0244 Establish shared UI foundation and delivery conventions | F16 | P0 | REQ-HARD-002, REQ-SEC-001, REQ-OBS-001 | TASK-0234 | **Ready** |
+| TASK-0245 Implement authenticated merchant session and current-Tenant delivery boundary | F16 | P0 | REQ-SEC-001..002, REQ-TEN-002..003 | TASK-0244, TASK-0111, TASK-0112 | Blocked — TASK-0244 |
+| TASK-0246 Expose public Storefront read, Pricing and checkout HTTP delivery | F16 | P0 | REQ-STO-001..002, REQ-CAT-005, REQ-CHK-002, REQ-SAL-001, REQ-PRI-001 | TASK-0151, TASK-0153, TASK-0154, TASK-0161, TASK-0243 | **Ready** |
+| TASK-0247 Build Storefront browse, cart, checkout and confirmation UI | F16 | P0 | REQ-STO-002, REQ-CHK-001..002, REQ-SAL-001, REQ-PRI-001 | TASK-0244, TASK-0246 | Blocked — TASK-0244, TASK-0246 |
+| TASK-0248 Add merchant Catalog read models and HTTP delivery | F16 | P0 | REQ-CAT-001..005, REQ-MED-001, REQ-SEC-001..002 | TASK-0245, TASK-0131, TASK-0132, TASK-0133 | Blocked — TASK-0245 |
+| TASK-0249 Build Catalog, Product and reference Backoffice UI | F16 | P0 | REQ-CAT-001..005, REQ-MED-001 | TASK-0244, TASK-0245, TASK-0248 | Blocked |
+| TASK-0250 Complete Product Data Ingestion delivery gaps and build Product Import UI | F16 | P1 | REQ-PDI-001..007, REQ-CAT-006 | TASK-0244, TASK-0245, TASK-0143, TASK-0144 | Blocked — TASK-0244, TASK-0245 |
+| TASK-0251 Add Sales order/refund read models and HTTP delivery | F16 | P0 | REQ-SAL-001..003, REQ-REF-001..004 | TASK-0245, TASK-0160, TASK-0166, TASK-0214 | Blocked — TASK-0245 |
+| TASK-0252 Build Orders, Order Detail and Refunds Backoffice UI | F16 | P0 | REQ-SAL-001..003, REQ-REF-001..004 | TASK-0244, TASK-0245, TASK-0251 | Blocked |
+| TASK-0253 Add Inventory read models, adjustment command and HTTP delivery | F16 | P0 | REQ-INV-001..003, REQ-SUB-003 | TASK-0245, TASK-0161, TASK-0162 | Blocked — TASK-0245 |
+| TASK-0254 Build Stock, Warehouse and Movement Backoffice UI | F16 | P0 | REQ-INV-001..003, REQ-SUB-003 | TASK-0244, TASK-0245, TASK-0253 | Blocked |
+| TASK-0255 Complete Procurement application/query and HTTP delivery for Backoffice | F16 | P1 | REQ-PROC-001..003 | TASK-0245, TASK-0180, TASK-0181, TASK-0183 | Blocked — TASK-0245 |
+| TASK-0256 Build Supplier, Purchase Order, Receipt and Supplier Invoice Backoffice UI | F16 | P1 | REQ-PROC-001..003 | TASK-0244, TASK-0245, TASK-0255 | Blocked |
+| TASK-0257 Expose Accounting and Reporting read models through HTTP | F16 | P1 | REQ-ACC-001..005, REQ-REP-001..002 | TASK-0245, TASK-0195, TASK-0201, TASK-0202 | Blocked — TASK-0245 |
+| TASK-0258 Build Dashboard, Accounting and Reporting Backoffice UI | F16 | P1 | REQ-ACC-001..005, REQ-REP-001..002 | TASK-0244, TASK-0245, TASK-0257 | Blocked |
+| TASK-0259 Expose Customer and Pricing merchant HTTP/read models | F16 | P2 | REQ-CRM-001, REQ-PRI-001 | TASK-0245, TASK-0240, TASK-0243 | Blocked — TASK-0245 |
+| TASK-0260 Build Customer and Promotion Backoffice UI | F16 | P2 | REQ-CRM-001, REQ-PRI-001 | TASK-0244, TASK-0245, TASK-0259 | Blocked |
+| TASK-0261 Expose merchant Settings, Team, Subscription, Notification and Audit HTTP delivery | F16 | P1 | REQ-TEN-002..005, REQ-SUB-001..008, REQ-NOT-001, REQ-AUD-001 | TASK-0245, TASK-0112, TASK-0124, TASK-0221, TASK-0222 | Blocked — TASK-0245 |
+| TASK-0262 Build Settings, Team, Subscription, Notification and Audit Backoffice UI | F16 | P1 | REQ-TEN-002..005, REQ-SUB-001..008, REQ-NOT-001, REQ-AUD-001 | TASK-0244, TASK-0245, TASK-0261 | Blocked |
+| TASK-0263 Build Platform Admin support API and UI | F16 | P2 | REQ-SEC-003, REQ-TEN-005, REQ-AUD-001, REQ-OBS-001 | TASK-0244, TASK-0114, TASK-0221, TASK-0231 | Blocked — TASK-0244 |
+| TASK-0264 Run cross-app UI E2E, accessibility, responsive and authorization hardening | F16 | P1 | REQ-SEC-001..003, REQ-HARD-002..003, REQ-OBS-001 | TASK-0247, TASK-0249, TASK-0250, TASK-0252, TASK-0254, TASK-0256, TASK-0258, TASK-0260, TASK-0262, TASK-0263 | Blocked — F16 screen implementations |
 
 ## Ready frontier
 
-- `TASK-0125`, `TASK-0141`, `TASK-0172`, `TASK-0182`, `TASK-0183`, and `TASK-0221` are complete.
-- `TASK-0142`, `TASK-0143`, and `TASK-0144` are complete. The PDI source policy must remain current at operation time.
-- `TASK-0190` is complete: Accounting cost pools are `Tenant + Product`; Warehouse is not a valuation dimension.
-- `TASK-0191` through `TASK-0202` are complete. Accounting and Reporting baselines are now implemented through their current planned slices.
-- `TASK-0211` and `TASK-0212` are complete.
-- `TASK-0241` is complete: PD-054 and `docs/domains/pricing-promotion.md` close the first-slice Pricing product/domain ambiguity.
-- `TASK-0242` and `TASK-0243` are complete. The first Pricing slice is implemented with a dedicated module/table, authoritative storefront checkout decision and immutable Sales pricing provenance.
-- Other remaining tasks retain the readiness recorded in their task rows; completing the Pricing design gate does not reclassify unrelated work.
+- Core capability backlog through `TASK-0243` is complete at the currently planned domain/application/infrastructure slices.
+- F16 is now the active delivery feature. Its detailed screen/API matrix is `tasks/planning/plans/f16-ui-delivery-api-surfaces.md`.
+- `TASK-0244` is Ready: establish shared Storefront/Backoffice frontend routing, API/error/state and test conventions.
+- `TASK-0246` is Ready in parallel: expose public Storefront/product/Pricing/checkout HTTP delivery from already-completed backend capabilities.
+- `TASK-0245` starts after TASK-0244 and becomes the security gate for Merchant Backoffice feature delivery.
+- `TASK-0247` starts after TASK-0244 + TASK-0246 and produces the first complete shopper vertical slice.
+- Backoffice domain API/screens remain Blocked until their listed merchant-context/API dependencies are complete; do not mock a trusted `tenantId` to bypass TASK-0245.
