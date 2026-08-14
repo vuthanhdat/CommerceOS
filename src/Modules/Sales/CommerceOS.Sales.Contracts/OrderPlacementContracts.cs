@@ -6,3 +6,7 @@ public sealed record PlaceAcceptedOrder(string TrustedTenantId, string Idempoten
 public enum OrderPlacementOutcome { Accepted, Replayed, Conflict, Invalid }
 public sealed record OrderPlacementResult(OrderPlacementOutcome Outcome, string? OrderId, string? Status);
 public interface ISalesOrderPlacement { Task<OrderPlacementResult> PlaceAsync(PlaceAcceptedOrder command, CancellationToken cancellationToken); }
+public sealed record CancelSalesOrder(string TrustedTenantId, string OrderId, string SourceIdentity, long ExpectedRevision, string CorrelationId);
+public enum SalesProgressOutcome { Applied, AlreadyApplied, Conflict, NotFound }
+public interface ISalesOrderCancellation { Task<SalesProgressOutcome> CancelAsync(CancelSalesOrder command, CancellationToken cancellationToken); }
+public interface ISalesOrderWorkflowProgress { Task<SalesProgressOutcome> ConfirmAsync(string trustedTenantId, string orderId, string sourceIdentity, long expectedRevision, string correlationId, CancellationToken cancellationToken); Task<SalesProgressOutcome> AllocateAsync(string trustedTenantId, string orderId, string sourceIdentity, long expectedRevision, string correlationId, CancellationToken cancellationToken); }

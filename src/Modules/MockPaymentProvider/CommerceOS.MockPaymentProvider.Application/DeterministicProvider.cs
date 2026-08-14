@@ -1,4 +1,5 @@
 using CommerceOS.MockPaymentProvider.Domain;
+using CommerceOS.MockPaymentProvider.Contracts;
 using System.Security.Cryptography;
 using System.Text;
 namespace CommerceOS.MockPaymentProvider.Application;
@@ -12,8 +13,17 @@ public interface IProviderOperationStore
     Task<ProviderPaymentIntent?> GetIntentAsync(string intentId, CancellationToken ct);
     Task<bool> PutAsync(ProviderOperation operation, CancellationToken ct);
 }
-public sealed class DeterministicProvider(IProviderOperationStore store)
+public sealed class DeterministicProvider(IProviderOperationStore store, string signingSecret = "commerceos-test-webhook-secret") : IMerchantPaymentProvider
 {
+    public async Task<ProviderCaptureResponse> CaptureAsync(ProviderCaptureRequest request, CancellationToken cancellationToken)
+    {
+        var scenario = Enum.TryParse<ProviderScenario>(request.Scenario, true, out var parsed) ? parsed : ProviderScenario.Success;
+        var result = await CaptureAsync(request.IdempotencyKey, $"{request.MerchantReference}|{request.AmountVnd}", request.MerchantReference, request.AmountVnd, scenario, cancellationToken);
+        return new(result.Outcome switch { ProviderOutcome.Captured => ProviderCallOutcome.Captured, ProviderOutcome.Declined => ProviderCallOutcome.Declined, ProviderOutcome.Pending => ProviderCallOutcome.Pending, ProviderOutcome.TimedOut => ProviderCallOutcome.TimedOut, ProviderOutcome.IdempotencyConflict => ProviderCallOutcome.IdempotencyConflict, _ => ProviderCallOutcome.TransientFailure }, result.Intent is null ? null : Evidence(result.Intent));
+    }
+    async Task<ProviderOperationEvidence?> IMerchantPaymentProvider.QueryAsync(string providerOperationId, CancellationToken cancellationToken)
+    { var intent = await QueryAsync(providerOperationId, cancellationToken); return intent is null ? null : Evidence(intent); }
+    bool IMerchantPaymentProvider.VerifyWebhook(SignedProviderWebhook webhook) => VerifyWebhook(new ProviderWebhook(webhook.DeliveryId, webhook.ProviderOperationId, ToDomain(webhook.Status), webhook.Sequence, webhook.Signature), signingSecret);
     public async Task<ProviderResult> CaptureAsync(string idempotencyKey, string fingerprint, string merchantReference, long amountVnd, ProviderScenario scenario, CancellationToken ct)
     {
         if (amountVnd <= 0 || string.IsNullOrWhiteSpace(idempotencyKey) || string.IsNullOrWhiteSpace(fingerprint)) return new(ProviderOutcome.TransientFailure, null, false, 0);
@@ -39,4 +49,6 @@ public sealed class DeterministicProvider(IProviderOperationStore store)
     private static string Sign(string intentId, ProviderPaymentStatus status, int sequence, string secret) => Convert.ToHexStringLower(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{intentId}|{status}|{sequence}")));
     private static bool FixedTimeEquals(string left, string right) => CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(left), Encoding.UTF8.GetBytes(right));
     private static ProviderResult ResultFor(ProviderPaymentIntent intent, bool timeout) => timeout ? new(ProviderOutcome.TimedOut, intent, intent.Status is ProviderPaymentStatus.Captured, intent.Scenario is ProviderScenario.DuplicateWebhook ? 2 : 1) : intent.Status switch { ProviderPaymentStatus.Captured => new(ProviderOutcome.Captured, intent, true, intent.Scenario is ProviderScenario.DuplicateWebhook ? 2 : 1), ProviderPaymentStatus.Declined => new(ProviderOutcome.Declined, intent, true, 1), _ => new(ProviderOutcome.Pending, intent, false, 0) };
+    private static ProviderOperationEvidence Evidence(ProviderPaymentIntent intent) => new(intent.Id, intent.MerchantReference, intent.AmountVnd, intent.Status switch { ProviderPaymentStatus.Captured => ProviderEvidenceStatus.Captured, ProviderPaymentStatus.Declined => ProviderEvidenceStatus.Declined, ProviderPaymentStatus.Created => ProviderEvidenceStatus.NoCommit, _ => ProviderEvidenceStatus.Pending });
+    private static ProviderPaymentStatus ToDomain(ProviderEvidenceStatus status) => status switch { ProviderEvidenceStatus.Captured => ProviderPaymentStatus.Captured, ProviderEvidenceStatus.Declined => ProviderPaymentStatus.Declined, ProviderEvidenceStatus.NoCommit => ProviderPaymentStatus.Created, _ => ProviderPaymentStatus.Pending };
 }

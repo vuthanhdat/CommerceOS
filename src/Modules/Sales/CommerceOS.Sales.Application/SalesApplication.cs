@@ -15,7 +15,7 @@ public interface ISalesOrderStore
     Task<SalesStoreOutcome> SaveAsync(TrustedSalesContext context, SalesOrder before, SalesOrder after, CancellationToken cancellationToken);
     Task<SalesOrderPage> ListAsync(TrustedSalesContext context, string? cursor, int pageSize, CancellationToken cancellationToken);
 }
-public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlacement
+public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlacement, ISalesOrderCancellation, ISalesOrderWorkflowProgress
 {
     public async Task<OrderPlacementResult> PlaceAsync(PlaceAcceptedOrder command, CancellationToken cancellationToken)
     {
@@ -33,6 +33,11 @@ public sealed class SalesOrderService(ISalesOrderStore store) : ISalesOrderPlace
     public async Task<SalesStoreOutcome> ApplyTransitionAsync(TrustedSalesContext context, SalesOrderId orderId, SalesOrderStatus target, string sourceIdentity, long expectedRevision, CancellationToken ct)
     { var before = await store.GetAsync(context, orderId, ct); if (before is null) return SalesStoreOutcome.Conflict; try { return await store.SaveAsync(context, before, before.Apply(target, sourceIdentity, expectedRevision), ct); } catch (SalesRuleException) { return SalesStoreOutcome.Conflict; } }
     public Task<SalesOrderPage> ListAsync(TrustedSalesContext context, string? cursor, int pageSize, CancellationToken ct) => store.ListAsync(context, cursor, Math.Clamp(pageSize, 1, 50), ct);
+    public Task<SalesProgressOutcome> CancelAsync(CancelSalesOrder command, CancellationToken cancellationToken) => TransitionAsync(command.TrustedTenantId, command.OrderId, SalesOrderStatus.Cancelled, command.SourceIdentity, command.ExpectedRevision, command.CorrelationId, cancellationToken);
+    public Task<SalesProgressOutcome> ConfirmAsync(string trustedTenantId, string orderId, string sourceIdentity, long expectedRevision, string correlationId, CancellationToken cancellationToken) => TransitionAsync(trustedTenantId, orderId, SalesOrderStatus.Confirmed, sourceIdentity, expectedRevision, correlationId, cancellationToken);
+    public Task<SalesProgressOutcome> AllocateAsync(string trustedTenantId, string orderId, string sourceIdentity, long expectedRevision, string correlationId, CancellationToken cancellationToken) => TransitionAsync(trustedTenantId, orderId, SalesOrderStatus.Allocated, sourceIdentity, expectedRevision, correlationId, cancellationToken);
+    private async Task<SalesProgressOutcome> TransitionAsync(string tenant, string order, SalesOrderStatus target, string source, long revision, string correlation, CancellationToken ct)
+    { var result = await ApplyTransitionAsync(new(new(tenant), correlation), new(order), target, source, revision, ct); return result is SalesStoreOutcome.Applied ? SalesProgressOutcome.Applied : SalesProgressOutcome.Conflict; }
     private static string Hash(PlaceAcceptedOrder command) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{command.TrustedTenantId}|{string.Join(';', command.Lines.Select(x => $"{x.ProductId}:{x.Quantity}:{x.UnitPriceVnd}"))}|{command.TotalVnd}|{command.Guest.Name}|{command.Guest.Email}|{command.Guest.Phone}|{command.Guest.Address}")));
     private static string StableToken(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant()[..24];
 }

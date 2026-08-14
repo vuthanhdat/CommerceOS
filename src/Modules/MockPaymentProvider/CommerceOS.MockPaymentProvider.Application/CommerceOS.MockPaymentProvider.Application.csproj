@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.MockPaymentProvider.Domain/CommerceOS.MockPaymentProvider.Domain.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../CommerceOS.MockPaymentProvider.Domain/CommerceOS.MockPaymentProvider.Domain.csproj" /><ProjectReference Include="../CommerceOS.MockPaymentProvider.Contracts/CommerceOS.MockPaymentProvider.Contracts.csproj" /></ItemGroup></Project>

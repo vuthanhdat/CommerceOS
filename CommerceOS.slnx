@@ -24,6 +24,13 @@
     <Project Path="src/Modules/Sales/CommerceOS.Sales.Contracts/CommerceOS.Sales.Contracts.csproj" />
     <Project Path="src/Modules/Sales/CommerceOS.Sales.Application/CommerceOS.Sales.Application.csproj" />
     <Project Path="src/Modules/Sales/CommerceOS.Sales.Infrastructure/CommerceOS.Sales.Infrastructure.csproj" />
+    <Project Path="src/Modules/MockPaymentProvider/CommerceOS.MockPaymentProvider.Contracts/CommerceOS.MockPaymentProvider.Contracts.csproj" />
+    <Project Path="src/Modules/Payments/CommerceOS.Payments.Domain/CommerceOS.Payments.Domain.csproj" />
+    <Project Path="src/Modules/Payments/CommerceOS.Payments.Contracts/CommerceOS.Payments.Contracts.csproj" />
+    <Project Path="src/Modules/Payments/CommerceOS.Payments.Application/CommerceOS.Payments.Application.csproj" />
+    <Project Path="src/Modules/Payments/CommerceOS.Payments.Infrastructure/CommerceOS.Payments.Infrastructure.csproj" />
+    <Project Path="src/Modules/OrderOrchestration/CommerceOS.OrderOrchestration.Domain/CommerceOS.OrderOrchestration.Domain.csproj" />
+    <Project Path="src/Modules/OrderOrchestration/CommerceOS.OrderOrchestration.Application/CommerceOS.OrderOrchestration.Application.csproj" />
     <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Domain/CommerceOS.FilesMedia.Domain.csproj" />
     <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Contracts/CommerceOS.FilesMedia.Contracts.csproj" />
     <Project Path="src/Modules/FilesMedia/CommerceOS.FilesMedia.Application/CommerceOS.FilesMedia.Application.csproj" />
@@ -63,6 +70,8 @@
     <Project Path="tests/CommerceOS.Audit.UnitTests/CommerceOS.Audit.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.Sales.UnitTests/CommerceOS.Sales.UnitTests.csproj" />
     <Project Path="tests/CommerceOS.Storefront.UnitTests/CommerceOS.Storefront.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.Payments.UnitTests/CommerceOS.Payments.UnitTests.csproj" />
+    <Project Path="tests/CommerceOS.OrderOrchestration.UnitTests/CommerceOS.OrderOrchestration.UnitTests.csproj" />
   </Folder>
 </Solution>
 

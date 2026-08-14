@@ -39,12 +39,12 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0160 Establish Sales module/order lifecycle persistence (Done) | F07 | P0 | REQ-SAL-001..003 | TASK-0154 | Completed 2026-08-14 |
 | TASK-0161 Establish Inventory Warehouse/StockItem persistence and limits (Done) | F07 | P0 | REQ-INV-001..002 | TASK-0131, TASK-0121 | Completed 2026-08-14 |
 | TASK-0162 Implement reserve/release/issue/receive/adjust stock operations (Done) | F07 | P0 | REQ-INV-001, REQ-INV-003 | TASK-0161 | Completed 2026-08-14 |
-| TASK-0163 Establish Payments obligation/attempt persistence and contracts | F07 | P0 | REQ-PAY-001, REQ-PAY-004 | TASK-0160 | Blocked |
+| TASK-0163 Establish Payments obligation/attempt persistence and contracts (Done) | F07 | P0 | REQ-PAY-001, REQ-PAY-004 | TASK-0160 | Completed 2026-08-14 |
 | TASK-0164 Build merchant-order Mock Payment Provider deterministic scenarios (Done) | F07 | P0 | REQ-PAY-002..003 | TASK-0101 | Completed 2026-08-14 |
-| TASK-0165 Implement provider evidence, signed callback dedupe and reconciliation | F07 | P0 | REQ-PAY-003..004 | TASK-0163, TASK-0164 | Blocked |
-| TASK-0166 Implement pre-fulfillment cancellation and independent release/refund requests | F07 | P1 | REQ-SAL-003, REQ-INV-003, REQ-PAY-004 | TASK-0160, TASK-0162, TASK-0165 | Blocked |
-| TASK-0170 Implement ADR-010 durable order payment/allocation workflow | F08 | P0 | REQ-ORC-001, REQ-SAL-002 | TASK-0160, TASK-0162, TASK-0165 | Blocked |
-| TASK-0171 Implement workflow recovery, Unknown and NeedsAttention semantics | F08 | P0 | REQ-ORC-001, REQ-PAY-004, REQ-HARD-001 | TASK-0170 | Blocked |
+| TASK-0165 Implement provider evidence, signed callback dedupe and reconciliation (Done) | F07 | P0 | REQ-PAY-003..004 | TASK-0163, TASK-0164 | Completed 2026-08-14 |
+| TASK-0166 Implement pre-fulfillment cancellation and independent release/refund requests (Done) | F07 | P1 | REQ-SAL-003, REQ-INV-003, REQ-PAY-004 | TASK-0160, TASK-0162, TASK-0165 | Completed 2026-08-14 |
+| TASK-0170 Implement ADR-010 durable order payment/allocation workflow (Done) | F08 | P0 | REQ-ORC-001, REQ-SAL-002 | TASK-0160, TASK-0162, TASK-0165 | Completed 2026-08-14 |
+| TASK-0171 Implement workflow recovery, Unknown and NeedsAttention semantics (Done) | F08 | P0 | REQ-ORC-001, REQ-PAY-004, REQ-HARD-001 | TASK-0170 | Completed 2026-08-14 |
 | TASK-0172 Verify workflow branches/retry/wait/idempotency in LocalStack | F08 | P0 | REQ-HARD-003 | TASK-0171, TASK-0102 | Blocked |
 | TASK-0180 Implement Supplier and immutable submitted PurchaseOrder (Done) | F09 | P1 | REQ-PROC-001 | TASK-0131, TASK-0111 | Completed 2026-08-14 |
 | TASK-0181 Implement GoodsReceipt and compensating correction evidence (Done) | F09 | P1 | REQ-PROC-002 | TASK-0180 | Completed 2026-08-14 |

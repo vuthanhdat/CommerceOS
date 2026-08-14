@@ -64,6 +64,7 @@ public sealed class FoundationStack : Stack
         _ = ModuleTable("CatalogTable", "catalog", profile);
         _ = ModuleTable("InventoryTable", "inventory", profile);
         _ = ModuleTable("SalesTable", "sales", profile);
+        _ = ModuleTable("PaymentsTable", "payments", profile);
         _ = ModuleTable("FilesMediaTable", "files-media", profile);
         _ = ModuleTable("ProcurementTable", "procurement", profile);
         _ = ModuleTable("ProductDataIngestionTable", "product-data-ingestion", profile);
