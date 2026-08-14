@@ -135,4 +135,24 @@ public sealed class FoundationStackTests
             "AWS::SQS::Queue",
             new Dictionary<string, object> { ["QueueName"] = "commerceos-test-0042-onboarding-trial-recovery-dlq" });
     }
+
+    [Fact]
+    public void FoundationStackDefinesTheAdr010StandardWorkflowWithUnknownWaitRetryAndCatch()
+    {
+        var template = Template.FromStack(new FoundationStack(new App(), "test-foundation", EnvironmentProfile.Create("localstack-test", "0042")));
+        template.HasResourceProperties("AWS::StepFunctions::StateMachine", new Dictionary<string, object>
+        {
+            ["StateMachineName"] = "commerceos-test-0042-order-payment-allocation",
+            ["StateMachineType"] = "STANDARD",
+            ["DefinitionString"] = Match.SerializedJson(Match.ObjectLike(new Dictionary<string, object>
+            {
+                ["StartAt"] = "RouteScenario",
+                ["States"] = Match.ObjectLike(new Dictionary<string, object>
+                {
+                    ["WaitBeforeReconciliation"] = Match.ObjectLike(new Dictionary<string, object> { ["Type"] = "Wait" }),
+                    ["ReconciliationProbe"] = Match.ObjectLike(new Dictionary<string, object> { ["Type"] = "Task", ["Retry"] = Match.AnyValue(), ["Catch"] = Match.AnyValue() })
+                })
+            }))
+        });
+    }
 }

@@ -16,7 +16,11 @@ public sealed record PurchaseOrder(PurchaseOrderId Id, ProcurementTenantId Tenan
     public PurchaseOrder Submit(long expectedRevision) { if (Revision != expectedRevision) throw new InvalidOperationException("PO_REVISION_STALE"); if (Status is not PurchaseOrderStatus.Draft || Lines.Count == 0) throw new InvalidOperationException("PO_NOT_SUBMITTABLE"); return this with { Status = PurchaseOrderStatus.Submitted, Revision = Revision + 1 }; }
 }
 public enum GoodsReceiptStatus { Draft, Confirmed, Corrected }
-public sealed record GoodsReceiptLine(string ProductId, long Quantity);
+/// <summary>Warehouse is captured with the receipt fact so Inventory never has to infer location from Procurement storage.</summary>
+public sealed record GoodsReceiptLine(string ProductId, long Quantity, string? WarehouseId = null);
 public sealed record GoodsReceipt(string Id, PurchaseOrderId PurchaseOrderId, ProcurementTenantId TenantId, IReadOnlyList<GoodsReceiptLine> Lines, GoodsReceiptStatus Status, string? CorrectsReceiptId, long Revision);
 public sealed record GoodsReceiptCorrection(string Id, string ReceiptId, ProcurementTenantId TenantId, IReadOnlyList<GoodsReceiptLine> Lines, string SourceIdentity, long Revision);
 public sealed record GoodsReceiptRecorded(string ReceiptId, ProcurementTenantId TenantId, IReadOnlyList<GoodsReceiptLine> Lines, string SourceIdentity, string CorrelationId);
+public enum SupplierInvoiceStatus { Accepted, PendingVarianceApproval }
+public sealed record SupplierInvoice(string Id, PurchaseOrderId PurchaseOrderId, ProcurementTenantId TenantId, string SupplierReference, DateOnly InvoiceDate, long AmountVnd, SupplierInvoiceStatus Status, long ExpectedAmountVnd, string SourceIdentity, long Revision);
+public sealed record SupplierPayment(string Id, string SupplierInvoiceId, ProcurementTenantId TenantId, string ExternalReference, DateOnly PaidOn, long AmountVnd, string SourceIdentity, long Revision);

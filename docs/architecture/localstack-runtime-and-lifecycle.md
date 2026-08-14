@@ -221,3 +221,17 @@ AWS compatibility are not claimed; any later capability must be verified and
 recorded separately before being used by a Ready task. Newer `latest` images may
 require a LocalStack Pro auth token; auth tokens are not a CommerceOS prerequisite
 and must not be committed.
+
+### Current LocalStack 4.8.1 limitation
+
+CDK's `AutoDeleteObjects` custom provider emits a `nodejs24.x` Lambda, while the
+pinned LocalStack image supports Node.js through `nodejs22.x`. The FilesMedia
+bucket therefore has no implicit auto-delete provider. Tests must delete their
+task-owned objects before destruction; this does not alter FilesMedia business
+rules or introduce a LocalStack dependency into application/domain code.
+
+The default LocalStack service list includes `stepfunctions`. TASK-0172 verifies
+the ADR-010 state machine's branch/wait/retry/catch control flow through the
+Step Functions API; owner-domain effects are separately verified through the
+project-owned application contracts. This is not a claim of AWS execution or
+service-integration equivalence.

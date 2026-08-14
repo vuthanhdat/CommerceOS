@@ -28,6 +28,16 @@ public sealed class AuditServiceTests
         Assert.Single(await service.ListPlatformSecurityAsync(new("operator", true, "c"), DateTimeOffset.MinValue, 10, default));
     }
 
+    [Fact]
+    public async Task VersionedPlatformLifecycleDeliveryIsIdempotentAndDoesNotExposeTenantIdentityToPlatformEvidence()
+    {
+        var store = new Store(); var consumer = new AuditDeliveryConsumer(new AuditService(store));
+        var fact = new AuditDeliveryFact("event", 1, "tenant-lifecycle:operation", null, AuditAudience.PlatformSecurity, "platform-admin", "tenant.suspended", "Accepted", "support-investigation", "c", DateTimeOffset.UtcNow);
+        Assert.Equal(AuditDeliveryOutcome.Appended, await consumer.ConsumeAsync(fact, default));
+        Assert.Equal(AuditDeliveryOutcome.AlreadyRecorded, await consumer.ConsumeAsync(fact, default));
+        Assert.Single(await new AuditService(store).ListPlatformSecurityAsync(new("operator", true, "c"), DateTimeOffset.MinValue, 10, default));
+    }
+
     private sealed class Store : IAuditStore
     {
         private readonly List<AuditEvidence> evidence = [];

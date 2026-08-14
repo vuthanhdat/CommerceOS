@@ -45,7 +45,7 @@ Only the first safe dependency frontier is marked Ready. `Backlog` status means 
 | TASK-0166 Implement pre-fulfillment cancellation and independent release/refund requests (Done) | F07 | P1 | REQ-SAL-003, REQ-INV-003, REQ-PAY-004 | TASK-0160, TASK-0162, TASK-0165 | Completed 2026-08-14 |
 | TASK-0170 Implement ADR-010 durable order payment/allocation workflow (Done) | F08 | P0 | REQ-ORC-001, REQ-SAL-002 | TASK-0160, TASK-0162, TASK-0165 | Completed 2026-08-14 |
 | TASK-0171 Implement workflow recovery, Unknown and NeedsAttention semantics (Done) | F08 | P0 | REQ-ORC-001, REQ-PAY-004, REQ-HARD-001 | TASK-0170 | Completed 2026-08-14 |
-| TASK-0172 Verify workflow branches/retry/wait/idempotency in LocalStack | F08 | P0 | REQ-HARD-003 | TASK-0171, TASK-0102 | Blocked |
+| TASK-0172 Verify workflow branches/retry/wait/idempotency in LocalStack (Done) | F08 | P0 | REQ-HARD-003 | TASK-0171, TASK-0102 | Completed 2026-08-14 |
 | TASK-0180 Implement Supplier and immutable submitted PurchaseOrder (Done) | F09 | P1 | REQ-PROC-001 | TASK-0131, TASK-0111 | Completed 2026-08-14 |
 | TASK-0181 Implement GoodsReceipt and compensating correction evidence (Done) | F09 | P1 | REQ-PROC-002 | TASK-0180 | Completed 2026-08-14 |
 | TASK-0182 Integrate GoodsReceipt to Inventory idempotently | F09 | P1 | REQ-PROC-002, REQ-INV-003, REQ-HARD-001 | TASK-0181, TASK-0162 | Blocked |
